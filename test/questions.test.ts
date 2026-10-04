@@ -90,3 +90,60 @@ it('a plain question is of kind "question"', () => {
   queue.ask({ from: 'x-job', text: 'Q?' });
   expect(queue.pending()[0]!.kind).toBe('question');
 });
+
+// ---- console decisions and confirmations (Phase 4) ----
+it('a decision item carries its payload and only accepts one of its own options', () => {
+  const queue = new QuestionQueue();
+  const seen: string[] = [];
+  const { id } = queue.ask({ from: 'console', text: 'Ticket x needs you', kind: 'decision', options: ['send_back', 'approve', 'leave'], payload: { ticket: 'x', notes: [{ text: 'bug' }] } }, (a) => seen.push(a));
+  expect(queue.pending()[0]).toMatchObject({ id, kind: 'decision', options: ['send_back', 'approve', 'leave'], payload: { ticket: 'x' } });
+  expect(queue.answer(id, 'merge it now')).toBe('invalid');
+  expect(queue.pending()).toHaveLength(1);
+  expect(queue.answer(id, 'send_back')).toBe('ok');
+  expect(seen).toEqual(['send_back']);
+  expect(queue.answer(id, 'approve')).toBe('already');
+  expect(seen).toEqual(['send_back']);
+});
+it('a confirm item only knows approve and reject', () => {
+  const queue = new QuestionQueue();
+  const seen: string[] = [];
+  const { id } = queue.ask({ from: 'console', text: 'Release?', kind: 'confirm', payload: { tickets: ['a'] }, options: ['whatever'] }, (a) => seen.push(a));
+  expect(queue.pending()[0]!.options).toEqual(['approve', 'reject']);
+  expect(queue.answer(id, 'yes please')).toBe('invalid');
+  expect(queue.answer(id, 'approve')).toBe('ok');
+  expect(seen).toEqual(['approve']);
+});
+it('an answer handler that throws does not break the answer', () => {
+  const queue = new QuestionQueue();
+  const { id } = queue.ask({ from: 'console', text: 'Release?', kind: 'confirm' }, () => { throw new Error('boom'); });
+  expect(queue.answer(id, 'reject')).toBe('ok');
+  expect(queue.pending()).toEqual([]);
+});
+it('console items are not dropped when an agent exits, and do not make an agent wait for the user', () => {
+  const queue = new QuestionQueue();
+  queue.ask({ from: 'console', text: 'Release?', kind: 'confirm' });
+  queue.dropFrom('fix-login');
+  expect(queue.pending()).toHaveLength(1);
+  expect(queue.hasPending('fix-login')).toBe(false);
+});
+it('a payload is kept as plain data and cut when it is absurdly large', () => {
+  const queue = new QuestionQueue();
+  const { id } = queue.ask({ from: 'console', text: 't', kind: 'decision', options: ['leave'], payload: { big: 'x'.repeat(500_000) } });
+  expect(JSON.stringify(queue.pending().find((p) => p.id === id)!.payload).length).toBeLessThan(200_000);
+});
+it('questions and permissions behave as before', () => {
+  const queue = new QuestionQueue();
+  const { id } = queue.ask({ from: 'a-agent', text: 'Which color?', options: ['Red'] });
+  expect(queue.pending()[0]!.kind).toBe('question');
+  expect(queue.answer(id, 'anything goes')).toBe('ok');
+});
+
+it('console items belong to a source no agent or plan can be called, so no turn of any session drops them (review finding)', async () => {
+  const { CONSOLE_FROM } = await import('../src/server/questions/queue');
+  expect(CONSOLE_FROM).toBe('@console');
+  expect(/^[a-z0-9]+(-[a-z0-9]+)*$/.test(CONSOLE_FROM)).toBe(false); // not a valid slug
+  const queue = new QuestionQueue();
+  queue.ask({ from: CONSOLE_FROM, text: 'Release?', kind: 'confirm' });
+  for (const slug of ['console', 'main', 'shop-api']) queue.dropFrom(slug);
+  expect(queue.pending()).toHaveLength(1);
+});

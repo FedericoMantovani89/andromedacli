@@ -195,7 +195,8 @@ try {
   {
     const html = readFileSync(join(root, 'dist', 'ui', 'index.html'), 'utf8');
     const body = html.slice(html.indexOf('<body>'));
-    const visible = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, '').trim();
+    // The only text is the build version, a placeholder the server fills in (a version number is not translatable text).
+    const visible = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, '').replace(/%VERSION%/g, '').trim();
     check('index.html body has no literal text', visible === '', JSON.stringify(visible));
   }
 

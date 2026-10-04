@@ -8,7 +8,7 @@ export type Profile = (typeof PROFILES)[number];
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
-  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable',
+  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -24,6 +24,8 @@ export interface SessionInfo {
   state: Activity;
   /** Closed steps of the agent's checklist; absent until it has one. */
   progress?: { done: number; total: number };
+  /** Where the ticket is in the review/merge pipeline; absent while the author is still writing it for the first time. */
+  ticket?: { status: string; round: number; maxRounds: number };
   /** The launch check found the agent not started or not working on its goal; clears when it starts working. */
   launchStalled?: true;
 }
@@ -40,8 +42,11 @@ export interface PrereqResult {
 export interface QueueItem {
   id: string;
   from: string;
-  kind: 'question' | 'permission';
+  /** `confirm` and `decision` come from the console itself (from "console"): a release to approve, a ticket that needs the user. */
+  kind: 'question' | 'permission' | 'confirm' | 'decision';
   text: string;
+  /** Data of a console item (tickets, report text, review notes); shape depends on the item. */
+  payload?: unknown;
   tool?: string;
   detail?: string;
   options?: string[];
@@ -51,7 +56,7 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
-  plan: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string };
+  plan: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean };
   /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
   settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };
   main: SessionInfo;

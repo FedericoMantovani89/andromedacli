@@ -16,8 +16,11 @@ import type { Scheduler } from './agents/scheduler';
 import type { ReadingStore } from './reading/store';
 import type { TicketStore } from './tickets/store';
 import type { StepService } from './tickets/steps';
+import type { ReviewService } from './tickets/review';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
+import { isValidTestCommand } from './plan-store';
+import { MAX_REWORK_ROUNDS } from './tickets/review';
 import type { Config } from './config';
 
 export interface Context extends V1Context {
@@ -48,6 +51,7 @@ export interface Context extends V1Context {
   tickets: TicketStore;
   steps: StepService;
   launchWatch: LaunchWatch;
+  review: ReviewService;
   /** Read at each use: a change made in the Settings dialog applies to the sessions launched afterwards. */
   readonly git: Config['git'];
   readonly guardMode: Config['guard']['mode'];
@@ -82,16 +86,21 @@ export function buildState(ctx: Context): StateMessage {
   };
   const stateOf = (slug: string) => ctx.registry.get(slug)?.state ?? 'starting';
   // studying / blocked / progress come from the agent's ticket, never from the terminal.
-  const derived = (slug: string): Pick<SessionInfo, 'state' | 'progress'> => {
+  const derived = (slug: string): Pick<SessionInfo, 'state' | 'progress' | 'ticket'> => {
     const base = stateOf(slug);
-    if (!ctx.registry.get(slug)?.git) return { state: base };
-    const ticket = ctx.tickets.get(slug);
+    const rt = ctx.registry.get(slug);
+    const ticket = rt ? ctx.tickets.get(slug) : undefined;
+    // Where the ticket is in the review pipeline: kept after the worktree is gone (a merged ticket still says "Merged").
+    const pipeline = ticket && rt?.role === 'agent' && (ticket.status !== 'in_progress' || ticket.round > 0)
+      ? { ticket: { status: ticket.status, round: ticket.round, maxRounds: MAX_REWORK_ROUNDS } }
+      : {};
+    if (!rt?.git) return { state: base, ...pipeline };
     const total = ticket?.steps.length ?? 0;
     const progress = total > 0 ? { done: ticket!.steps.filter((x) => x.done).length, total } : undefined;
     let state = base;
     if (ticket?.blocked && base !== 'interrupted' && base !== 'queued' && base !== 'waiting_user') state = 'blocked';
     else if (total === 0 && base === 'working') state = 'studying';
-    return { state, ...(progress ? { progress } : {}) };
+    return { state, ...(progress ? { progress } : {}), ...pipeline };
   };
   const main: SessionInfo = { slug: ctx.planName, profile: 'main', role: 'main', status: status(ctx.planName), state: stateOf(ctx.planName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
@@ -99,9 +108,10 @@ export function buildState(ctx: Context): StateMessage {
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
     .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}) }));
   let testCommand: string | undefined;
-  try { testCommand = ctx.store.plan.testCommand; } catch { /* a damaged plan.json: shown as not set */ }
+  let squash: boolean | undefined;
+  try { ({ testCommand, squash } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
   return {
-    type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
+    type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
   };
@@ -204,15 +214,19 @@ export function createRequestHandler(ctx: Context) {
     if (req.method === 'PUT' && path === '/api/plan') {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
-      if (typeof body !== 'object' || body === null || !('testCommand' in body)) return fail(res, 400, 'bad_request');
-      try {
-        ctx.store.setTestCommand((body as { testCommand: string }).testCommand);
-      } catch {
-        return fail(res, 422, 'plan.testCommandInvalid');
-      }
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
+      const b = body as Record<string, unknown>;
+      const hasCommand = 'testCommand' in b;
+      const hasSquash = 'squash' in b;
+      if (!hasCommand && !hasSquash) return fail(res, 400, 'bad_request');
+      // Everything is checked before anything is written: a bad entry changes nothing.
+      if (hasSquash && typeof b.squash !== 'boolean') return fail(res, 422, 'plan.squashInvalid');
+      if (hasCommand && !isValidTestCommand(b.testCommand)) return fail(res, 422, 'plan.testCommandInvalid');
+      if (hasCommand) ctx.store.setTestCommand(b.testCommand as string);
+      if (hasSquash) ctx.store.setSquash(b.squash as boolean);
       ctx.broadcastState();
-      const saved = ctx.store.plan.testCommand;
-      return send(res, 200, saved ? { testCommand: saved } : {});
+      const saved = ctx.store.plan;
+      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}) });
     }
 
     return fail(res, 404, 'not_found');

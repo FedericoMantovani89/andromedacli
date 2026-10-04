@@ -4,6 +4,9 @@ export type ShellKind = 'posix' | 'powershell';
 export interface Segment { argv: string[]; raw: string; pipeFromPrev: boolean }
 
 const MAX_DEPTH = 5;
+const OPERATOR_LOOKALIKE = /^(\d*|&)?>{1,2}$/;
+/** Appended to a quoted token that looks like a redirection operator (analysis only; nothing is ever executed from these tokens). */
+export const QUOTED_MARK = String.fromCharCode(0x200b);
 const WRAPPERS = new Set(['env', 'command', 'exec', 'nohup', 'time', 'sudo', 'nice', 'timeout', 'xargs', 'watch']);
 const CONTROL = new Set(['if', 'then', 'do', 'else', 'elif', 'while', 'until', '!', '{', '}']);
 const XARGS_WITH_ARG = new Set(['-I', '-n', '-P', '-L', '-d', '-E', '-s', '-a']);
@@ -37,10 +40,13 @@ function tokenize(command: string, shell: ShellKind): { segments: Raw[]; inner: 
   let double = false;
   let segStart = 0;
   let nextPipe = false;
+  let quoted = false; // the current token had quote marks
   const flushToken = (): void => {
-    if (inToken) tokens.push(cur);
+    // A quoted ">" is text (grep -n ">" f), not a redirection: the analysis marks it so no rule mistakes it for an operator.
+    if (inToken) tokens.push(quoted && OPERATOR_LOOKALIKE.test(cur) ? cur + QUOTED_MARK : cur);
     cur = '';
     inToken = false;
+    quoted = false;
   };
   const endSegment = (end: number, pipeNext: boolean): void => {
     flushToken();
@@ -83,8 +89,8 @@ function tokenize(command: string, shell: ShellKind): { segments: Raw[]; inner: 
       else cur += c;
       continue;
     }
-    if (c === "'") { single = true; inToken = true; continue; }
-    if (c === '"') { double = true; inToken = true; continue; }
+    if (c === "'") { single = true; inToken = true; quoted = true; continue; }
+    if (c === '"') { double = true; inToken = true; quoted = true; continue; }
     if (c === escape && n !== undefined) {
       if (shell === 'powershell' || /[\s"'\\$`]/.test(n)) { cur += n; inToken = true; i++; continue; }
       cur += c;

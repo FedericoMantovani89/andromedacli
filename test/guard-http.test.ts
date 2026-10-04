@@ -2,14 +2,14 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, req, ui, type Running } from './helpers';
-import { makeRepo, type TestRepo } from './git-helpers';
+import { makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { worktreePathFor } from '../src/server/git/worktree';
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
 vi.setConfig({ testTimeout: 60_000 });
 
 const repos: TestRepo[] = [];
-afterEach(() => { while (repos.length) rmSync(repos.pop()!.base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
 
 async function boot(config: Record<string, unknown> = {}): Promise<{ s: Running; t: TestRepo }> {

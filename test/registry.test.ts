@@ -71,3 +71,32 @@ it('notifies listeners on changes and not on a repeated no-op', () => {
   r.onModEvent('fix-login', ev('turn.start'));
   expect(cb.mock.calls.length).toBe(before + 1);
 });
+
+it('a session finished on purpose ends as "finished", not "interrupted", and no longer counts as active', () => {
+  const r = new AgentRegistry();
+  r.register({ slug: 'fix-login', role: 'agent', profile: 'backend', goal: 'g' });
+  r.onSpawned('fix-login');
+  r.onModEvent('fix-login', { type: 'session.start', sessionId: 's' });
+  r.onModEvent('fix-login', { type: 'turn.start', sessionId: 's' });
+  r.onModEvent('fix-login', { type: 'turn.complete', sessionId: 's' });
+  r.markFinished('fix-login');
+  expect(r.get('fix-login')!.state).toBe('idle'); // the process has not exited yet
+  r.onProcessExit('fix-login');
+  expect(r.get('fix-login')!.state).toBe('finished');
+  expect(r.isActive('fix-login')).toBe(false);
+  r.onModEvent('fix-login', { type: 'turn.start', sessionId: 's' }); // a late event does not bring it back
+  expect(r.get('fix-login')!.state).toBe('finished');
+});
+it('a session that dies without being finished is still "interrupted"', () => {
+  const r = new AgentRegistry();
+  r.register({ slug: 'fix-login', role: 'agent', profile: 'backend' });
+  r.onSpawned('fix-login');
+  r.onProcessExit('fix-login');
+  expect(r.get('fix-login')!.state).toBe('interrupted');
+});
+it('roles include reviewer, the read-only flag is kept, and a reviewer counts as active', () => {
+  const r = new AgentRegistry();
+  r.register({ slug: 'review-x', role: 'reviewer', profile: 'reviewer', readOnly: true });
+  expect(r.get('review-x')).toMatchObject({ role: 'reviewer', readOnly: true });
+  expect(r.isActive('review-x')).toBe(true); // a reviewer counts against the active-agent limit like any agent
+});

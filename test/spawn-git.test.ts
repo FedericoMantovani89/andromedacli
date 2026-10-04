@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, modEvent, mod, state, ui, until, type Running } from './helpers';
-import { gitSync, makeRepo, type TestRepo } from './git-helpers';
+import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { agentBranchFor, worktreePathFor } from '../src/server/git/worktree';
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
@@ -14,8 +14,8 @@ const repos: TestRepo[] = [];
 const scratch: string[] = [];
 // Registered before autoClose: hooks run in reverse order, so the servers (and their processes) stop first.
 afterEach(() => {
-  while (scratch.length) rmSync(scratch.pop()!, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-  while (repos.length) rmSync(repos.pop()!.base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  while (scratch.length) rmSync(scratch.pop()!, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 });
+  while (repos.length) removeDir(repos.pop()!.base);
 });
 autoClose();
 
@@ -132,4 +132,12 @@ it('keeps the console folder out of git status from the start, without touching 
   expect(exclude.split(/\r?\n/)).toContain('.console/');
   expect(gitSync(t.repo, 'status', '--porcelain')).toBe('');
   expect(existsSync(join(t.repo, '.gitignore'))).toBe(false);
+});
+
+it('the goal the main wrote is kept in the ticket (the review checks the diff against it)', async () => {
+  const { s, t } = await boot();
+  await spawnTool(s, 'fix-login', 'Fix the login timeout in AuthService');
+  const file = join(t.repo, '.console', 'state', 'tickets', 'fix-login.json');
+  await until(() => existsSync(file), 30_000);
+  expect(JSON.parse(readFileSync(file, 'utf8')).goal).toBe('Fix the login timeout in AuthService');
 });

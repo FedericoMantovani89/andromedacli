@@ -1,8 +1,10 @@
 import type { Activity, ModEvent } from '../../shared/activity';
 
+export type Role = 'main' | 'agent' | 'reviewer';
+
 export interface AgentRuntime {
   slug: string;
-  role: 'main' | 'agent';
+  role: Role;
   profile: string;
   goal?: string;
   state: Activity;
@@ -10,12 +12,16 @@ export interface AgentRuntime {
   /** The first goal was queued for this agent and no turn has completed since: it still counts as active (SPEC 16.7). */
   pendingGoal: boolean;
   lastEventAt?: string;
+  /** The console ended this session on purpose: when its process exits the state is `finished`, not `interrupted`. */
+  finishing?: boolean;
+  /** The profile is read-only (a reviewer): the guard refuses anything that writes. */
+  readOnly?: boolean;
   /** The agent's own worktree and branch (Phase 3); absent for the main and when `git.worktrees` is off. */
   git?: { worktree: string; branch: string };
 }
 
 export interface RegisterInput {
-  slug: string; role: 'main' | 'agent'; profile: string; goal?: string; queued?: boolean;
+  slug: string; role: Role; profile: string; goal?: string; queued?: boolean; readOnly?: boolean;
 }
 
 /** State machine for every session, fed by mod events and process lifecycle. Illegal transitions are ignored. */
@@ -27,7 +33,7 @@ export class AgentRegistry {
 
   register(a: RegisterInput): void {
     this.agents.set(a.slug, {
-      slug: a.slug, role: a.role, profile: a.profile, goal: a.goal,
+      slug: a.slug, role: a.role, profile: a.profile, goal: a.goal, readOnly: a.readOnly,
       state: a.queued ? 'queued' : 'starting', pendingGoal: Boolean(a.goal) && !a.queued,
     });
     this.notify(a.slug);
@@ -55,6 +61,12 @@ export class AgentRegistry {
     if (a) a.git = git;
   }
 
+  /** The session is about to be ended on purpose (a merged ticket, a finished review). */
+  markFinished(slug: string): void {
+    const a = this.agents.get(slug);
+    if (a) a.finishing = true;
+  }
+
   goalDelivered(slug: string): void {
     const a = this.agents.get(slug);
     if (a) a.pendingGoal = false;
@@ -62,7 +74,7 @@ export class AgentRegistry {
 
   onModEvent(slug: string, e: ModEvent): void {
     const a = this.agents.get(slug);
-    if (!a || a.state === 'interrupted') return;
+    if (!a || a.state === 'interrupted' || a.state === 'finished') return;
     a.lastEventAt = new Date().toISOString();
     switch (e.type) {
       case 'session.start':
@@ -83,14 +95,14 @@ export class AgentRegistry {
 
   setWaitingUser(slug: string, waiting: boolean): void {
     const a = this.agents.get(slug);
-    if (!a || a.state === 'interrupted') return;
+    if (!a || a.state === 'interrupted' || a.state === 'finished') return;
     if (waiting) this.set(a, 'waiting_user');
     else if (a.state === 'waiting_user') this.set(a, 'working');
   }
 
   onProcessExit(slug: string): void {
     const a = this.agents.get(slug);
-    if (a) { a.pendingGoal = false; this.set(a, 'interrupted'); }
+    if (a) { a.pendingGoal = false; this.set(a, a.finishing ? 'finished' : 'interrupted'); }
   }
 
   /** SPEC 16.7: active = starting, working, or idle with the first goal still pending. Main and everything else: no. */

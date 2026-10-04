@@ -55,8 +55,9 @@ function startInboxPoll($) {
 }
 
 const TOOLS_BY_ROLE = {
-  main: ['spawn_agent', 'list_agents', 'ask_user'],
+  main: ['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release'],
   agent: ['list_agents', 'checklist_set', 'step_done', 'report_blocked'],
+  reviewer: ['list_agents', 'review_verdict'],
 };
 
 const TOOL_SPECS = {
@@ -103,6 +104,52 @@ const TOOL_SPECS = {
   report_blocked: {
     description: 'Tell the main session you cannot go on, and why. The ticket shows as blocked until your next closed step.',
     inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'What blocks you and what you need' } }, required: ['reason'] },
+  },
+  ticket_report: {
+    description: 'Facts about a delivered ticket, from git and from the test run the console itself makes on the delivered commit: files changed, tests, checklist, '
+      + 'documentation, files that look foreign to the goal. Also returns the report text. Judge the objective from it before asking for a review.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'The ticket (agent) name' }, rerun: { type: 'boolean', description: 'Run the tests again instead of reusing the result for this commit' } },
+      required: ['name'],
+    },
+  },
+  request_review: {
+    description: 'Put a delivered ticket into review: the console starts a read-only reviewer on the delivered commit. A ticket whose tests fail on the delivered commit goes straight back to its author. '
+      + 'Returns { status: "ok", result: "in_review" | "sent_back" | "needs_user" } or a refusal code.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'The ticket (agent) name' }, model: { type: 'string', description: 'Optional model alias or id for the reviewer' } },
+      required: ['name'],
+    },
+  },
+  send_back_ticket: {
+    description: 'Send a delivered ticket back to its author before any review, when the report shows the work does not answer the objective or contains files nobody asked for. '
+      + 'Your note reaches the author as a message from you. Counts as one of the two rework rounds.',
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'The ticket (agent) name' }, note: { type: 'string', description: 'What is wrong and what the author must change' } },
+      required: ['name', 'note'],
+    },
+  },
+  merge_ticket: {
+    description: 'Merge an approved ticket into the plan branch (one at a time, never forced). A conflict or red tests after the merge send the ticket back to its author. Returns { status: "merged" | "conflict" | "tests_failed" | "refused" }.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'The ticket (agent) name' } }, required: ['name'] },
+  },
+  propose_release: {
+    description: 'Ask the user to approve releasing the merged tickets to origin/main. The console puts one confirmation in the user queue and does the merge and the push itself after the user approves. Never push to main yourself.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  review_verdict: {
+    description: 'Your one verdict on the ticket you were asked to review: pass (boolean) and notes (each with severity high/medium/low, where as file:line, and text with a concrete failing scenario). Call it exactly once.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pass: { type: 'boolean', description: 'false when there is at least one high or medium problem a user would hit' },
+        notes: { type: 'array', items: { type: 'object', properties: { severity: { type: 'string' }, where: { type: 'string' }, text: { type: 'string' } }, required: ['text'] } },
+      },
+      required: ['pass'],
+    },
   },
   ask_user: {
     description: 'Put a question to the human in the console queue and wait for the answer. Use it for choices (product, preference, risk); verify facts yourself.',
@@ -180,6 +227,11 @@ function toolBody(name, e) {
   if (name === 'checklist_set') return { items: e.items };
   if (name === 'step_done') return { n: typeof e.n === 'string' ? Number(e.n) : e.n, note: e.note, skip: e.skip };
   if (name === 'report_blocked') return { reason: e.reason };
+  if (name === 'ticket_report') return { name: e.name, rerun: e.rerun };
+  if (name === 'request_review') return { name: e.name, model: e.model };
+  if (name === 'merge_ticket') return { name: e.name };
+  if (name === 'send_back_ticket') return { name: e.name, note: e.note };
+  if (name === 'review_verdict') return { pass: e.pass, notes: e.notes };
   return {};
 }
 
@@ -201,7 +253,7 @@ async function onConsoleTool($, name, e) {
 /** An agent's native AskUserQuestion goes to the console queue instead of a dialog nobody is watching. */
 async function onNativeQuestion($, e, next) {
   try {
-    if (!ctx || ctx.role !== 'agent' || !Array.isArray(e.questions) || e.questions.length === 0) return next(e);
+    if (!ctx || ctx.role === 'main' || !Array.isArray(e.questions) || e.questions.length === 0) return next(e);
     const answers = {};
     for (const q of e.questions) {
       const labels = Array.isArray(q.options) ? q.options.map((o) => String(o.label)) : undefined;
@@ -233,7 +285,7 @@ function describeInput(input) {
 async function onToolCheck($, e, next) {
   const verdict = await next(e);
   try {
-    if (!ctx || ctx.role !== 'agent' || !e.tool_use_id || !verdict || verdict.decision !== 'ask') return verdict;
+    if (!ctx || ctx.role === 'main' || !e.tool_use_id || !verdict || verdict.decision !== 'ask') return verdict;
     if (e.tool === 'AskUserQuestion' || String(e.tool).indexOf('mcp__console-mod__') === 0) return verdict;
     const a = await askConsole($, verdict.reason || 'Permission requested', undefined, false,
       { kind: 'permission', tool: String(e.tool), detail: describeInput(e.input) });
@@ -287,6 +339,12 @@ export const register = (on) => {
   on('tool.call', { tool: 'mcp__console-mod__checklist_set' }, ($, e) => onConsoleTool($, 'checklist_set', e));
   on('tool.call', { tool: 'mcp__console-mod__step_done' }, ($, e) => onConsoleTool($, 'step_done', e));
   on('tool.call', { tool: 'mcp__console-mod__report_blocked' }, ($, e) => onConsoleTool($, 'report_blocked', e));
+  on('tool.call', { tool: 'mcp__console-mod__ticket_report' }, ($, e) => onConsoleTool($, 'ticket_report', e));
+  on('tool.call', { tool: 'mcp__console-mod__request_review' }, ($, e) => onConsoleTool($, 'request_review', e));
+  on('tool.call', { tool: 'mcp__console-mod__send_back_ticket' }, ($, e) => onConsoleTool($, 'send_back_ticket', e));
+  on('tool.call', { tool: 'mcp__console-mod__merge_ticket' }, ($, e) => onConsoleTool($, 'merge_ticket', e));
+  on('tool.call', { tool: 'mcp__console-mod__propose_release' }, ($, e) => onConsoleTool($, 'propose_release', e));
+  on('tool.call', { tool: 'mcp__console-mod__review_verdict' }, ($, e) => onConsoleTool($, 'review_verdict', e));
   on('tool.call', { tool: 'Bash' }, ($, e, next) => guardCall($, 'Bash', e, next));
   on('tool.call', { tool: 'PowerShell' }, ($, e, next) => guardCall($, 'PowerShell', e, next));
   on('tool.call', { tool: 'Write' }, ($, e, next) => guardCall($, 'Write', e, next));

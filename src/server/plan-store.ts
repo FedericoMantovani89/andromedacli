@@ -3,8 +3,17 @@ import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 
 /** `testCommand` is what the console runs for the validation step of every ticket (SPEC 8.3); the user writes it. */
-export interface PlanInfo { name: string; createdAt: string; testCommand?: string }
+export interface PlanInfo {
+  name: string;
+  createdAt: string;
+  testCommand?: string;
+  /** One commit per ticket when merged (default); false keeps the step commits behind a merge commit (SPEC 9.7). */
+  squash?: boolean;
+}
 export interface AgentRecord { slug: string; profile: string; createdAt: string }
+
+/** One line, at most 500 characters (the console runs it through the platform shell: the user wrote it). */
+export const isValidTestCommand = (v: unknown): v is string => typeof v === 'string' && v.length <= 500 && !/[\r\n]/.test(v);
 
 /** Plan state under <repo>/.console/ (SPEC 23): plan.json and state/agents.json. */
 export class PlanStore {
@@ -27,10 +36,15 @@ export class PlanStore {
 
   /** Sets (or, with an empty string, clears) the plan's test command. One line, at most 500 characters. */
   setTestCommand(command: string): void {
-    if (typeof command !== 'string' || command.length > 500 || /[\r\n]/.test(command)) throw new Error('plan.testCommandInvalid');
+    if (!isValidTestCommand(command)) throw new Error('plan.testCommandInvalid');
     const { testCommand: _old, ...rest } = this.plan;
     const trimmed = command.trim();
     writeJsonAtomic(this.planFile, trimmed === '' ? rest : { ...rest, testCommand: trimmed });
+  }
+
+  setSquash(squash: boolean): void {
+    if (typeof squash !== 'boolean') throw new Error('plan.squashInvalid');
+    writeJsonAtomic(this.planFile, { ...this.plan, squash });
   }
 
   listAgents(): AgentRecord[] {

@@ -17,6 +17,7 @@ const STATE_KEYS: Record<Activity, string> = {
   interrupted: k('state.interrupted'),
   studying: k('state.studying'),
   blocked: k('state.blocked'),
+  finished: k('state.finished'),
 };
 
 /** "Not started yet" next to the state when the launch check found the agent stalled. */
@@ -24,6 +25,35 @@ function applyStalled(el: HTMLElement, stalled: boolean | undefined): void {
   el.hidden = !stalled;
   if (stalled) bindText(el, k('panel.launchStalled'));
   else el.textContent = '';
+}
+
+/**
+ * Where the ticket is in the review pipeline, as a chip: "In review", "Approved", "Merged"... and "Rework 1" while the author fixes
+ * what a review found. Hidden until the ticket has left its first writing.
+ */
+const TICKET_KEYS: Record<string, string> = {
+  delivered: k('ticket.status.delivered'),
+  in_review: k('ticket.status.in_review'),
+  changes_requested: k('ticket.status.changes_requested'),
+  approved: k('ticket.status.approved'),
+  conflict: k('ticket.status.conflict'),
+  merged: k('ticket.status.merged'),
+  needs_user: k('ticket.status.needs_user'),
+  released: k('ticket.status.released'),
+};
+function applyTicket(el: HTMLElement, ticket: SessionInfo['ticket']): void {
+  const key = !ticket ? undefined : ticket.status === 'in_progress' ? (ticket.round > 0 ? k('ticket.rework') : undefined) : TICKET_KEYS[ticket.status];
+  if (!ticket || !key) {
+    el.hidden = true;
+    el.textContent = '';
+    delete el.dataset.i18n;
+    delete el.dataset.i18nParams;
+    el.className = 'panel-ticket';
+    return;
+  }
+  el.hidden = false;
+  el.className = `panel-ticket ${ticket.status}`;
+  bindText(el, key, { round: ticket.round, max: ticket.maxRounds });
 }
 
 /** The checklist progress chip ("3/7"): empty and hidden until the agent has a checklist. */
@@ -40,7 +70,7 @@ function applyProgress(el: HTMLElement, progress: SessionInfo['progress']): void
 }
 
 interface Panel extends PanelHandle {
-  setState(state: Activity, progress?: SessionInfo['progress'], stalled?: boolean): void;
+  setState(state: Activity, progress?: SessionInfo['progress'], stalled?: boolean, ticket?: SessionInfo['ticket']): void;
   dispose(): void;
 }
 
@@ -69,12 +99,15 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
   const stalledEl = document.createElement('span');
   stalledEl.className = 'panel-stalled';
   stalledEl.hidden = true;
+  const ticketEl = document.createElement('span');
+  ticketEl.className = 'panel-ticket';
+  ticketEl.hidden = true;
   const readBtn = document.createElement('button');
   readBtn.className = 'panel-read';
   bindText(readBtn, 'reader.open');
   readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
   readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
-  header.append(title, meta, badge, stateEl, stalledEl, progressEl, readBtn);
+  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, progressEl, readBtn);
 
   const host = document.createElement('div');
   host.className = 'panel-term';
@@ -124,8 +157,9 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
 
   return {
     root, term,
-    setState: (state, progress, stalled) => {
+    setState: (state, progress, stalled, ticket) => {
       applyStalled(stalledEl, stalled);
+      applyTicket(ticketEl, ticket);
       bindText(stateEl, STATE_KEYS[state]);
       stateEl.className = `panel-state ${state}`;
       applyProgress(progressEl, progress);
@@ -149,7 +183,7 @@ export class Workspace {
   private lastAgents: SessionInfo[] = [];
   private newAgentControl: HTMLElement | undefined;
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
-  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; pending: boolean }>();
+  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; pending: boolean }>();
 
   constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string) {
     this.mainId = mainId;
@@ -198,7 +232,7 @@ export class Workspace {
       const info = bySlug.get(item.slug)!;
       if (item.mode === 'panel') {
         const p = this.ensurePanel(info);
-        p.setState(info.state, info.progress, info.launchStalled);
+        p.setState(info.state, info.progress, info.launchStalled, info.ticket);
         children.push(p.root);
       } else {
         this.dropPanel(item.slug); // the server keeps the scrollback; reconnecting restores it
@@ -246,6 +280,7 @@ export class Workspace {
       cached.state.className = `panel-state ${info.state}`;
       applyProgress(cached.progress, info.progress);
       applyStalled(cached.stalled, info.launchStalled);
+      applyTicket(cached.ticket, info.ticket);
       return cached.el;
     }
     const el = document.createElement('div');
@@ -265,14 +300,16 @@ export class Workspace {
     const stalled = document.createElement('span');
     stalled.className = 'panel-stalled';
     applyStalled(stalled, info.launchStalled);
-    el.append(title, meta, state, stalled, progress);
+    const ticket = document.createElement('span');
+    applyTicket(ticket, info.ticket);
+    el.append(title, meta, state, stalled, ticket, progress);
     if (!pending) { // a queued agent has no terminal to expand yet
       const expand = document.createElement('button');
       bindText(expand, 'panel.expand');
       expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
       el.append(expand);
     }
-    this.bars.set(info.slug, { el, state, progress, stalled, pending });
+    this.bars.set(info.slug, { el, state, progress, stalled, ticket, pending });
     return el;
   }
 }

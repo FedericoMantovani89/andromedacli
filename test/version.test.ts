@@ -6,7 +6,7 @@ import { afterEach, expect, it } from 'vitest';
 import { renderIndex, resolveVersion } from '../src/server/version';
 
 const dirs: string[] = [];
-afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 }); });
 
 const g = (cwd: string, ...a: string[]): string => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@e.x', ...a], { cwd, encoding: 'utf8' }).trim();
 function repo(pkgVersion = '0.0.1'): string {

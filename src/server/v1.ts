@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Inbox } from './agents/inbox';
-import type { AgentRegistry } from './agents/registry';
+import type { AgentRegistry, Role } from './agents/registry';
 import type { ModEvent } from '../shared/activity';
 import { extractToken, type SessionTokens } from './security';
 import { fail, readBody, send } from './http-util';
@@ -17,6 +17,8 @@ export interface V1Context {
   /** Everything that must react to a mod event (registry, reading store, scheduler...). */
   handleModEvent(slug: string, e: ModEvent): void;
   tools: Record<string, ToolHandler>;
+  /** A console tool finished: whatever it changed (tickets, queue) is worth pushing to the UI. */
+  afterTool?(name: string): void;
   /** The guard's verdict for a tool call of this session (SPEC 14): rules, mode (enforce/shadow) and log live behind it. */
   guard(slug: string, tool: string, input: Record<string, unknown>): GuardAnswer;
 }
@@ -24,14 +26,21 @@ export interface V1Context {
 const EVENT_TYPES: ModEvent['type'][] = ['session.start', 'session.end', 'turn.start', 'turn.complete'];
 
 /** Which role may call which console tool (SPEC 13.4). An agent's native AskUserQuestion reaches ask_user through the mod. */
-const TOOL_ROLES: Record<string, ('main' | 'agent')[]> = {
+const TOOL_ROLES: Record<string, Role[]> = {
   spawn_agent: ['main'],
-  list_agents: ['main', 'agent'],
-  ask_user: ['main', 'agent'],
+  list_agents: ['main', 'agent', 'reviewer'],
+  ask_user: ['main', 'agent', 'reviewer'],
   // The ticket flow belongs to agents: the console commits, validates and pushes on their behalf (SPEC 8.4).
   checklist_set: ['agent'],
   step_done: ['agent'],
   report_blocked: ['agent'],
+  // The review and merge flow (SPEC 15): the main asks, the reviewer answers once, the console does the rest.
+  ticket_report: ['main'],
+  request_review: ['main'],
+  send_back_ticket: ['main'],
+  merge_ticket: ['main'],
+  propose_release: ['main'],
+  review_verdict: ['reviewer'],
 };
 
 /**
@@ -100,7 +109,9 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
     let body: unknown;
     try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
     try {
-      return send(res, 200, await handler(slug, body));
+      const result = await handler(slug, body);
+      ctx.afterTool?.(name);
+      return send(res, 200, result);
     } catch {
       return fail(res, 500, 'internal');
     }

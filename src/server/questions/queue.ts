@@ -3,14 +3,20 @@ import { randomUUID } from 'node:crypto';
 export interface Question {
   id: string;
   from: string;
-  /** `permission`: an agent's tool wants approval; the only answers are "allow" and "deny". */
-  kind: 'question' | 'permission';
+  /**
+   * `permission`: an agent's tool wants approval ("allow" / "deny"). `confirm`: the console asks the user to approve something
+   * ("approve" / "reject"). `decision`: the console asks the user to choose among its own option codes. The last two come from
+   * the console itself (from "console") and run a handler when answered.
+   */
+  kind: 'question' | 'permission' | 'confirm' | 'decision';
   text: string;
   options?: string[];
   multiSelect?: boolean;
   /** Permission requests: the tool and what it would do (a command, a file path). */
   tool?: string;
   detail?: string;
+  /** Plain data the UI shows for console items (tickets, reports, notes). */
+  payload?: unknown;
   createdAt: string;
 }
 
@@ -18,6 +24,9 @@ export interface WaitResult { answered: boolean; answer?: string; gone?: boolean
 
 const ANSWERED_KEEP_MS = 60 * 60 * 1000; // an answer stays readable for a late long-poll
 const MAX_TEXT = 4000;
+/** The asker of console items. It is not a valid slug, so no agent or plan can ever be called that: no turn or exit of any session drops them. */
+export const CONSOLE_FROM = '@console';
+const MAX_PAYLOAD = 100_000; // characters of JSON: a report is text, but the drawer must never choke on one
 
 /**
  * Questions for the human (SPEC 5.6). The asker waits with short long-polls; the human answers from the UI. An answer is
@@ -28,19 +37,28 @@ export class QuestionQueue {
   private readonly answered = new Map<string, { from: string; answer: string; at: number }>();
   private readonly waiters = new Map<string, ((r: WaitResult) => void)[]>();
   private readonly listeners: (() => void)[] = [];
+  private readonly handlers = new Map<string, (answer: string) => void>();
 
   onChange(cb: () => void): void { this.listeners.push(cb); }
 
-  ask(q: { from: string; text: string; options?: string[]; multiSelect?: boolean; kind?: 'question' | 'permission'; tool?: string; detail?: string }): { id: string } {
+  ask(
+    q: { from: string; text: string; options?: string[]; multiSelect?: boolean; kind?: Question['kind']; tool?: string; detail?: string; payload?: unknown },
+    onAnswer?: (answer: string) => void,
+  ): { id: string } {
     this.forgetOldAnswers();
     const id = randomUUID();
-    const permission = q.kind === 'permission';
+    const kind = q.kind ?? 'question';
+    const permission = kind === 'permission';
+    const confirm = kind === 'confirm';
     this.open.set(id, {
-      id, from: q.from, kind: permission ? 'permission' : 'question', text: q.text.slice(0, MAX_TEXT),
-      options: permission ? ['allow', 'deny'] : q.options, multiSelect: permission ? false : q.multiSelect,
+      id, from: q.from, kind, text: q.text.slice(0, MAX_TEXT),
+      options: permission ? ['allow', 'deny'] : confirm ? ['approve', 'reject'] : q.options,
+      multiSelect: permission || confirm || kind === 'decision' ? false : q.multiSelect,
       ...(permission ? { tool: (q.tool ?? '').slice(0, 100), detail: (q.detail ?? '').slice(0, 4000) } : {}),
+      ...(q.payload !== undefined ? { payload: boundedPayload(q.payload) } : {}),
       createdAt: new Date().toISOString(),
     });
+    if (onAnswer) this.handlers.set(id, onAnswer);
     this.changed();
     return { id };
   }
@@ -51,10 +69,13 @@ export class QuestionQueue {
     if (!q) return 'unknown';
     const text = answer.trim();
     if (text === '') return 'invalid';
-    if (q.kind === 'permission' && text !== 'allow' && text !== 'deny') return 'invalid';
+    if (q.kind !== 'question' && q.options && !q.options.includes(text)) return 'invalid'; // permissions, confirmations and decisions only know their own answers
     this.open.delete(id);
     this.answered.set(id, { from: q.from, answer: text, at: Date.now() });
     this.resolve(id, { answered: true, answer: text });
+    const handler = this.handlers.get(id);
+    this.handlers.delete(id);
+    try { handler?.(text); } catch { /* the answer stands; a failing handler must not undo it */ }
     this.changed();
     return 'ok';
   }
@@ -111,5 +132,14 @@ export class QuestionQueue {
 
   private changed(): void {
     for (const cb of this.listeners) cb();
+  }
+}
+
+/** Console payloads are plain data; an enormous one is replaced by a marker instead of being sent to every browser. */
+function boundedPayload(p: unknown): unknown {
+  try {
+    return JSON.stringify(p).length <= MAX_PAYLOAD ? p : { truncated: true };
+  } catch {
+    return { truncated: true };
   }
 }

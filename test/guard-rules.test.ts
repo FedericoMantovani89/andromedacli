@@ -343,6 +343,7 @@ describe('guard rules — agent must allow', () => {
 });
 
 const DENY_MAIN: [string, () => Call, string][] = [
+  ['hooks path (it would remove the push hook)', () => sh('git config core.hooksPath x'), 'git.hooks-tamper'],
   ['force push', () => sh('git push --force'), 'git.force'],
   ['force push +ref', () => sh('git push origin +plan/x'), 'git.force'],
   ['delete remote ref', () => sh('git push origin :x'), 'git.delete-ref'],
@@ -365,7 +366,7 @@ const ALLOW_MAIN: [string, () => Call][] = [
   ['reset --hard', () => sh('git reset --hard')],
   ['rebase', () => sh('git rebase main')],
   ['push plan branch', () => sh('git push origin plan/x')],
-  ['config', () => sh('git config core.hooksPath x')],
+  ['config (not the hooks path)', () => sh('git config user.name x')],
   ['Write outside the repo', () => wr(String.raw`D:\other\x`)],
   ['Write inside .git', () => wr(join(R, '.git', 'info', 'exclude'))],
   ['npm test', () => sh('npm test')],

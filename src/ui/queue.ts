@@ -2,8 +2,7 @@ import type { QueueItem } from '../shared/protocol';
 import { api } from './api';
 import { reconcile } from './dom';
 import { bindText, k, setPlaceholder } from './i18n-client';
-
-interface Entry { el: HTMLElement }
+import { createConfirmEntry, createDecisionEntry, type Entry } from './console-items';
 
 /** Buttons that must not take the keyboard from where it is (answering from the queue never moves the focus). */
 function keepFocus(button: HTMLElement): void {
@@ -11,6 +10,8 @@ function keepFocus(button: HTMLElement): void {
 }
 
 function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
+  if (item.kind === 'confirm') return createConfirmEntry(item, send);
+  if (item.kind === 'decision') return createDecisionEntry(item, send);
   const el = document.createElement('div');
   el.className = 'queue-item';
   el.dataset.id = item.id;

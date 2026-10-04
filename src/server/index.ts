@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -14,11 +14,17 @@ import { createToken, SessionTokens } from './security';
 import { AgentRegistry } from './agents/registry';
 import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
-import { QuestionQueue } from './questions/queue';
+import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
 import { ReadingStore } from './reading/store';
 import { failQueuedStart, launchAgent, spawnAgent } from './agents/spawn';
 import { TicketStore } from './tickets/store';
 import { StepService } from './tickets/steps';
+import { ReviewService } from './tickets/review';
+import { MergeService } from './tickets/merge';
+import { ReleaseService } from './tickets/release';
+import { installReleaseHook } from './git/release-hook';
+import { commonDir, removeWorktree } from './git/worktree';
+import { createTranslator } from '../shared/i18n';
 import { LaunchWatch } from './agents/launch-watch';
 import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
@@ -87,9 +93,69 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const runtime = { bypass: config.agents.bypassPermissions, guardMode: config.guard.mode, git: { ...config.git, ...(o.worktrees !== undefined ? { worktrees: o.worktrees } : {}) } };
   // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[planName, config.guard.mode]]);
-  const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(planName, text); broadcast(); } });
-  const guardLog = new GuardLog(join(o.planRoot, '.console', 'state', 'guard.jsonl'));
   const tickets = new TicketStore(o.planRoot);
+  const bundles = loadBundles(o.i18nDir);
+  const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(planName, text); broadcast(); } });
+  const endTimers = new Set<ReturnType<typeof setTimeout>>(); // reviewers about to be ended; cancelled at shutdown
+  const reportLanguage = () => {
+    const lang = language !== 'auto' && bundles.has(language) ? language : 'en';
+    return { lang, t: createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') }) };
+  };
+  const review = new ReviewService({
+    tickets, root: o.planRoot, plan: planName,
+    worktreeOf: (slug) => registry.get(slug)?.git,
+    testCommand: () => store.plan.testCommand,
+    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
+    // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
+    language: reportLanguage,
+    spawnReviewer: async (r) => {
+      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'reviewer', goal: r.goal, model: r.model, source: 'main', review: { ticket: r.ticket, sha: r.sha } });
+      return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
+    },
+    existingSlugs: () => [planName, ...store.listAgents().map((a) => a.slug)],
+    authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && ptys.status(slug) === 'running',
+    notifyMain: (text) => { inbox.push(planName, text); },
+    notifyAuthor: (slug, text) => { inbox.push(slug, text); },
+    askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
+    // A reviewer's work is done once it has spoken: end it a moment later (its tool answer still has to reach it) and remove its checkout.
+    endReviewer: (slug) => {
+      const git = registry.get(slug)?.git;
+      const timer = setTimeout(() => {
+        endTimers.delete(timer);
+        void finishAgent(slug).then(() => (git ? removeWorktree(o.planRoot, git.worktree) : undefined)).then(async () => { rmSync(join(await commonDir(o.planRoot), 'console-hooks', slug), { recursive: true, force: true }); }).catch(() => undefined);
+      }, 3000);
+      timer.unref?.();
+      endTimers.add(timer);
+    },
+  });
+  const merge = new MergeService({
+    tickets, root: o.planRoot, plan: planName,
+    worktreeOf: (slug) => registry.get(slug)?.git,
+    testCommand: () => store.plan.testCommand,
+    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
+    squash: () => store.plan.squash !== false,
+    language: reportLanguage,
+    authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && registry.get(slug)?.state !== 'finished' && ptys.status(slug) === 'running',
+    notifyMain: (text) => { inbox.push(planName, text); },
+    notifyAuthor: (slug, text) => { inbox.push(slug, text); },
+    needsUser: (slug, reason) => { review.askUserAboutTicket(slug, reason); },
+    finishAgent: async (slug) => { await finishAgent(slug); registry.setGit(slug, undefined); },
+  });
+  const release = new ReleaseService({
+    tickets, root: o.planRoot, plan: planName,
+    testCommand: () => store.plan.testCommand,
+    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
+    language: reportLanguage,
+    notifyMain: (text) => { inbox.push(planName, text); },
+    askConfirm: (q, onAnswer) => questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'confirm', payload: q.payload }, onAnswer).id,
+    changed: () => broadcast(),
+  });
+  /** Ends a session on purpose (a merged ticket, a finished review): its state becomes "finished", not "interrupted". */
+  const finishAgent = async (slug: string): Promise<void> => {
+    registry.markFinished(slug);
+    await ptys.killTree(slug);
+  };
+  const guardLog = new GuardLog(join(o.planRoot, '.console', 'state', 'guard.jsonl'));
   const steps = new StepService({
     tickets, plan: planName,
     worktreeOf: (slug) => registry.get(slug)?.git,
@@ -124,11 +190,13 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   } catch { /* not a repository, or git is missing: the checks report the latter */ }
   // The console's own folder never shows up in the project's git status (kept in .git/info/exclude, not in its .gitignore).
   if (planIsRepo) await excludeConsoleFolder(o.planRoot).catch(() => { /* cosmetic: the first worktree tries again */ });
+  // Nobody pushes main from this checkout except the console, after the user approves a release (SPEC 9.1, 15.5).
+  if (planIsRepo) await installReleaseHook(o.planRoot).catch(() => 'skipped_existing');
 
   const ctx: Context = {
     getPort: () => port,
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
-    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch,
+    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review,
     afterWorktreeCreated: o.afterWorktreeCreated,
     get git() { return runtime.git; },
     get guardMode() { return runtime.guardMode; },
@@ -138,17 +206,19 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       const rt = registry.get(slug);
       const role = rt?.role ?? 'agent';
       // The judge is the caller's own worktree and role, taken from its session: nothing in the request body can change them.
-      const verdict = evaluate({ role, tool, input }, {
-        worktree: role === 'agent' && rt?.git ? rt.git.worktree : o.planRoot, repo: o.planRoot,
+      const verdict = evaluate({ role: role === 'main' ? 'main' : 'agent', tool, input }, {
+        readOnly: rt?.readOnly === true,
+        worktree: role !== 'main' && rt?.git ? rt.git.worktree : o.planRoot, repo: o.planRoot,
         branch: rt?.git?.branch ?? '', planBranch: `plan/${planName}`, secretPatterns: runtime.git.secretPatterns,
       });
       if (verdict.decision === 'allow') return verdict;
       const mode = sessionGuardMode.get(slug) ?? runtime.guardMode;
       const shadow = mode === 'shadow';
       const detail = [input.command, input.file_path, input.notebook_path, input.path].find((v): v is string => typeof v === 'string') ?? '';
-      guardLog.append({ slug, role, tool, rule: verdict.rule, reason: verdict.reason, mode, outcome: shadow ? 'shadow-allowed' : 'denied', detail });
+      guardLog.append({ slug, role: role === 'main' ? 'main' : 'agent', tool, rule: verdict.rule, reason: verdict.reason, mode, outcome: shadow ? 'shadow-allowed' : 'denied', detail });
       return shadow ? { decision: 'allow' } : verdict;
     },
+    afterTool: () => broadcast(),
     handleModEvent: (slug, e) => {
       // The turn ended: a question its tool call was waiting on (for example an aborted turn) has no asker any more.
       if (e.type === 'turn.complete') questions.dropFrom(slug);
@@ -192,6 +262,40 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
         steps.reportBlocked(slug, reason.trim().slice(0, 500));
         return { status: 'ok' };
       },
+      ticket_report: async (_slug, body) => {
+        const name = (body as { name?: unknown } | null)?.name;
+        if (typeof name !== 'string' || name === '') return { status: 'error', code: 'bad_request' };
+        const r = await review.ticketReport(name, { rerun: (body as { rerun?: unknown }).rerun === true });
+        return r.ok ? { status: 'ok', facts: r.facts, report: r.report, reportFile: r.reportFile } : { status: 'refused', code: r.code, ...(r.detail ? { detail: r.detail } : {}) };
+      },
+      request_review: async (_slug, body) => {
+        const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; model?: unknown };
+        if (typeof b.name !== 'string' || b.name === '') return { status: 'error', code: 'bad_request' };
+        const r = await review.requestReview(b.name, { model: typeof b.model === 'string' && b.model !== '' ? b.model : undefined });
+        if (!r.ok) return { status: 'refused', code: r.code, ...(r.detail ? { detail: r.detail } : {}) };
+        const { ok: _ok, status: result, ...rest } = r;
+        return { status: 'ok', result, ...rest };
+      },
+      send_back_ticket: async (_slug, body) => {
+        const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; note?: unknown };
+        if (typeof b.name !== 'string' || b.name === '' || typeof b.note !== 'string') return { status: 'error', code: 'bad_request' };
+        const r = await review.sendBack(b.name, b.note);
+        if (!r.ok) return { status: 'refused', code: r.code };
+        const { ok: _ok, status: result, ...rest } = r;
+        return { status: 'ok', result, ...rest };
+      },
+      review_verdict: async (slug, body) => {
+        const r = await review.reviewVerdict(slug, body);
+        if (!r.ok) return r.code === 'bad_request' ? { status: 'error', code: 'bad_request' } : { status: 'refused', code: r.code };
+        const { ok: _ok, ...rest } = r;
+        return { status: 'ok', ...rest };
+      },
+      propose_release: async () => release.proposeRelease(),
+      merge_ticket: async (_slug, body) => {
+        const name = (body as { name?: unknown } | null)?.name;
+        if (typeof name !== 'string' || name === '') return { status: 'error', code: 'bad_request' };
+        return merge.mergeTicket(name);
+      },
       spawn_agent: async (_slug, body) => {
         const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
         if (typeof b.name !== 'string' || typeof b.profile !== 'string' || typeof b.goal !== 'string' || b.goal.trim() === '') {
@@ -207,7 +311,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     claudeCommand: o.claudeCommand ?? config.claude.command,
     get bypass() { return runtime.bypass; },
     get language() { return language; },
-    bundles: loadBundles(o.i18nDir),
+    bundles,
     uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
     testMode: process.env.CONSOLE_TEST === '1',
     configPath,
@@ -253,6 +357,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     broadcast();
   });
   ptys.onExit((id) => {
+    // A reviewer that ends without a verdict (it crashed, or was closed) must not leave its ticket in review for ever.
+    if (registry.get(id)?.role === 'reviewer' && !registry.get(id)?.finishing && review.abandonReview(id)) broadcast();
     questions.dropFrom(id);
     registry.onProcessExit(id);
     tokens.revoke(id);
@@ -278,6 +384,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     lastLaunchArgs: (slug) => launchLog.get(slug),
     close: async () => {
       launchWatch.close();
+      for (const timer of endTimers) clearTimeout(timer);
+      endTimers.clear();
       scheduler.close(); // before killing: exiting processes would otherwise free slots and start queued agents
       await ptys.killAll();
       ws.closeAll();

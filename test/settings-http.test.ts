@@ -1,12 +1,12 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, configFileOf, mod, req, state, ui, until, type Running } from './helpers';
-import { makeRepo, type TestRepo } from './git-helpers';
+import { makeRepo, type TestRepo, removeDir } from './git-helpers';
 
 vi.setConfig({ testTimeout: 60_000 });
 
 const repos: TestRepo[] = [];
-afterEach(() => { while (repos.length) rmSync(repos.pop()!.base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
 
 const put = (s: Running, body: unknown) => ui(s, '/api/config', 'PUT', body);
@@ -136,4 +136,26 @@ it('PUT /api/plan refuses a bad command with a user-facing code, and needs the U
   expect((await ui(s, '/api/plan', 'PUT', {})).status).toBe(400);
   expect((await req(s, '/api/plan', { method: 'PUT', body: { testCommand: 'x' } })).status).toBe(401);
   expect((await mod(s, 'shop-api', '/api/plan', 'PUT', { testCommand: 'x' })).status).toBe(401);
+});
+
+it('PUT /api/plan sets and shows squash, alone or with the test command, and refuses anything else', async () => {
+  const s = await bootServer();
+  expect((await state(s)).plan.squash).toBeUndefined();
+  expect((await ui(s, '/api/plan', 'PUT', { squash: false })).body).toEqual({ squash: false });
+  expect((await state(s)).plan).toMatchObject({ name: 'shop-api', squash: false });
+  expect((await ui(s, '/api/plan', 'PUT', { squash: true, testCommand: 'npm test' })).body).toEqual({ testCommand: 'npm test', squash: true });
+  expect((await state(s)).plan).toMatchObject({ squash: true, testCommand: 'npm test' });
+  for (const squash of ['yes', 1, null, [true]]) {
+    const r = await ui(s, '/api/plan', 'PUT', { squash });
+    expect(r.status, String(squash)).toBe(422);
+    expect(r.body.code).toBe('plan.squashInvalid');
+  }
+  expect((await ui(s, '/api/plan', 'PUT', { somethingElse: 1 })).status).toBe(400);
+  expect((await state(s)).plan.squash).toBe(true); // refused calls changed nothing
+});
+it('a bad squash next to a good test command changes neither', async () => {
+  const s = await bootServer();
+  const r = await ui(s, '/api/plan', 'PUT', { testCommand: 'npm test', squash: 'no' });
+  expect(r.status).toBe(422);
+  expect((await state(s)).plan.testCommand).toBeUndefined();
 });

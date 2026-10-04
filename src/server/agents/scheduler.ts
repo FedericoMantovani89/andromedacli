@@ -6,6 +6,8 @@ export interface SpawnRequest {
   goal?: string;
   model?: string;
   source: 'main' | 'user';
+  /** A reviewer of a delivered ticket: its folder is a detached checkout of that commit, read-only (SPEC 15.3). */
+  review?: { ticket: string; sha: string };
 }
 
 /** `ready` is present when the start is asynchronous (it creates a worktree first): it rejects if the start fails. */

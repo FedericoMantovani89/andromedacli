@@ -1,0 +1,165 @@
+import type { QueueItem } from '../shared/protocol';
+import { bindText, k } from './i18n-client';
+import { renderMarkdown } from './markdown';
+
+/** Items the console itself puts in the queue (not an agent's question): a release to approve, a ticket that needs the user. */
+export interface Entry { el: HTMLElement }
+
+function keepFocus(button: HTMLElement): void {
+  button.addEventListener('mousedown', (ev) => ev.preventDefault());
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+
+function button(key: string, value: string, send: (answer: string) => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  bindText(b, key);
+  b.dataset.answer = value;
+  b.addEventListener('click', () => send(value));
+  keepFocus(b);
+  return b;
+}
+
+function details(summaryKey: string, params: Record<string, string | number>, ...body: HTMLElement[]): HTMLElement {
+  const d = document.createElement('details');
+  const s = document.createElement('summary');
+  bindText(s, summaryKey, params);
+  d.append(s, ...body);
+  return d;
+}
+
+function noteList(notes: unknown[]): HTMLElement {
+  const ul = document.createElement('ul');
+  ul.className = 'queue-notes';
+  for (const n of notes) {
+    if (!isObj(n)) continue;
+    const li = document.createElement('li');
+    li.textContent = `[${str(n.severity)}]${str(n.where) ? ` ${str(n.where)}` : ''} ${str(n.text)}`.trim(); // review notes are data
+    ul.append(li);
+  }
+  return ul;
+}
+
+/** "Release plan X to origin/main?": tickets with their reports and verdicts, the files, the tests; Approve or Reject. */
+export function createConfirmEntry(item: QueueItem, send: (answer: string) => void): Entry {
+  const p = isObj(item.payload) ? item.payload : {};
+  const tickets = arr(p.tickets).filter(isObj);
+  const files = arr(p.files).filter(isObj);
+  const el = document.createElement('div');
+  el.className = 'queue-item queue-confirm';
+  el.dataset.id = item.id;
+
+  const title = document.createElement('div');
+  title.className = 'queue-text';
+  bindText(title, 'queue.confirm.title', { plan: str(p.plan), branch: str(p.branch), count: tickets.length });
+  el.append(title);
+  const extra = num(p.extraCommits);
+  if (extra > 0) {
+    const line = document.createElement('div');
+    line.className = 'queue-extra';
+    bindText(line, 'queue.confirm.extra', { count: extra });
+    el.append(line);
+  }
+  if (p.truncated === true) {
+    const warn = document.createElement('div');
+    warn.className = 'queue-extra';
+    bindText(warn, 'queue.confirm.truncated');
+    el.append(warn);
+  }
+
+  const filesList = document.createElement('ul');
+  filesList.className = 'queue-files';
+  for (const f of files) {
+    const li = document.createElement('li');
+    const counts = f.added === null || f.removed === null ? '' : ` (+${num(f.added)} -${num(f.removed)})`;
+    li.textContent = `${str(f.path)}${counts}`; // a path is data
+    filesList.append(li);
+  }
+  el.append(details(k('queue.confirm.files'), { count: files.length }, filesList));
+
+  const tests = isObj(p.tests) ? p.tests : undefined;
+  const testLine = document.createElement('div');
+  testLine.className = 'queue-tests';
+  if (!tests) bindText(testLine, 'queue.confirm.tests.none');
+  else bindText(testLine, tests.ok === true ? k('queue.confirm.tests.ok') : k('queue.confirm.tests.failed'), { command: str(tests.command) });
+  el.append(testLine);
+
+  for (const t of tickets) {
+    const verdicts = arr(t.verdicts).filter(isObj);
+    const body: HTMLElement[] = [];
+    const goal = document.createElement('p');
+    goal.className = 'queue-goal';
+    goal.textContent = str(t.goal);
+    body.push(goal);
+    const rounds = document.createElement('div');
+    bindText(rounds, 'queue.confirm.rounds', { count: verdicts.length });
+    body.push(rounds);
+    for (const v of verdicts) {
+      if (arr(v.notes).length > 0) body.push(noteList(arr(v.notes)));
+    }
+    const report = document.createElement('div');
+    report.className = 'queue-report';
+    report.innerHTML = renderMarkdown(str(t.report)); // sanitised: the report holds text written by agents
+    body.push(details(k('queue.confirm.report'), {}, report));
+    el.append(details(k('queue.confirm.ticket'), { slug: str(t.slug) }, ...body));
+  }
+
+  const row = document.createElement('div');
+  row.className = 'queue-options';
+  const approve = button(k('queue.confirm.approve'), 'approve', send);
+  if (p.truncated === true) approve.disabled = true;
+  row.append(approve, button(k('queue.confirm.reject'), 'reject', send));
+  el.append(row);
+  return { el };
+}
+
+const REASON_KEYS: Record<string, string> = {
+  author_gone: k('queue.decision.reason.author_gone'),
+  rounds_exhausted: k('queue.decision.reason.rounds_exhausted'),
+  conflict_author_gone: k('queue.decision.reason.conflict_author_gone'),
+  merge_tests_failed_author_gone: k('queue.decision.reason.merge_tests_failed_author_gone'),
+};
+const OPTION_KEYS: Record<string, string> = {
+  send_back: k('queue.decision.send_back'),
+  approve: k('queue.decision.approve'),
+  leave: k('queue.decision.leave'),
+};
+
+/** "Ticket X needs your decision": why, the review notes, and the options the console offers. */
+export function createDecisionEntry(item: QueueItem, send: (answer: string) => void): Entry {
+  const p = isObj(item.payload) ? item.payload : {};
+  const el = document.createElement('div');
+  el.className = 'queue-item queue-decision';
+  el.dataset.id = item.id;
+
+  const title = document.createElement('div');
+  title.className = 'queue-text';
+  bindText(title, 'queue.decision.title', { ticket: str(p.ticket) });
+  const why = document.createElement('div');
+  why.className = 'queue-why';
+  bindText(why, REASON_KEYS[str(p.reason)] ?? k('queue.decision.reason.unknown'));
+  el.append(title, why);
+
+  const notes = arr(p.notes);
+  if (notes.length > 0) el.append(details(k('queue.decision.notes'), {}, noteList(notes)));
+  const tests = isObj(p.tests) ? p.tests : undefined;
+  if (tests && tests.ok === false) {
+    const pre = document.createElement('pre');
+    pre.className = 'queue-detail';
+    pre.textContent = str(tests.tail); // test output is data
+    el.append(details(k('queue.decision.tests'), {}, pre));
+  }
+
+  const row = document.createElement('div');
+  row.className = 'queue-options';
+  for (const option of item.options ?? []) {
+    const key = OPTION_KEYS[option];
+    if (key) row.append(button(key, option, send));
+  }
+  el.append(row);
+  return { el };
+}

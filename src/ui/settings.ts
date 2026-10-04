@@ -122,6 +122,25 @@ function createAgentSettings(state: StateMessage | undefined): HTMLElement {
   applies.className = 'settings-note';
   bindText(applies, 'settings.appliesToNew');
 
+  const squashRow = document.createElement('label');
+  squashRow.className = 'settings-switch';
+  const squash = document.createElement('input');
+  squash.type = 'checkbox';
+  squash.name = 'squash';
+  squash.checked = state?.plan.squash !== false; // one commit per merged ticket unless the plan says otherwise
+  const squashText = document.createElement('span');
+  bindText(squashText, 'settings.squash');
+  squashRow.append(squash, squashText);
+  const squashHelp = document.createElement('p');
+  squashHelp.className = 'settings-note';
+  bindText(squashHelp, 'settings.squash.help');
+  squash.addEventListener('change', () => {
+    const wanted = squash.checked;
+    void api<ApiError>('/api/plan', { method: 'PUT', body: { squash: wanted } }).then((res) => {
+      if (failed(res)) squash.checked = !wanted;
+    });
+  });
+
   const testForm = document.createElement('form');
   testForm.className = 'settings-test';
   const testLabel = document.createElement('label');
@@ -144,7 +163,7 @@ function createAgentSettings(state: StateMessage | undefined): HTMLElement {
   });
   testForm.append(testLabel, save, help);
 
-  box.append(bypassRow, warning, guardRow, applies, testForm, error);
+  box.append(bypassRow, warning, guardRow, applies, squashRow, squashHelp, testForm, error);
   return box;
 }
 

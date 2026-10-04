@@ -69,3 +69,46 @@ it('ignores a profile model that is not a plain model id (it would become a comm
   writeFileSync(join(user, 'bad-model.md'), '---\nname: bad-model\ndescription: d here\nmodel: x&calc\n---\nBODY');
   expect(loadProfile('bad-model', tmp(), user)!.model).toBeUndefined();
 });
+
+it('console.read_only is read from the frontmatter: the shipped reviewer and recovery are read-only, the others are not', () => {
+  expect(loadProfile('reviewer', tmp(), tmp())!.readOnly).toBe(true);
+  expect(loadProfile('recovery', tmp(), tmp())!.readOnly).toBe(true);
+  for (const name of ['backend', 'dba', 'frontend']) expect(loadProfile(name, tmp(), tmp())!.readOnly, name).toBe(false);
+});
+it('read_only needs an explicit true inside the console block, and the body never shows it', () => {
+  const user = tmp();
+  writeFileSync(join(user, 'ro-prof.md'), '---\nname: ro-prof\ndescription: d here\nconsole:\n  budget_tokens: 5\n  read_only: true\n---\nBODY');
+  writeFileSync(join(user, 'rw-prof.md'), '---\nname: rw-prof\ndescription: d here\nconsole:\n  read_only: false\n---\nBODY');
+  writeFileSync(join(user, 'top-prof.md'), '---\nname: top-prof\ndescription: d here\nread_only: true\n---\nBODY');
+  expect(loadProfile('ro-prof', tmp(), user)!.readOnly).toBe(true);
+  expect(loadProfile('ro-prof', tmp(), user)!.body).toBe('BODY');
+  expect(loadProfile('rw-prof', tmp(), user)!.readOnly).toBe(false);
+  expect(loadProfile('top-prof', tmp(), user)!.readOnly).toBe(false); // only the console: block counts
+});
+
+it('the main prompt teaches the review and merge flow with full tool names, and never to push', () => {
+  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'Italian', outDir: tmp() }), 'utf8');
+  for (const t of ['ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release']) expect(text, t).toContain(`mcp__console-mod__${t}`);
+  expect(text).toMatch(/PASSED/);
+  expect(text).toMatch(/never push/i);
+  expect(text).not.toContain('{plan}');
+});
+it('the reviewer profile says what the verdict is and that nothing may be changed', () => {
+  const p = loadProfile('reviewer', tmp(), tmp())!;
+  expect(p.body).toContain('review_verdict');
+  expect(p.body).toMatch(/read-only|do not edit|change nothing/i);
+  expect(p.body).toMatch(/high|medium/);
+});
+it('a re-opened ticket and a merge conflict are explained to the author, and the reviewer prompt replaces the author rules', () => {
+  const dir = tmp();
+  const profile = loadProfile('backend', tmp(), tmp())!;
+  const author = readFileSync(renderAgentPrompt({ profile, slug: 'fix-login', plan: 'shop-api', outDir: dir, git: { worktree: 'D:/w/x', branch: 'agent/shop-api/fix-login' } }), 'utf8');
+  expect(author).toMatch(/message from the main/i);
+  expect(author).toMatch(/conflict markers/i);
+  expect(author).toContain('step_done');
+  const reviewer = readFileSync(renderAgentPrompt({ profile: loadProfile('reviewer', tmp(), tmp())!, slug: 'review-fix-login', plan: 'shop-api', outDir: dir, git: { worktree: 'D:/w/r', branch: 'review/review-fix-login' }, review: true }), 'utf8');
+  expect(reviewer).toContain('review_verdict');
+  expect(reviewer).not.toContain('checklist_set');
+  expect(reviewer).not.toContain('step_done');
+  expect(reviewer).toContain('git diff plan/shop-api...HEAD');
+});

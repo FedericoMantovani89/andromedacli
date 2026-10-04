@@ -35,9 +35,15 @@ button:hover { border-color: var(--accent); }
 .panel-state.interrupted { color: var(--bad); }
 .panel-state.idle, .panel-state.starting, .panel-state.queued { color: var(--muted); }
 .panel-state.studying { color: var(--accent, var(--ok)); }
+.panel-state.finished { color: var(--muted); font-style: italic; }
 .panel-state.blocked { color: var(--bad); font-weight: 600; }
 .panel-stalled { margin-left: 6px; color: var(--warn); font-weight: 600; }
 .panel-stalled[hidden] { display: none; }
+.panel-ticket { margin-left: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); }
+.panel-ticket[hidden] { display: none; }
+.panel-ticket.in_review, .panel-ticket.in_progress { color: var(--accent, var(--ok)); }
+.panel-ticket.approved, .panel-ticket.merged, .panel-ticket.released { color: var(--ok); border-color: var(--ok); }
+.panel-ticket.conflict, .panel-ticket.needs_user, .panel-ticket.changes_requested { color: var(--warn); border-color: var(--warn); }
 .panel-progress { margin-left: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .panel-progress[hidden] { display: none; }
 .badge { display: none; background: var(--accent); color: #fff; border-radius: 3px; padding: 0 6px; font-size: 11px; }
@@ -90,6 +96,10 @@ button:hover { border-color: var(--accent); }
 #splash.fade { opacity: 0; }
 #splash[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { #splash { transition: none; } }
+.queue-confirm details, .queue-decision details { margin: 4px 0; }
+.queue-notes, .queue-files { margin: 4px 0 4px 18px; padding: 0; font-size: 12px; }
+.queue-report { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+.queue-tests, .queue-why, .queue-goal { margin: 4px 0; font-size: 12px; color: var(--muted); }
 .dialog h2 { margin: 0; font-size: 15px; }
 .settings-agents { display: grid; gap: 8px; }
 .settings-switch { display: flex; align-items: center; gap: 8px; }

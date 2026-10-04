@@ -1,0 +1,177 @@
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Translate } from '../../shared/i18n';
+import { git } from '../git/git';
+import { changedFiles, ensurePlanWorktree, mergeIntoPlan, resetTo, startMergeForAuthor, withPlanLock } from '../git/merge';
+import { commonDir, removeWorktree } from '../git/worktree';
+import { squashMessage } from './report';
+import type { TicketStore } from './store';
+import { runValidation } from './validate';
+
+export interface MergeDeps {
+  tickets: TicketStore;
+  /** The plan folder = the repository. */
+  root: string;
+  plan: string;
+  worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
+  testCommand(): string | undefined;
+  testTimeoutMs(): number;
+  /** Plan option: one commit per ticket (default) or the step commits behind a merge commit. */
+  squash(): boolean;
+  language(): { lang: string; t: Translate };
+  authorAlive(slug: string): boolean;
+  notifyMain(text: string): void;
+  /** Written as coming from the main (P8). */
+  notifyAuthor(slug: string, text: string): void;
+  /** The ticket cannot go on by itself: put the decision in the user's queue. */
+  needsUser(slug: string, reason: string): void;
+  /** Ends the session of a ticket that is finished (merged), so its folder can be removed. */
+  finishAgent(slug: string): Promise<void>;
+}
+
+export type MergeResult =
+  | { status: 'merged'; sha: string; cleanup?: 'incomplete' }
+  | { status: 'conflict'; files: string[] }
+  | { status: 'tests_failed'; tail: string }
+  | { status: 'refused'; code: 'not_approved' | 'no_worktree' | 'author_moved' | 'planbranch_checked_out' | 'git_failed'; detail?: string };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * `merge_ticket` (SPEC 15.4): one ticket at a time into the plan branch. What is merged is exactly what was reviewed; a conflict or a
+ * red test run after the merge always leaves the plan branch where it was and sends the ticket back; nothing is ever forced.
+ */
+export class MergeService {
+  private chain: Promise<unknown> = Promise.resolve();
+
+  constructor(private readonly d: MergeDeps) {}
+
+  mergeTicket(slug: string): Promise<MergeResult> {
+    const locked = () => withPlanLock(this.d.root, () => this.merge(slug));
+    const run = this.chain.then(locked, locked);
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async merge(slug: string): Promise<MergeResult> {
+    const ticket = this.d.tickets.get(slug);
+    if (!ticket || ticket.status !== 'approved' || !ticket.deliveredSha) return { status: 'refused', code: 'not_approved' };
+    const author = this.d.worktreeOf(slug);
+    if (!author) return { status: 'refused', code: 'no_worktree' };
+    const tip = await git(this.d.root, ['rev-parse', `refs/heads/${author.branch}`]);
+    if (tip.code !== 0 || tip.stdout.trim() !== ticket.deliveredSha) {
+      return { status: 'refused', code: 'author_moved', detail: `reviewed ${ticket.deliveredSha.slice(0, 7)}, the branch is at ${tip.stdout.trim().slice(0, 7)}` };
+    }
+    const plan = await ensurePlanWorktree(this.d.root, this.d.plan);
+    if (!plan.ok) return { status: 'refused', code: plan.code, detail: plan.detail };
+    const before = (await git(plan.path, ['rev-parse', 'HEAD'])).stdout.trim();
+    // A crash after the merge commit and before the ticket update leaves the ticket `approved` with its commit already on the plan
+    // branch: adopt that commit instead of merging the same work twice.
+    const adopted = await this.alreadyMerged(plan.path, slug);
+    if (adopted) {
+      // The tests of the merge may never have run (that is what a crash there looks like): run them before accepting it.
+      const adoptedCommand = this.d.testCommand()?.trim();
+      if (adoptedCommand) {
+        const run = await runValidation({ cwd: plan.path, command: adoptedCommand, timeoutMs: this.d.testTimeoutMs() });
+        if (!run.ok) {
+          if ((await git(plan.path, ['rev-parse', 'HEAD'])).stdout.trim() === adopted) await resetTo(plan.path, `${adopted}^`);
+          return this.testsFailed(slug, run.tail);
+        }
+      }
+      return this.completeMerge(slug, author, adopted);
+    }
+
+    const files = (await changedFiles(this.d.root, `plan/${this.d.plan}`, ticket.deliveredSha)) ?? [];
+    const { lang, t } = this.d.language();
+    const message = squashMessage({
+      slug, plan: this.d.plan, branch: author.branch, goal: ticket.goal, steps: ticket.steps, files, tests: ticket.tests,
+      verdicts: ticket.verdicts, lang, t,
+    });
+    const merged = await mergeIntoPlan({ wt: plan.path, sha: ticket.deliveredSha, message, squash: this.d.squash() });
+    if (!merged.ok) {
+      if (merged.kind === 'conflict') return await this.conflict(slug, merged.files, author.worktree);
+      return { status: 'refused', code: 'git_failed', detail: merged.detail };
+    }
+
+    const command = this.d.testCommand()?.trim();
+    if (command) {
+      const run = await runValidation({ cwd: plan.path, command, timeoutMs: this.d.testTimeoutMs() });
+      if (!run.ok) {
+        await resetTo(plan.path, before); // the merge turned the tests red: it never happened
+        return this.testsFailed(slug, run.tail);
+      }
+    }
+    return this.completeMerge(slug, author, merged.sha);
+  }
+
+  private async completeMerge(slug: string, author: { worktree: string; branch: string }, sha: string): Promise<MergeResult> {
+    this.d.tickets.move(slug, 'merged', { mergedSha: sha });
+    const cleanup = await this.cleanUp(slug, author);
+    this.d.notifyMain(`Ticket "${slug}" was merged into plan/${this.d.plan} (${sha.slice(0, 7)}).${cleanup ? ' Its session or folder could not be cleaned up completely; the work is safe on the plan branch.' : ''} Next: merge the other approved tickets, then propose_release.`);
+    return { status: 'merged', sha, ...(cleanup ? { cleanup: 'incomplete' as const } : {}) };
+  }
+
+  /** The console's own commit for this ticket (its `Ticket:` and `Agent:` trailers) if it is already on the plan branch. */
+  private async alreadyMerged(planWorktree: string, slug: string): Promise<string | undefined> {
+    const r = await git(planWorktree, ['log', '-1', '--format=%H', '-E', `--grep=^Ticket: ${slug}$`, `--grep=^Agent: ${slug}$`, '--all-match']);
+    const sha = r.stdout.trim();
+    return r.code === 0 && /^[0-9a-f]{40}$/.test(sha) ? sha : undefined;
+  }
+
+  private async conflict(slug: string, files: string[], authorWorktree: string): Promise<MergeResult> {
+    this.d.tickets.move(slug, 'conflict');
+    if (!this.d.authorAlive(slug)) {
+      this.d.tickets.move(slug, 'needs_user');
+      this.d.needsUser(slug, 'conflict_author_gone');
+      this.d.notifyMain(`Ticket "${slug}" conflicts with the plan branch in ${files.join(', ')} and its author is gone: a decision is in the user's queue.`);
+      return { status: 'conflict', files };
+    }
+    // The console puts the author's folder in the conflict state; the author edits the files and closes its steps.
+    await startMergeForAuthor(authorWorktree, `plan/${this.d.plan}`);
+    const reopened = this.d.tickets.reopen(slug, { firstStep: 'Resolve merge conflicts' });
+    this.d.notifyAuthor(slug, [
+      `Message from the main about your ticket "${slug}": it is approved, but it conflicts with work already merged into the plan branch, in:`,
+      ...files.map((f) => `- ${f}`),
+      'The console has started the merge in your folder: the conflict markers (<<<<<<<, =======, >>>>>>>) are in those files. Edit them so that both sides\' intent is kept, then close the steps in order with step_done.',
+      `Your checklist has three new steps ("Resolve merge conflicts (round ${reopened.round})", "Validation (round ${reopened.round})", "Update documentation (round ${reopened.round})"). The console will deliver the branch again and it will be reviewed again.`,
+    ].join('\n'));
+    this.d.notifyMain(`Ticket "${slug}" conflicts with the plan branch in ${files.join(', ')}: sent back to its author to resolve (rework ${reopened.round}). The plan branch is unchanged.`);
+    return { status: 'conflict', files };
+  }
+
+  private testsFailed(slug: string, tail: string): MergeResult {
+    this.d.tickets.move(slug, 'changes_requested');
+    if (!this.d.authorAlive(slug)) {
+      this.d.tickets.move(slug, 'needs_user');
+      this.d.needsUser(slug, 'merge_tests_failed_author_gone');
+      this.d.notifyMain(`Merging ticket "${slug}" turned the tests red and its author is gone: undone, and a decision is in the user's queue.`);
+      return { status: 'tests_failed', tail };
+    }
+    const reopened = this.d.tickets.reopen(slug);
+    this.d.notifyAuthor(slug, [
+      `Message from the main about your ticket "${slug}": it is approved, but when the console merged it into the plan branch the tests failed, so the merge was undone. Output of the test command:`,
+      tail.trim().slice(-1500),
+      `Your checklist has three new steps ("Review fixes (round ${reopened.round})", "Validation (round ${reopened.round})", "Update documentation (round ${reopened.round})"). Fix the cause, close them in order with step_done, and the console will deliver the branch again.`,
+    ].join('\n'));
+    this.d.notifyMain(`Merging ticket "${slug}" turned the tests red: undone, plan branch unchanged, ticket sent back to its author (rework ${reopened.round}).`);
+    return { status: 'tests_failed', tail };
+  }
+
+  /** After the merge (SPEC 9.7): end the session, remove the worktree and the local branch; the remote branch stays. Returns true when something is left. */
+  private async cleanUp(slug: string, author: { worktree: string; branch: string }): Promise<boolean> {
+    let incomplete = false;
+    try { await this.d.finishAgent(slug); } catch { incomplete = true; }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await removeWorktree(this.d.root, author.worktree);
+        break;
+      } catch {
+        incomplete = attempt === 4 || incomplete; // the folder may still be held for a moment by the process that just ended
+        await sleep(300);
+      }
+    }
+    await git(this.d.root, ['branch', '-D', author.branch]);
+    try { rmSync(join(await commonDir(this.d.root), 'console-hooks', slug), { recursive: true, force: true }); } catch { incomplete = true; }
+    return incomplete;
+  }
+}

@@ -2,7 +2,7 @@ import type { Context } from '../http';
 import { buildClaudeLaunch } from '../pty/claude-launch';
 import { loadProfile, renderAgentPrompt, type Profile } from '../profiles';
 import { validateSlug } from '../../shared/slug';
-import { checkSpawnable, createAgentWorktree, discardAgentWorktree, GitError } from '../git/worktree';
+import { checkSpawnable, createAgentWorktree, createReviewWorktree, discardAgentWorktree, GitError, removeWorktree } from '../git/worktree';
 import { installPushHook } from '../git/hooks';
 import type { SpawnRequest } from './scheduler';
 
@@ -16,6 +16,7 @@ export const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
 
 /** The console's own tools an agent may call without a permission prompt. */
 export const AGENT_TOOLS = ['list_agents', 'checklist_set', 'step_done', 'report_blocked'].map((t) => `mcp__console-mod__${t}`);
+export const REVIEWER_TOOLS = ['list_agents', 'review_verdict'].map((t) => `mcp__console-mod__${t}`);
 
 const refuse = (httpStatus: number, code: string, params?: Record<string, string | number>): SpawnOutcome =>
   ({ ok: false, httpStatus, code, params });
@@ -34,13 +35,16 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
 
   const v = validateSlug(r.slug, [ctx.planName, ...ctx.store.listAgents().map((a) => a.slug)]);
   if (!v.ok) return refuse(422, v.code, v.params);
-  if (typeof r.profile !== 'string' || !loadProfile(r.profile, ctx.planRoot)) return refuse(422, 'profile.invalid');
+  const profile = typeof r.profile === 'string' ? loadProfile(r.profile, ctx.planRoot) : undefined;
+  if (!profile) return refuse(422, 'profile.invalid');
 
   const request: SpawnRequest = { ...r, slug: v.slug, model: r.model === '' ? undefined : r.model };
   if (request.model !== undefined && !MODEL_RE.test(request.model)) return refuse(422, 'model.invalid');
+  // A reviewer exists only for a delivered ticket: request_review starts it, with the checkout of that commit.
+  if (r.profile === 'reviewer' && !r.review) return refuse(422, 'review.useRequestReview');
   if (ctx.git.worktrees) {
     // Found now, before the name is reserved, so the user sees the real reason (SPEC 9.2); the worktree itself is made at start.
-    const problem = await checkSpawnable({ repo: ctx.planRoot, plan: ctx.planName, slug: v.slug });
+    const problem = await checkSpawnable({ repo: ctx.planRoot, plan: ctx.planName, slug: v.slug, review: Boolean(r.review) });
     if (problem) return refuse(422, problem);
   }
   try {
@@ -48,7 +52,8 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   } catch (e) {
     return refuse(500, 'agent.spawnFailed', { reason: e instanceof Error ? e.message : String(e) });
   }
-  ctx.registry.register({ slug: v.slug, role: 'agent', profile: r.profile, goal: r.goal, queued: true });
+  ctx.registry.register({ slug: v.slug, role: r.review ? 'reviewer' : 'agent', profile: r.profile, goal: r.goal, queued: true, readOnly: profile.readOnly });
+  if (r.goal && !r.review) ctx.tickets.setGoal(v.slug, r.goal); // the review and the report check the work against it
   try {
     const result = ctx.scheduler.request(request);
     ctx.broadcastState();
@@ -80,7 +85,10 @@ export function launchAgent(ctx: Context, r: SpawnRequest): void | Promise<void>
 async function startInWorktree(ctx: Context, r: SpawnRequest, profile: Profile, bypass: boolean): Promise<void> {
   let made: { path: string; branch: string } | undefined;
   try {
-    made = await createAgentWorktree({ repo: ctx.planRoot, plan: ctx.planName, slug: r.slug });
+    // A reviewer reads a detached checkout of the delivered commit; its nominal branch exists nowhere, so the push hook refuses everything.
+    made = r.review
+      ? { path: (await createReviewWorktree({ repo: ctx.planRoot, slug: r.slug, sha: r.review.sha })).path, branch: `review/${r.slug}` }
+      : await createAgentWorktree({ repo: ctx.planRoot, plan: ctx.planName, slug: r.slug });
     await installPushHook({ repo: ctx.planRoot, worktree: made.path, branch: made.branch, slug: r.slug });
     await ctx.afterWorktreeCreated?.(r.slug);
     ctx.registry.setGit(r.slug, { worktree: made.path, branch: made.branch });
@@ -88,18 +96,19 @@ async function startInWorktree(ctx: Context, r: SpawnRequest, profile: Profile, 
   } catch (e) {
     ctx.registry.setGit(r.slug, undefined);
     ctx.tokens.revoke(r.slug);
-    if (made) await discardAgentWorktree({ repo: ctx.planRoot, slug: r.slug, branch: made.branch, path: made.path });
+    if (made && r.review) await removeWorktree(ctx.planRoot, made.path);
+    else if (made) await discardAgentWorktree({ repo: ctx.planRoot, slug: r.slug, branch: made.branch, path: made.path });
     throw e;
   }
 }
 
 function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: string, git: { worktree: string; branch: string } | undefined, bypass: boolean): void {
   const launch = buildClaudeLaunch({
-    command: ctx.claudeCommand, role: 'agent', slug: r.slug, plan: ctx.planName,
+    command: ctx.claudeCommand, role: r.review ? 'reviewer' : 'agent', slug: r.slug, plan: ctx.planName,
     url: `http://127.0.0.1:${ctx.getPort()}`, token: ctx.tokens.issue(r.slug), bypass, baseEnv: process.env,
     pluginDir: ctx.modDir,
-    allowedTools: ctx.modDir ? AGENT_TOOLS : undefined,
-    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, plan: ctx.planName, outDir: ctx.promptsDir, git }),
+    allowedTools: ctx.modDir ? (r.review ? REVIEWER_TOOLS : AGENT_TOOLS) : undefined,
+    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, plan: ctx.planName, outDir: ctx.promptsDir, git, review: Boolean(r.review) }),
     model: r.model ?? profile.model,
   });
   ctx.ptys.spawn({ id: r.slug, ...launch, cwd, cols: 120, rows: 30 });
@@ -113,6 +122,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
 export function failQueuedStart(ctx: Context, r: SpawnRequest): void {
   ctx.tokens.revoke(r.slug);
   ctx.registry.onProcessExit(r.slug);
+  if (r.review) ctx.review.abandonReview(r.slug); // the ticket must not stay in review for ever
   ctx.broadcastState();
 }
 

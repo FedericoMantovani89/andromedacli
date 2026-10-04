@@ -57,7 +57,7 @@ export class StepService {
       const wt = this.d.worktreeOf(slug);
       if (!wt) return { status: 'refused', code: 'no_worktree', detail: 'this agent has no worktree' };
       const ticket = this.d.tickets.get(slug);
-      if (ticket?.status === 'delivered') return { status: 'refused', code: 'already_delivered', detail: 'the ticket was already delivered' };
+      if (ticket && ticket.status !== 'in_progress') return { status: 'refused', code: 'already_delivered', detail: 'the ticket was already delivered' };
       const v = validateChecklist(items, ticket?.steps);
       if (!v.ok) return { status: 'refused', code: v.code, detail: v.detail };
       this.d.tickets.setChecklist(slug, v.steps);
@@ -82,7 +82,7 @@ export class StepService {
     if (!wt) return refuse('no_worktree', { detail: 'this agent has no worktree' });
     const ticket = this.d.tickets.get(slug);
     if (!ticket || ticket.steps.length === 0) return refuse('no_checklist', { detail: 'call checklist_set first' });
-    if (ticket.status === 'delivered') return refuse('already_delivered', { detail: 'every step is closed and the branch was delivered' });
+    if (ticket.status !== 'in_progress') return refuse('already_delivered', { detail: 'every step is closed and the branch was delivered' });
     const next = ticket.steps.find((s) => !s.done);
     if (!next || next.n !== o.n) return refuse('out_of_order', { detail: next ? `the next open step is ${next.n}` : 'every step is closed' });
 
@@ -130,7 +130,7 @@ export class StepService {
       return { status: 'closed', n: o.n, total, sha: commit.sha };
     }
     const push = await pushBranch({ worktree: wt.worktree, branch: wt.branch });
-    this.d.tickets.setStatus(slug, 'delivered');
+    this.d.tickets.move(slug, 'delivered', { deliveredSha: commit.sha });
     const pushText = !push.ok ? `push failed (${push.detail})` : 'skipped' in push ? 'not pushed (no remote configured)' : 'pushed to origin';
     this.d.notifyMain(slug, `Ticket "${slug}" delivered: branch ${wt.branch}, ${total} commits, ${pushText}. Review is next.`);
     this.d.changed();

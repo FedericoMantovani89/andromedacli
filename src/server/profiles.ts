@@ -8,6 +8,8 @@ export interface Profile {
   model?: string;
   /** The text added to the system prompt (frontmatter removed; `console:` keys are the console's, not Claude's). */
   body: string;
+  /** `console: read_only: true`: the session may not change anything (a reviewer); enforced by the guard. */
+  readOnly: boolean;
   source: 'plan' | 'user' | 'shipped';
 }
 
@@ -15,24 +17,32 @@ const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const promptsDir = (): string => resolve(import.meta.dirname, '..', '..', 'prompts');
 
 /** Frontmatter subset: top-level `key: value` lines; nested blocks (like `console:`) are skipped. */
-function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
+function parseFrontmatter(text: string): { meta: Record<string, string>; consoleKeys: Record<string, string>; body: string } {
   const normalized = text.replace(/\r\n/g, '\n');
-  if (!normalized.startsWith('---\n')) return { meta: {}, body: normalized.trim() };
+  if (!normalized.startsWith('---\n')) return { meta: {}, consoleKeys: {}, body: normalized.trim() };
   const end = normalized.indexOf('\n---', 4);
-  if (end === -1) return { meta: {}, body: normalized.trim() };
+  if (end === -1) return { meta: {}, consoleKeys: {}, body: normalized.trim() };
   const meta: Record<string, string> = {};
+  const consoleKeys: Record<string, string> = {};
+  let block = '';
   for (const line of normalized.slice(4, end).split('\n')) {
     const m = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line); // indented lines do not match: they belong to a nested block
-    if (m && m[2] !== '') meta[m[1]!] = m[2]!.trim();
+    if (m) {
+      block = m[2] === '' ? m[1]! : '';
+      if (m[2] !== '') meta[m[1]!] = m[2]!.trim();
+      continue;
+    }
+    const nested = /^\s+([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    if (nested && block === 'console') consoleKeys[nested[1]!] = nested[2]!.trim();
   }
-  return { meta, body: normalized.slice(end + 4).replace(/^\n+/, '').trim() };
+  return { meta, consoleKeys, body: normalized.slice(end + 4).replace(/^\n+/, '').trim() };
 }
 
 function readProfile(file: string, name: string, source: Profile['source']): Profile | undefined {
   if (!existsSync(file)) return undefined;
-  const { meta, body } = parseFrontmatter(readFileSync(file, 'utf8'));
+  const { meta, consoleKeys, body } = parseFrontmatter(readFileSync(file, 'utf8'));
   const model = meta.model && meta.model !== 'default' && /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/.test(meta.model) ? meta.model : undefined;
-  return { name, description: meta.description ?? '', model, body, source };
+  return { name, description: meta.description ?? '', model, body, readOnly: consoleKeys.read_only === 'true', source };
 }
 
 /** SPEC 11.4: the plan's profiles override the user's, which override the shipped ones. */
@@ -66,9 +76,10 @@ export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir
 }
 
 /** An agent's system-prompt addition: its profile plus who it is and what the console offers it. */
-export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string } }): string {
+export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean }): string {
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
-  const gitRules = o.git ? fill(readFileSync(join(promptsDir(), 'agent-git.md'), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, plan: o.plan }) : '';
+  const rulesFile = o.review ? 'reviewer-git.md' : 'agent-git.md';
+  const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, plan: o.plan }) : '';
   const text = fill(template, { slug: o.slug, plan: o.plan, profile: o.profile.body, git: gitRules });
   return writePrompt(o.outDir, `agent-${o.slug}.md`, text.replace(/\n{3,}/g, '\n\n'));
 }

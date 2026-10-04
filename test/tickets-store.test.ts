@@ -70,10 +70,10 @@ describe('TicketStore', () => {
     expect(s.progress('a')?.blocked).toBe(false);
     expect(s.get('a')?.blockedReason).toBeUndefined();
   });
-  it('setStatus moves to delivered', () => {
+  it('move goes to delivered and keeps the delivered commit', () => {
     const s = new TicketStore(root);
     s.setChecklist('a', steps());
-    s.setStatus('a', 'delivered');
+    s.move('a', 'delivered', { deliveredSha: 'abc' });
     expect(s.progress('a')?.status).toBe('delivered');
   });
   it('a re-set replaces the steps but keeps status and blocked flag', () => {
@@ -93,5 +93,19 @@ describe('TicketStore', () => {
     mkdirSync(dir(), { recursive: true });
     writeFileSync(join(dir(), 'a.json'), '{not json');
     expect(new TicketStore(root).get('a')).toBeUndefined();
+  });
+});
+
+describe('TicketStore.list', () => {
+  it('lists every ticket, and ignores damaged files and strangers', () => {
+    const s = new TicketStore(root);
+    expect(s.list()).toEqual([]);
+    s.setChecklist('a', steps());
+    s.setChecklist('b', steps());
+    mkdirSync(dir(), { recursive: true });
+    writeFileSync(join(dir(), 'broken.json'), '{nope');
+    writeFileSync(join(dir(), 'notes.txt'), 'hello');
+    writeFileSync(join(dir(), 'Bad_Name.json'), '{}');
+    expect(s.list().map((t) => t.slug).sort()).toEqual(['a', 'b']);
   });
 });

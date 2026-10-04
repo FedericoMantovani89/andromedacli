@@ -316,3 +316,15 @@ describe('crash recovery (SPEC 24 Phase 3)', () => {
     expect(tickets.progress('a')?.done).toBe(3);
   });
 });
+
+describe('after delivery (Phase 4 statuses)', () => {
+  it('step_done and checklist_set are refused while the ticket is in review, approved or merged', async () => {
+    await svc.checklistSet('a', ITEMS);
+    await closeUpTo(6);
+    for (const to of ['in_review', 'approved', 'merged'] as const) {
+      tickets.move('a', to);
+      expect(refused(await done(6, { note: 'again and again' })), to).toBe('already_delivered');
+      expect(await svc.checklistSet('a', ITEMS), to).toMatchObject({ status: 'refused', code: 'already_delivered' });
+    }
+  });
+});

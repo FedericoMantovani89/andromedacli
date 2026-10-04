@@ -62,12 +62,32 @@ export const agentBranchFor = (plan: string, slug: string): string => `agent/${p
 export const worktreePathFor = (repo: string, slug: string): string => join(dirname(repo), `${basename(repo)}.worktrees`, slug);
 
 /** What would stop an agent from getting a worktree, found without creating anything. Undefined means it can be created. */
-export async function checkSpawnable(o: { repo: string; plan: string; slug: string }): Promise<'git.notRepo' | 'git.noCommits' | 'git.worktreeExists' | undefined> {
+export async function checkSpawnable(o: { repo: string; plan: string; slug: string; /** a reviewer: no branch of its own */ review?: boolean }): Promise<'git.notRepo' | 'git.noCommits' | 'git.worktreeExists' | undefined> {
   if ((await git(o.repo, ['rev-parse', '--git-dir'])).code !== 0) return 'git.notRepo';
   if ((await git(o.repo, ['rev-parse', '--verify', '--quiet', 'HEAD'])).code !== 0) return 'git.noCommits';
   if (existsSync(worktreePathFor(o.repo, o.slug))) return 'git.worktreeExists';
-  if ((await git(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${agentBranchFor(o.plan, o.slug)}`])).code === 0) return 'git.worktreeExists';
+  if (!o.review && (await git(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${agentBranchFor(o.plan, o.slug)}`])).code === 0) return 'git.worktreeExists';
   return undefined;
+}
+
+/**
+ * A checkout of one commit with no branch (`--detach`), in the same sibling folder as agent worktrees: where a reviewer reads the
+ * delivered work (SPEC 15.3). With no branch there is nothing to commit to.
+ */
+export function createReviewWorktree(o: { repo: string; slug: string; sha: string }): Promise<{ path: string }> {
+  return withRepoLock(o.repo, async () => {
+    if (!SLUG.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
+    if (!/^[0-9a-f]{7,40}$/.test(o.sha)) throw new GitError('git.badName', `invalid commit ${o.sha}`);
+    const path = worktreePathFor(o.repo, o.slug);
+    if (existsSync(path)) throw new GitError('git.worktreeExists', `folder ${path} already exists`);
+    mkdirSync(dirname(path), { recursive: true });
+    const added = await git(o.repo, ['worktree', 'add', '-q', '--detach', fwd(path), o.sha]);
+    if (added.code !== 0) {
+      await removeWorktree(o.repo, path);
+      throw new GitError('git.failed', added.stderr.trim());
+    }
+    return { path };
+  });
 }
 
 /** Undoes a worktree the console made for an agent that never got going: folder, branch and its hook folder. Safe to repeat. */

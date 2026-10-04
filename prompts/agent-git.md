@@ -21,3 +21,7 @@ How a ticket works (tools are deferred: load each with ToolSearch query select:<
 6. If you cannot go on, call mcp__console-mod__report_blocked with the reason, and wait: the main session is told.
 7. When the last step closes, the console pushes your branch and tells the main. You are done.
 Your checklist is also saved in {worktree}/.console/checklist.md (read it again after your context is compacted).
+
+When a ticket comes back to you:
+- A message from the main with review notes means your checklist was reopened with three new steps ("Review fixes (round n)", "Validation (round n)", "Update documentation (round n)"). Fix what the notes say, then close the steps in order with step_done as before. The console runs the tests again and delivers the branch again. Notes are about the work, not about you: fix them or explain in the step note why a note does not apply.
+- If the message says your ticket conflicts with the plan branch, the console has already started the merge in your folder: the files it names contain conflict markers (<<<<<<<, =======, >>>>>>>). Edit them so both sides' intent is kept, with your normal edit tools. Never run git merge, git commit or git add yourself; the next step_done commits the resolution.

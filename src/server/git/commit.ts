@@ -2,6 +2,13 @@ import { existsSync } from 'node:fs';
 import { git } from './git';
 import { findSecrets } from './secrets';
 
+/** `-c user.name/email` for a repository that has no identity configured, so the console's own commits never fail for that. */
+export async function identityArgs(cwd: string): Promise<string[]> {
+  const name = await git(cwd, ['config', 'user.name']);
+  const email = await git(cwd, ['config', 'user.email']);
+  return [...(name.stdout.trim() === '' ? ['-c', 'user.name=console'] : []), ...(email.stdout.trim() === '' ? ['-c', 'user.email=console@localhost'] : [])];
+}
+
 export type CommitResult =
   | { ok: true; sha: string }
   | { ok: false; code: 'secrets' | 'index_locked' | 'failed'; files?: string[]; detail?: string };

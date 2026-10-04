@@ -59,7 +59,7 @@ it('registers the tools of its role once and starts one inbox poller, even if se
   const f = fake$();
   await find('session.start')(f.$, {}, next);
   await find('session.start')(f.$, {}, next);
-  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user']);
+  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release']);
   expect(f.ticks).toHaveLength(1);
 });
 it('an agent gets list_agents and the ticket tools, never spawn_agent', async () => {
@@ -308,4 +308,43 @@ it('the main is guarded too (its few rules live on the console)', async () => {
   const f = fake$({ fetch: guardFetch({ decision: 'deny', reason: 'rm.wide' }) });
   await find('session.start')(f.$, {}, next);
   expect(await find('tool.call', 'Bash')(f.$, { command: 'rm -rf /' }, next)).toEqual({ deny: 'rm.wide' });
+});
+
+// ---- review and merge (Phase 4) ----
+it('a reviewer gets only list_agents and review_verdict', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'reviewer', CONSOLE_AGENT: 'review-fix-login' } });
+  await find('session.start')(f.$, {}, next);
+  expect(f.registeredTools).toEqual(['list_agents', 'review_verdict']);
+});
+it('the review tools send only their own fields', async () => {
+  const { find } = await loadMod();
+  const bodies: Record<string, unknown> = {};
+  const f = fake$({ fetch: (url, init) => { if (url.includes('/v1/tools/')) { bodies[url.split('/').pop()!] = JSON.parse(init.body ?? '{}'); return { ok: true, text: '{"status":"ok"}' }; } return { ok: true, text: '{}' }; } });
+  await find('session.start')(f.$, {}, next);
+  await find('tool.call', 'mcp__console-mod__ticket_report')(f.$, { name: 'fix-login', rerun: true, extra: 1 });
+  await find('tool.call', 'mcp__console-mod__request_review')(f.$, { name: 'fix-login', model: 'sonnet', extra: 1 });
+  await find('tool.call', 'mcp__console-mod__merge_ticket')(f.$, { name: 'fix-login', extra: 1 });
+  await find('tool.call', 'mcp__console-mod__propose_release')(f.$, {});
+  expect(bodies).toEqual({ ticket_report: { name: 'fix-login', rerun: true }, request_review: { name: 'fix-login', model: 'sonnet' }, merge_ticket: { name: 'fix-login' }, propose_release: {} });
+  const g = fake$({ env: { CONSOLE_ROLE: 'reviewer', CONSOLE_AGENT: 'review-x' }, fetch: (url, init) => { if (url.endsWith('/review_verdict')) bodies.verdict = JSON.parse(init.body ?? '{}'); return { ok: true, text: '{"status":"ok"}' }; } });
+  await find('session.start')(g.$, {}, next);
+  await find('tool.call', 'mcp__console-mod__review_verdict')(g.$, { pass: false, notes: [{ severity: 'high', text: 'bug' }], extra: 1 });
+  expect(bodies.verdict).toEqual({ pass: false, notes: [{ severity: 'high', text: 'bug' }] });
+});
+it('a reviewer\'s permission prompts and native questions go to the console queue like an agent\'s', async () => {
+  const { find } = await loadMod();
+  const asked: string[] = [];
+  const f = fake$({
+    env: { CONSOLE_ROLE: 'reviewer', CONSOLE_AGENT: 'review-x' },
+    fetch: (url, init) => {
+      if (url.endsWith('/v1/tools/ask_user')) { asked.push(JSON.parse(init.body ?? '{}').kind ?? 'question'); return { ok: true, text: '{"id":"q1"}' }; }
+      if (url.includes('/v1/questions/')) return { ok: true, text: '{"answered":true,"answer":"allow"}' };
+      return { ok: true, text: '{}' };
+    },
+  });
+  await find('session.start')(f.$, {}, next);
+  const verdict = await find('tool.check')(f.$, { tool: 'Bash', tool_use_id: 't1', input: { command: 'npm test' } }, async () => ({ decision: 'ask', reason: 'needs approval' }));
+  expect(verdict).toMatchObject({ decision: 'allow' });
+  expect(asked).toEqual(['permission']);
 });

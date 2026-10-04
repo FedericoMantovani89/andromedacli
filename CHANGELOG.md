@@ -7,7 +7,46 @@ introduces the behaviour.
 
 ## [Unreleased]
 
-Next: Phase 4 (review and merge); ask before starting.
+Next: Phase 5 (budget, blocks, limits); ask before starting.
+
+## Phase 4: review and merge (2026-10-05)
+
+### Added
+- Ticket pipeline (`tickets/flow.ts`): `in_progress` → `delivered` → `in_review` → `approved` → `merged` → `released`, with
+  `changes_requested`, `conflict` and `needs_user` on the side; an impossible change is refused with a code. The panel header
+  shows it as a chip (`In review`, `Approved`, `Merged`, `Rework 1/2`…), kept after the worktree is gone.
+- `report.md` per ticket (`.console/tickets/<name>/`), written by the console without a model: objective, checklist, files
+  (from git), tests (the console's own run), documentation, the agents' notes verbatim, the review. Headings follow the
+  interface language (`report.*` keys); the squash commit message is English.
+- Main tools: `ticket_report` (facts from git and from the tests the console reruns on exactly the delivered commit),
+  `send_back_ticket` (the main's own check), `request_review`, `merge_ticket`, `propose_release`.
+- Reviewer: a read-only agent (`CONSOLE_ROLE=reviewer`, profile `reviewer`) in a detached checkout of the delivered commit;
+  the guard refuses anything that writes (tools, redirects, `rm`, `git add`…). One `review_verdict {pass, notes}` per review.
+  A reviewer is started only by `request_review`; its session ends after the verdict.
+- Rounds: a failed review (or red tests on the delivered commit) goes back to the author as a message from the main, with
+  three new steps appended to its checklist; after two rework rounds the next failure puts a decision in the user's queue
+  (send back / approve as it is / leave).
+- Merge in series into the plan branch through a console-owned worktree (`<repo>.worktrees/.plan`): squash by default
+  (`plan.json` `squash:false` keeps the step commits behind a merge commit; Settings switch). A conflict is never forced: the
+  plan branch stays put and the console starts the merge in the author's folder so it only edits the files; red tests after the
+  merge undo it. After a merge the author session ends (`Finished`), its worktree and local branch go, the remote branch stays.
+- Release to `origin/main`: `propose_release` puts one confirmation in the queue (tickets, reports, files, verdicts, tests); only
+  after Approve does the console merge into the local `main` (the checkout must be on `main` and clean), rerun the tests and push
+  with a one-time token. A pre-push hook in the main repository refuses `main`/`master`/`develop`/`trunk`/`release/*` and tags
+  for everyone else (installed only where it cannot replace a project hook or `core.hooksPath`).
+- Queue items from the console (`confirm`, `decision`) with their data; new state `finished` for a session ended on purpose.
+- Every review, merge and release tool call pushes the new state to the browsers.
+
+### Changed
+- `step_done` and `checklist_set` are refused unless the ticket is `in_progress`.
+- A reviewer counts against the active-agent limit like any agent.
+
+### Fixed (found by the final review)
+- The main can no longer push `origin/main` around the release hook (`--no-verify`, wildcard refspecs, `send-pack`, `core.hooksPath`/alias changes, editing the hooks folder); the read-only guard for reviewers closes more write paths and has fewer false positives.
+- A crash during the post-merge tests no longer adopts the merge without tests; a merge and a release proposal no longer race on the `.plan` worktree; a deleted `.plan` folder no longer blocks merges.
+- A failed release keeps edits the user made meanwhile (`reset --keep`), merges the approved commit, and releases every merged ticket; large release payloads shrink the reports instead of being cut, and list commits already on local main.
+- Only failed reviews count toward the two rework rounds (conflicts and red merge tests do not); the panel chip reads "Rework N".
+- A queued reviewer that fails to start gives the ticket back; a plan or agent named `console` can no longer erase console queue items; goal and review notes cannot alter the report structure; reviewer hook folders are removed.
 
 ## Phase 3: git worktrees, checklists and guard (2026-10-04)
 

@@ -4,8 +4,9 @@ import { findSecrets } from '../git/secrets';
 import { baseName, hasComponent, isInside, realResolve } from './paths';
 import { headBranch, isTag } from './gitrefs';
 import { commandName, splitCommand, type Segment, type ShellKind } from './shell';
+import { READONLY_RULE, readOnlyViolation } from './readonly';
 
-export interface GuardContext { role?: 'main' | 'agent'; worktree: string; repo: string; branch: string; planBranch: string; secretPatterns: string[] }
+export interface GuardContext { role?: 'main' | 'agent'; /** A read-only profile (a reviewer): nothing may be changed. */ readOnly?: boolean; worktree: string; repo: string; branch: string; planBranch: string; secretPatterns: string[] }
 export interface GuardCall { role: 'main' | 'agent'; tool: string; input: Record<string, unknown> }
 export type GuardDecision = { decision: 'allow' } | { decision: 'deny'; reason: string; rule: string };
 
@@ -13,7 +14,7 @@ const ALLOW: GuardDecision = { decision: 'allow' };
 const deny = (rule: string, reason: string): GuardDecision => ({ decision: 'deny', rule, reason });
 
 /** Rules that also bind the main session (SPEC 14.2). Everything else is for agents only. */
-const MAIN_RULES = new Set(['git.force', 'git.delete-ref', 'git.tag', 'secret.file', 'rm.wide', 'net.download-exec', 'git.protected-ref']);
+const MAIN_RULES = new Set(['git.force', 'git.delete-ref', 'git.tag', 'secret.file', 'rm.wide', 'net.download-exec', 'git.protected-ref', 'git.no-verify', 'git.hooks-tamper']);
 
 const PROTECTED_REF = /^(main|master|develop|trunk|release\/.+)$/;
 const TEMPLATE_SUFFIX = /\.(example|sample|template|dist)$/i;
@@ -56,8 +57,9 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
   const { sub, args, globalConfig } = parseGit(argv);
   const flags = args.filter((a) => isFlag(a));
   const positional = args.filter((a) => !isFlag(a));
-  if (globalConfig.some((c) => /core\.hookspath/i.test(c)) || argv.some((t) => /core\.hookspath/i.test(t))) {
-    return deny('git.config-write', 'changing core.hooksPath would remove the console push hook');
+  // The pre-push hook is what stops a push of main: neither a hooks path nor an alias (that could hide --no-verify) may be set.
+  if (globalConfig.some((c) => /^(core\.hookspath|alias\.)/i.test(c)) || argv.some((t) => /core\.hookspath/i.test(t)) || (sub === 'config' && argv.some((t) => /^alias\./i.test(t)))) {
+    return deny(ctx.role === 'main' ? 'git.hooks-tamper' : 'git.config-write', 'changing core.hooksPath or an alias would get around the console push hook');
   }
   switch (sub) {
     case 'push': {
@@ -77,9 +79,13 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
       if ((refspecs.length === 0 || flags.includes('--all')) && current) target.push(current);
       const bad = target.find((r) => PROTECTED_REF.test(r));
       if (bad !== undefined) return deny('git.protected-ref', `pushing to ${bad} is not allowed`);
+      // A wildcard refspec can name main or a tag without saying so: it cannot be checked, so it is refused.
+      if (refspecs.some((r) => r.includes('*'))) return deny('git.protected-ref', 'a wildcard refspec could push a protected branch or a tag');
       if (flags.includes('--no-verify')) return deny('git.no-verify', 'skipping the push hook is not allowed');
       return deny('git.commit-push', 'the console pushes the branch at the end of the ticket');
     }
+    case 'send-pack': case 'http-push':
+      return deny('git.protected-ref', `git ${sub} would push around the console push hook`);
     case 'commit':
       if (flags.includes('--no-verify') || hasShort(args.filter((a) => !a.startsWith('--')), 'n')) return deny('git.no-verify', 'skipping hooks is not allowed');
       return deny('git.commit-push', 'the console commits after each step: call step_done');
@@ -181,6 +187,24 @@ const isSecret = (path: string, patterns: string[]): boolean => {
   return findSecrets([path.replace(/^["']|["']$/g, '')], patterns).length > 0;
 };
 
+/** `.git/hooks/...` and the console's own `console-hooks` folder (the release token lives there). */
+function isHooksPath(p: string): boolean {
+  const parts = p.split(/[\\/]+/).map((c) => c.toLowerCase());
+  return parts.includes('console-hooks') || parts.some((c, i) => c === '.git' && parts[i + 1] === 'hooks');
+}
+
+function hooksTarget(argv: string[]): string | undefined {
+  const name = commandName(argv[0] ?? '');
+  const rest = argv.slice(1);
+  const candidates: string[] = [];
+  rest.forEach((t, i) => {
+    if (/^\d*>>?$/.test(t) && rest[i + 1] !== undefined) candidates.push(rest[i + 1]!);
+    else if (/^\d*>>?[^&>]/.test(t)) candidates.push(t.replace(/^\d*>>?/, ''));
+  });
+  if (WRITERS.has(name)) candidates.push(...rest.filter((t) => !isFlag(t)));
+  return candidates.find(isHooksPath);
+}
+
 function dotGitTarget(argv: string[]): string | undefined {
   const name = commandName(argv[0] ?? '');
   const rest = argv.slice(1);
@@ -241,8 +265,16 @@ function evaluateShell(call: GuardCall, ctx: GuardContext): GuardDecision {
       const d = rmRule(name, s.argv, ctx, cwd, s.pipeFromPrev);
       if (d.decision === 'deny') return d;
     }
+    if (ctx.readOnly && ctx.role !== 'main') {
+      const why = readOnlyViolation(s);
+      if (why) return deny(READONLY_RULE, `this session is read-only: ${why}`);
+    }
     const secret = secretTargets(s.argv).find((t) => isSecret(t, ctx.secretPatterns));
     if (secret !== undefined) return deny('secret.file', `${baseName(secret)} looks like a secret and must not be touched`);
+    if (ctx.role === 'main') {
+      const hook = hooksTarget(s.argv);
+      if (hook !== undefined) return deny('git.hooks-tamper', `${hook} holds the console push hook`);
+    }
     const dot = dotGitTarget(s.argv);
     if (dot !== undefined) return deny('path.git-internals', `${dot} is inside git's own files`);
   }
@@ -250,10 +282,14 @@ function evaluateShell(call: GuardCall, ctx: GuardContext): GuardDecision {
 }
 
 function evaluateFileTool(call: GuardCall, ctx: GuardContext): GuardDecision {
+  if (ctx.readOnly && ctx.role !== 'main' && (call.tool === 'Write' || call.tool === 'Edit' || call.tool === 'NotebookEdit')) {
+    return deny(READONLY_RULE, 'this session is read-only: it may not write files');
+  }
   const raw = call.input.file_path ?? call.input.notebook_path ?? (call.tool === 'Grep' || call.tool === 'Glob' ? call.input.path : undefined);
   if (typeof raw !== 'string' || raw === '') return ALLOW;
   if (isSecret(raw, ctx.secretPatterns)) return deny('secret.file', `${baseName(raw)} looks like a secret and must not be touched`);
   if (call.tool === 'Read' || call.tool === 'Grep' || call.tool === 'Glob') return ALLOW;
+  if (ctx.role === 'main' && isHooksPath(raw)) return deny('git.hooks-tamper', `${raw} holds the console push hook`);
   if (hasComponent(raw, '.git')) return deny('path.git-internals', `${raw} is inside git's own files`);
   if (!isInside(ctx.worktree, raw, ctx.worktree)) return deny('path.outside-worktree', `${raw} is outside the agent's worktree`);
   const real = realResolve(raw, ctx.worktree);

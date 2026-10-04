@@ -2,7 +2,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, modEvent, mod, req, state, ui, type Running } from './helpers';
-import { branchesOf, gitSync, makeRepo, type TestRepo } from './git-helpers';
+import { branchesOf, gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { worktreePathFor } from '../src/server/git/worktree';
 import { AGENT_TOOLS } from '../src/server/agents/spawn';
 
@@ -10,7 +10,7 @@ import { AGENT_TOOLS } from '../src/server/agents/spawn';
 vi.setConfig({ testTimeout: 60_000 });
 
 const repos: TestRepo[] = [];
-afterEach(() => { while (repos.length) rmSync(repos.pop()!.base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
 
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];

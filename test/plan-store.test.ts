@@ -45,3 +45,15 @@ it('rejects a test command that is too long or not a string', () => {
   expect(() => s.setTestCommand(5 as unknown as string)).toThrow('plan.testCommandInvalid');
   expect(() => s.setTestCommand('a\nb')).toThrow('plan.testCommandInvalid');
 });
+
+it('squash is on unless the plan says false, and the choice is kept next to the other options', () => {
+  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
+  expect(s.plan.squash).toBeUndefined();
+  s.setSquash(false);
+  expect(new PlanStore(root).plan.squash).toBe(false);
+  s.setTestCommand('npm test');
+  expect(new PlanStore(root).plan).toMatchObject({ name: 'shop-api', squash: false, testCommand: 'npm test' });
+  s.setSquash(true);
+  expect(new PlanStore(root).plan.squash).toBe(true);
+  expect(() => s.setSquash('yes' as unknown as boolean)).toThrow('plan.squashInvalid');
+});
