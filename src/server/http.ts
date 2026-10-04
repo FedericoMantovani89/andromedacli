@@ -17,6 +17,7 @@ import type { ReadingStore } from './reading/store';
 import type { TicketStore } from './tickets/store';
 import type { StepService } from './tickets/steps';
 import type { LaunchWatch } from './agents/launch-watch';
+import { renderIndex } from './version';
 import type { Config } from './config';
 
 export interface Context extends V1Context {
@@ -42,6 +43,8 @@ export interface Context extends V1Context {
   testMode: boolean;
   configPath: string;
   planIsRepo: boolean;
+  /** Build version (latest tag on main), shown on the splash and in the tab title. */
+  version: string;
   tickets: TicketStore;
   steps: StepService;
   launchWatch: LaunchWatch;
@@ -116,7 +119,7 @@ export function createRequestHandler(ctx: Context) {
       const file = join(ctx.uiDist, asset.file);
       if (!existsSync(file)) return fail(res, 404, 'not_found');
       res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' });
-      res.end(readFileSync(file));
+      res.end(path === '/' ? renderIndex(readFileSync(file, 'utf8'), ctx.version) : readFileSync(file));
       return;
     }
 

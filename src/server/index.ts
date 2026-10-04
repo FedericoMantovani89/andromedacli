@@ -20,6 +20,7 @@ import { failQueuedStart, launchAgent, spawnAgent } from './agents/spawn';
 import { TicketStore } from './tickets/store';
 import { StepService } from './tickets/steps';
 import { LaunchWatch } from './agents/launch-watch';
+import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
 import { excludeConsoleFolder } from './git/worktree';
 import { GuardLog } from './guard/log';
@@ -39,6 +40,8 @@ export interface StartOptions {
   modDir?: string | null;
   /** Injectable command runner for the prerequisite checks (tests). */
   prereqRunner?: Runner;
+  /** Build version override (tests); default: the latest tag on main of the console's own repository. */
+  version?: string;
   /** How long after a launch the console checks that the agent started and took its goal (default 90 s; tests use less). */
   launchCheckMs?: number;
   /** Overrides `git.worktrees` from the configuration (embedding and tests: agents share the plan folder when false). */
@@ -124,6 +127,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   const ctx: Context = {
     getPort: () => port,
+    version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch,
     afterWorktreeCreated: o.afterWorktreeCreated,
     get git() { return runtime.git; },

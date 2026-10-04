@@ -70,6 +70,7 @@ const open = async (url: string): Promise<Page> => {
 const panel = (slug: string) => `.panel[data-slug="${slug}"]`;
 
 try {
+  // (the splash and the version are checked in section 1, while the splash is still up)
   // 1. Spawn creates the branch and worktree; the agent runs inside it and shows Studying
   {
     const { s, t, event, spawn, snapshot } = await boot();
@@ -78,7 +79,8 @@ try {
     const started = await spawn('fix-login-timeout');
     check('the start-up splash is shown with the picture and does not take clicks', (await page.evaluate(() => { const el = document.getElementById('splash'); const img = el?.querySelector('img'); return Boolean(el && img && img.complete && img.naturalWidth > 0 && getComputedStyle(el).pointerEvents === 'none'); })) === true);
     check('the splash fades away by itself', await until(async () => await page.locator('#splash').isHidden(), 6000));
-    check('the page title is the commercial name', (await page.title()) === 'AndromedaCli', await page.title());
+    check('the tab title is the commercial name and the build version', /^AndromedaCli v\d+\.\d+\.\d+/.test(await page.title()), await page.title());
+    check('the splash shows the same version over the picture', (await page.locator('#splash-version').textContent())?.trim() === (await page.title()).replace('AndromedaCli ', ''), String(await page.locator('#splash-version').textContent()));
     check('spawn in a repository starts the agent', started.json.status === 'started', JSON.stringify(started.json));
     const wt = worktreeOf(t, 'fix-login-timeout');
     const branches = gitSync(t.repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');

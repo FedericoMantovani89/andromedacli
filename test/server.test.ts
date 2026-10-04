@@ -338,3 +338,11 @@ it('serves the splash image without a token, as a real JPEG', async () => {
   expect(bytes.length).toBeGreaterThan(10_000);
   expect([bytes[0], bytes[1]]).toEqual([0xff, 0xd8]);
 });
+
+it('serves the page with the build version in the tab title and over the splash', async () => {
+  const s = await boot();
+  const html = await (await fetch(`http://127.0.0.1:${s.port}/`)).text();
+  expect(html).toMatch(/<title>AndromedaCli v\d+\.\d+\.\d+[^<]*<\/title>/);
+  expect(html).toMatch(/<span id="splash-version">v\d+\.\d+\.\d+[^<]*<\/span>/);
+  expect(html).not.toContain('%VERSION%');
+});

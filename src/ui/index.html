@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AndromedaCli</title>
+  <title>AndromedaCli %VERSION%</title>
   <link rel="stylesheet" href="/xterm.css">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -24,8 +24,8 @@
   <aside id="drawer" hidden></aside>
   <aside id="reader" hidden></aside>
   <div id="overlay" hidden></div>
-  <!-- Start-up splash (decorative: the name is in the picture). It never takes clicks or keys. -->
-  <div id="splash" aria-hidden="true"><img src="/splash.jpg" alt=""></div>
+  <!-- Start-up splash (decorative: the name is in the picture; %VERSION% is filled in by the server). It never takes clicks or keys. -->
+  <div id="splash" aria-hidden="true"><div class="splash-frame"><img src="/splash.jpg" alt=""><span id="splash-version">%VERSION%</span></div></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

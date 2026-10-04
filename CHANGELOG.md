@@ -32,6 +32,7 @@ Next: Phase 4 (review and merge); ask before starting.
   `PUT /api/config` takes them (and still the language), `PUT /api/plan` the test command. Bypass and guard mode apply to
   sessions launched afterwards; running sessions keep what they started with.
 - Launch check: 90 s after an agent is launched the console verifies it reported in and took its goal; if not, the main gets a "Launch check:" message (also for agents started from the UI) and the panel shows "Not started yet" until the agent works. Asked for by the architect.
+- Build version: the latest tag reachable from `main` of the console's own repository (without the `v`; `package.json` version, now 0.0.1, until a tag exists) is shown over the splash picture and in the tab title (`AndromedaCli v0.0.1`).
 - Start-up splash (the AndromedaCli picture, `src/ui/splash.jpg`): shown about 2 s, then faded out; it never takes clicks or keys. The page title is the commercial name, AndromedaCli (the repository and package keep the internal name multiconsole).
 - Panel headers show the checklist progress (`3/7`) and two new states, `Studying` (no checklist yet) and `Blocked`.
 
