@@ -1,0 +1,108 @@
+import { execFile } from 'node:child_process';
+import * as nodePty from 'node-pty';
+import { ByteRing } from './ring-buffer';
+
+export interface SpawnOptions {
+  id: string; file: string; args: string[]; cwd: string; env: Record<string, string>; cols: number; rows: number;
+}
+type Status = 'running' | 'exited' | 'unknown';
+interface Entry {
+  pty: nodePty.IPty; ring: ByteRing; subs: Set<(chunk: Buffer) => void>; exited: boolean; cols: number; rows: number;
+}
+
+const SCROLLBACK_BYTES = 4 * 1024 * 1024;
+
+/** Owns every terminal process. Browser tabs only subscribe; closing a tab never touches a process (SPEC 4.4). */
+export class PtyManager {
+  private readonly entries = new Map<string, Entry>();
+  private readonly exitCallbacks: ((id: string, code: number) => void)[] = [];
+
+  spawn(o: SpawnOptions): void {
+    if (this.entries.has(o.id)) throw new Error(`pty ${o.id} already exists`);
+    const pty = nodePty.spawn(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
+    const entry: Entry = { pty, ring: new ByteRing(SCROLLBACK_BYTES), subs: new Set(), exited: false, cols: o.cols, rows: o.rows };
+    this.entries.set(o.id, entry);
+    pty.onData((data) => {
+      const chunk = Buffer.from(data, 'utf8');
+      entry.ring.append(chunk);
+      for (const cb of entry.subs) cb(chunk);
+    });
+    pty.onExit(({ exitCode }) => {
+      entry.exited = true;
+      for (const cb of this.exitCallbacks) cb(o.id, exitCode);
+    });
+  }
+
+  write(id: string, data: Buffer | string): void {
+    const e = this.entries.get(id);
+    if (e && !e.exited) e.pty.write(typeof data === 'string' ? data : data.toString('utf8'));
+  }
+
+  resize(id: string, cols: number, rows: number): void {
+    const e = this.entries.get(id);
+    if (!e || e.exited || cols < 1 || rows < 1) return;
+    e.pty.resize(cols, rows);
+    e.cols = cols;
+    e.rows = rows;
+  }
+
+  /** Fire-and-forget stop; use killTree/killAll when the caller must wait for the processes to be gone. */
+  kill(id: string): void {
+    void this.killTree(id);
+  }
+
+  /**
+   * Stops a session and everything it started. On Windows, closing the pseudo console alone can block the whole
+   * Node process for a minute while a real CLI winds down (measured with Claude Code), so the tree is terminated
+   * first with taskkill.
+   */
+  async killTree(id: string): Promise<void> {
+    const e = this.entries.get(id);
+    if (!e || e.exited) return;
+    if (process.platform === 'win32') {
+      await new Promise<void>((done) => {
+        execFile('taskkill', ['/PID', String(e.pty.pid), '/T', '/F'], { windowsHide: true }, () => done());
+      });
+    }
+    try { e.pty.kill(); } catch { /* already gone */ }
+  }
+
+  snapshot(id: string): Buffer {
+    return this.entries.get(id)?.ring.snapshot() ?? Buffer.alloc(0);
+  }
+
+  subscribe(id: string, cb: (chunk: Buffer) => void): () => void {
+    const e = this.entries.get(id);
+    if (!e) return () => {};
+    e.subs.add(cb);
+    return () => { e.subs.delete(cb); };
+  }
+
+  onExit(cb: (id: string, code: number) => void): void {
+    this.exitCallbacks.push(cb);
+  }
+
+  status(id: string): Status {
+    const e = this.entries.get(id);
+    return !e ? 'unknown' : e.exited ? 'exited' : 'running';
+  }
+
+  size(id: string): { cols: number; rows: number } | undefined {
+    const e = this.entries.get(id);
+    return e ? { cols: e.cols, rows: e.rows } : undefined;
+  }
+
+  list(): string[] {
+    return [...this.entries.keys()];
+  }
+
+  /** Stops a session and forgets it entirely (used when creating it failed half-way). */
+  async discard(id: string): Promise<void> {
+    await this.killTree(id);
+    this.entries.delete(id);
+  }
+
+  async killAll(): Promise<void> {
+    await Promise.all([...this.entries.keys()].map((id) => this.killTree(id)));
+  }
+}

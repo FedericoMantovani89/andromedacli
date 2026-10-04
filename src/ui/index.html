@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>multiconsole</title>
+  <link rel="stylesheet" href="/xterm.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- No visible text here: every label is filled from the .properties bundles by main.ts (P12). -->
+  <header id="topbar">
+    <nav id="tabs"></nav>
+    <div id="actions">
+      <button id="queue-btn" type="button"></button>
+      <button id="settings-btn" type="button"></button>
+    </div>
+  </header>
+  <main id="workspace">
+    <section id="main-col"></section>
+    <section id="agents-col"></section>
+  </main>
+  <footer id="statusbar"></footer>
+  <div id="overlay" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+import type { StateMessage } from '../shared/protocol';
+import { api } from './api';
+import { bindText, k } from './i18n-client';
+import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
+
+type Step = 'language' | 'prerequisites' | 'plan';
+const STEPS: Step[] = ['language', 'prerequisites', 'plan'];
+const STEP_TITLES: Record<Step, string> = {
+  language: k('wizard.step.language'),
+  prerequisites: k('wizard.step.prerequisites'),
+  plan: k('wizard.step.plan'),
+};
+
+/**
+ * First-start wizard (SPEC 29.2, the Phase 1 steps). Every step can be skipped, and every way out saves a
+ * configuration file, so the wizard never loops. Nothing here blocks the console.
+ */
+export function openWizard(getState: () => StateMessage | undefined): void {
+  const overlay = document.getElementById('overlay')!;
+  let chosenLanguage = getState()?.language ?? 'auto';
+  let index = 0;
+
+  const finish = () => {
+    void api('/api/config', { method: 'PUT', body: { language: chosenLanguage } }).then(closeOverlay);
+  };
+
+  const render = () => {
+    const state = getState();
+    const step = STEPS[index]!;
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog';
+
+    const title = document.createElement('h2');
+    bindText(title, 'wizard.title');
+    const sub = document.createElement('h2');
+    bindText(sub, STEP_TITLES[step]);
+    const body = document.createElement('div');
+
+    if (step === 'language') {
+      body.append(createLanguageSelect(chosenLanguage, state?.languages ?? [], (v) => { chosenLanguage = v; }));
+    } else if (step === 'prerequisites') {
+      renderPrereqTable(body, state?.prereq ?? null);
+    } else {
+      const name = document.createElement('div');
+      const nameLabel = document.createElement('span');
+      bindText(nameLabel, 'wizard.plan.name');
+      const nameValue = document.createElement('strong');
+      nameValue.textContent = ` ${state?.plan.name ?? ''}`;
+      name.append(nameLabel, nameValue);
+      const folder = document.createElement('div');
+      const folderLabel = document.createElement('span');
+      bindText(folderLabel, 'wizard.plan.folder');
+      const folderValue = document.createElement('code');
+      folderValue.textContent = ` ${state?.planRoot ?? ''}`;
+      folder.append(folderLabel, folderValue);
+      body.append(name, folder);
+      if (state && !state.planIsRepo) {
+        const warn = document.createElement('div');
+        warn.className = 'form-error';
+        bindText(warn, 'wizard.plan.notRepo');
+        body.append(warn);
+      }
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'form-actions';
+    const last = index === STEPS.length - 1;
+    const next = document.createElement('button');
+    bindText(next, last ? k('wizard.finish') : k('common.next'));
+    next.addEventListener('click', () => { if (last) finish(); else { index += 1; render(); } });
+    const skip = document.createElement('button');
+    bindText(skip, 'common.skip');
+    skip.addEventListener('click', () => { if (last) finish(); else { index += 1; render(); } });
+    actions.append(next, skip);
+
+    dialog.append(title, sub, body, actions);
+    overlay.replaceChildren(dialog);
+    overlay.hidden = false;
+  };
+  render();
+}

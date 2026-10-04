@@ -1,0 +1,57 @@
+:root {
+  --bg: #0f1115; --panel: #161a21; --border: #2a303b; --muted: #8b93a1; --text: #e6e9ef;
+  --accent: #5b9dff; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+  font: 13px/1.4 system-ui, "Segoe UI", sans-serif; }
+body { display: grid; grid-template-rows: 38px 1fr 26px; }
+button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+
+#topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 10px;
+  background: var(--panel); border-bottom: 1px solid var(--border); }
+#tabs { display: flex; gap: 6px; }
+#tabs .tab { padding: 4px 12px; border-radius: 4px 4px 0 0; border: 1px solid var(--border); background: var(--bg); }
+#tabs .tab.current { border-color: var(--accent); }
+#tabs .tab[disabled] { opacity: .5; cursor: default; }
+#actions { display: flex; gap: 8px; }
+
+/* Main is always the left half; agents never resize it (SPEC 5.1). */
+#workspace { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; min-height: 0; }
+#main-col, #agents-col { display: flex; flex-direction: column; gap: 6px; min-height: 0; min-width: 0; }
+
+.panel { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--panel); opacity: .72; }
+.panel.active { border: 2px solid var(--accent); opacity: 1; }
+.panel-header { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-bottom: 1px solid var(--border);
+  font-size: 12px; }
+.panel-title { font-weight: 600; }
+.panel-meta { color: var(--muted); }
+.panel-state { margin-left: auto; color: var(--muted); }
+.panel-state.running { color: var(--ok); }
+.panel-state.exited { color: var(--bad); }
+.badge { display: none; background: var(--accent); color: #fff; border-radius: 3px; padding: 0 6px; font-size: 11px; }
+.panel.active .badge { display: inline-block; }
+.panel-term { flex: 1 1 0; min-height: 0; padding: 4px; }
+.bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--panel); cursor: pointer; }
+#new-agent-btn { flex: 0 0 auto; }
+.new-agent-form { display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--border); border-radius: 4px; }
+.new-agent-form label { display: grid; gap: 2px; color: var(--muted); }
+.new-agent-form input, .new-agent-form select { font: inherit; padding: 3px 6px; background: var(--bg);
+  color: var(--text); border: 1px solid var(--border); border-radius: 3px; }
+.form-actions { display: flex; gap: 6px; }
+.form-error { color: var(--bad); min-height: 1.4em; }
+
+#statusbar { display: flex; gap: 16px; align-items: center; padding: 0 10px; background: var(--panel);
+  border-top: 1px solid var(--border); color: var(--muted); }
+#overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; }
+#overlay[hidden] { display: none; }
+.dialog { min-width: 420px; max-width: 80vw; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; padding: 14px; display: grid; gap: 10px; }
+.dialog h2 { margin: 0; font-size: 15px; }
+.prereq-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; }
+.prereq-ok { color: var(--ok); } .prereq-outdated { color: var(--warn); }
+.prereq-missing, .prereq-error { color: var(--bad); }

@@ -1,0 +1,31 @@
+{
+  "name": "multiconsole",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "console": "tsx src/server/cli.ts",
+    "dev": "tsx watch src/server/cli.ts serve",
+    "build": "tsx scripts/build-ui.ts && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "tsx scripts/check-i18n.ts && tsx scripts/check-ui-literals.ts && tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

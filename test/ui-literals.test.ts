@@ -1,0 +1,14 @@
+import { it, expect } from 'vitest';
+import { findUiLiterals, findStrayFocus } from '../src/shared/i18n-checks';
+
+it('flags literal text assigned to visible properties', () => {
+  const src = "el.textContent = 'Hello world';\nbtn.title = \"Close\";\nel.setAttribute('aria-label', 'Close panel');";
+  expect(findUiLiterals(src, 'x.ts').map((f) => f.line)).toEqual([1, 2, 3]);
+});
+it('allows keys, class names, tags and console output', () => {
+  const src = "el.textContent = t('panel.main');\nel.className = 'panel active';\ndocument.createElement('div');\nconsole.log('state changed here');";
+  expect(findUiLiterals(src, 'x.ts')).toEqual([]);
+});
+it('flags a stray focus() call and ignores comments', () => {
+  expect(findStrayFocus('// term.focus()\nterm.focus();\nconst x = 1;')).toEqual([2]);
+});
