@@ -83,7 +83,7 @@ button:hover { border-color: var(--accent); }
 #overlay[hidden] { display: none; }
 .dialog { min-width: 420px; max-width: 80vw; background: var(--panel); border: 1px solid var(--border);
   border-radius: 6px; padding: 14px; display: grid; gap: 10px; }
-#splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #06141a; pointer-events: none; opacity: 1; transition: opacity .5s ease; }
+#splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #00111a; pointer-events: none; opacity: 1; transition: opacity .5s ease; }
 #splash img { max-width: 100%; max-height: 100%; object-fit: contain; }
 #splash.fade { opacity: 0; }
 #splash[hidden] { display: none; }
