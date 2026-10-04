@@ -35,6 +35,7 @@ async function boot(runner: Runner = goodRunner, seed: { configJson?: string; ag
     planName: seed.planName ?? 'shop-api',
     i18nDir: seed.i18nDir,
     claudeCommand: [process.execPath, fixture],
+    worktrees: false, // these tests use a plain temporary folder
   });
   running.push(s);
   return s;
@@ -326,4 +327,14 @@ it('keeps the plan name stored in plan.json even if the folder was renamed to so
   const st = (await request(s, '/api/state')).body;
   expect(st.plan.name).toBe('shop-api');
   expect(st.main.slug).toBe('shop-api');
+});
+
+it('serves the splash image without a token, as a real JPEG', async () => {
+  const s = await boot();
+  const r = await fetch(`http://127.0.0.1:${s.port}/splash.jpg`);
+  expect(r.status).toBe(200);
+  expect(r.headers.get('content-type')).toBe('image/jpeg');
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  expect(bytes.length).toBeGreaterThan(10_000);
+  expect([bytes[0], bytes[1]]).toEqual([0xff, 0xd8]);
 });

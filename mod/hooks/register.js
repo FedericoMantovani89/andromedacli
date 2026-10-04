@@ -56,7 +56,7 @@ function startInboxPoll($) {
 
 const TOOLS_BY_ROLE = {
   main: ['spawn_agent', 'list_agents', 'ask_user'],
-  agent: ['list_agents'],
+  agent: ['list_agents', 'checklist_set', 'step_done', 'report_blocked'],
 };
 
 const TOOL_SPECS = {
@@ -77,6 +77,32 @@ const TOOL_SPECS = {
   list_agents: {
     description: 'List the sessions of this plan: name, profile, state and goal. Use it to know who exists before asking.',
     inputSchema: { type: 'object', properties: {} },
+  },
+  checklist_set: {
+    description: 'Save the checklist of your ticket after studying the code. The console refuses one without the skeleton '
+      + '(study, tests first, steps, validation, documentation) and says why. Returns { status: "ok" | "refused", code?, detail? }.',
+    inputSchema: {
+      type: 'object',
+      properties: { items: { type: 'array', items: { type: 'string' }, description: 'Step titles in order, at least 5' } },
+      required: ['items'],
+    },
+  },
+  step_done: {
+    description: 'Close the next open step of your checklist. The console commits it (you never run git commit) and, at the validation step, '
+      + 'runs the tests itself. Returns { status: "closed" | "refused", code?, detail?, tail?, files? }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        n: { type: 'integer', description: 'Step number, in order' },
+        note: { type: 'string', description: 'What you found or did (required for step 1 and for a skipped step)' },
+        skip: { type: 'boolean', description: 'Skip the step; needs a note of at least 20 characters' },
+      },
+      required: ['n'],
+    },
+  },
+  report_blocked: {
+    description: 'Tell the main session you cannot go on, and why. The ticket shows as blocked until your next closed step.',
+    inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'What blocks you and what you need' } }, required: ['reason'] },
   },
   ask_user: {
     description: 'Put a question to the human in the console queue and wait for the answer. Use it for choices (product, preference, risk); verify facts yourself.',
@@ -148,6 +174,15 @@ async function askConsole($, question, options, multiSelect, extra) {
   }
 }
 
+/** What each console tool sends: only the fields the console knows, never the whole event. */
+function toolBody(name, e) {
+  if (name === 'spawn_agent') return { name: e.name, profile: e.profile, goal: e.goal, model: e.model };
+  if (name === 'checklist_set') return { items: e.items };
+  if (name === 'step_done') return { n: typeof e.n === 'string' ? Number(e.n) : e.n, note: e.note, skip: e.skip };
+  if (name === 'report_blocked') return { reason: e.reason };
+  return {};
+}
+
 async function onConsoleTool($, name, e) {
   try {
     if (!ctx) return { deny: 'This session is not connected to the console.' };
@@ -155,8 +190,7 @@ async function onConsoleTool($, name, e) {
       const a = await askConsole($, String(e.question), Array.isArray(e.options) ? e.options.map(String) : undefined, false);
       return { result: a.ok ? 'The user answered: ' + a.answer : 'No answer: ' + a.reason };
     }
-    const body = name === 'spawn_agent' ? { name: e.name, profile: e.profile, goal: e.goal, model: e.model } : {};
-    const r = await call($, 'POST', '/v1/tools/' + name, body);
+    const r = await call($, 'POST', '/v1/tools/' + name, toolBody(name, e));
     if (!r.json) return { result: 'The console did not answer.' };
     return { result: JSON.stringify(r.json) };
   } catch (err) {
@@ -212,6 +246,34 @@ async function onToolCheck($, e, next) {
   }
 }
 
+const RISKY_TOOLS = ['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
+
+/** Only the fields the console judges: a command or a path, never file contents. */
+function guardInput(tool, e) {
+  const key = tool === 'Bash' || tool === 'PowerShell' ? 'command' : tool === 'NotebookEdit' ? 'notebook_path' : tool === 'Grep' || tool === 'Glob' ? 'path' : 'file_path';
+  return typeof e[key] === 'string' ? { [key]: e[key] } : {};
+}
+
+const GUARD_UNREACHABLE = 'The console guard is not reachable, so this tool is refused for now. Try again in a moment.';
+
+/**
+ * Asks the console before a tool runs (SPEC 14). The rules live on the server; this only obeys the verdict. If the console cannot
+ * be reached (or answers something unexpected), the tools that change things are refused and the reading tools carry on.
+ */
+async function guardCall($, tool, e, next) {
+  const risky = RISKY_TOOLS.indexOf(tool) !== -1;
+  try {
+    if (!ctx) return next(e); // not a console session: nothing to guard
+    const r = await call($, 'POST', '/v1/guard', { tool, input: guardInput(tool, e) });
+    const verdict = r.ok && r.json ? r.json.decision : undefined;
+    if (verdict === 'deny') return { deny: String(r.json.reason || 'Refused by the console guard.') };
+    if (verdict === 'allow') return next(e);
+  } catch (err) {
+    /* handled like an unreachable console */
+  }
+  return risky ? { deny: GUARD_UNREACHABLE } : next(e);
+}
+
 export const register = (on) => {
   on('session.start', ($, e, next) => onSessionStart($, e, next));
   on('session.end', ($, e, next) => onSimpleEvent($, 'session.end', {}, e, next));
@@ -222,6 +284,17 @@ export const register = (on) => {
   on('tool.call', { tool: 'mcp__console-mod__spawn_agent' }, ($, e) => onConsoleTool($, 'spawn_agent', e));
   on('tool.call', { tool: 'mcp__console-mod__list_agents' }, ($, e) => onConsoleTool($, 'list_agents', e));
   on('tool.call', { tool: 'mcp__console-mod__ask_user' }, ($, e) => onConsoleTool($, 'ask_user', e));
+  on('tool.call', { tool: 'mcp__console-mod__checklist_set' }, ($, e) => onConsoleTool($, 'checklist_set', e));
+  on('tool.call', { tool: 'mcp__console-mod__step_done' }, ($, e) => onConsoleTool($, 'step_done', e));
+  on('tool.call', { tool: 'mcp__console-mod__report_blocked' }, ($, e) => onConsoleTool($, 'report_blocked', e));
+  on('tool.call', { tool: 'Bash' }, ($, e, next) => guardCall($, 'Bash', e, next));
+  on('tool.call', { tool: 'PowerShell' }, ($, e, next) => guardCall($, 'PowerShell', e, next));
+  on('tool.call', { tool: 'Write' }, ($, e, next) => guardCall($, 'Write', e, next));
+  on('tool.call', { tool: 'Edit' }, ($, e, next) => guardCall($, 'Edit', e, next));
+  on('tool.call', { tool: 'NotebookEdit' }, ($, e, next) => guardCall($, 'NotebookEdit', e, next));
+  on('tool.call', { tool: 'Read' }, ($, e, next) => guardCall($, 'Read', e, next));
+  on('tool.call', { tool: 'Grep' }, ($, e, next) => guardCall($, 'Grep', e, next));
+  on('tool.call', { tool: 'Glob' }, ($, e, next) => guardCall($, 'Glob', e, next));
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e, next) => onNativeQuestion($, e, next));
   on('tool.check', ($, e, next) => onToolCheck($, e, next));
 };

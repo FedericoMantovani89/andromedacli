@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
+import { DEFAULT_SECRET_PATTERNS } from './git/secrets';
 
 /** "auto" or a language code that has a bundle (checked against the bundles by the server). */
 export type Language = string;
@@ -11,6 +12,10 @@ export interface Config {
   agents: { bypassPermissions: boolean; maxActiveGlobal: number; maxActivePerPlan: number };
   claude: { command: string[] };
   mod: { enabled: boolean };
+  /** Worktrees and commits by the console (SPEC 9). `worktrees: false` keeps the Phase 2 behaviour: agents share the plan folder. */
+  git: { worktrees: boolean; secretPatterns: string[]; testTimeoutMinutes: number };
+  /** `shadow` allows everything but logs what `enforce` would have denied (SPEC 14). */
+  guard: { mode: 'enforce' | 'shadow' };
   telemetry: false;
 }
 export interface ConfigError { path: string; code: 'config.invalid' | 'config.unreadable' }
@@ -21,6 +26,8 @@ export const DEFAULT_CONFIG: Config = {
   agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerPlan: 3 },
   claude: { command: ['claude'] },
   mod: { enabled: true },
+  git: { worktrees: true, secretPatterns: DEFAULT_SECRET_PATTERNS, testTimeoutMinutes: 15 },
+  guard: { mode: 'enforce' },
   telemetry: false,
 };
 
@@ -73,6 +80,30 @@ export function loadConfig(path: string): { config: Config; errors: ConfigError[
     if (typeof enabled === 'boolean') config.mod.enabled = enabled;
     else bad('mod.enabled');
   }
+  if ('git' in raw) {
+    if (isObj(raw.git)) {
+      const g = raw.git;
+      if ('worktrees' in g) {
+        if (typeof g.worktrees === 'boolean') config.git.worktrees = g.worktrees;
+        else bad('git.worktrees');
+      }
+      if ('secretPatterns' in g) {
+        const sp = g.secretPatterns;
+        if (Array.isArray(sp) && sp.every((x) => typeof x === 'string' && x.trim() !== '' && x.length <= 200)) config.git.secretPatterns = sp as string[];
+        else bad('git.secretPatterns');
+      }
+      if ('testTimeoutMinutes' in g) {
+        const v = g.testTimeoutMinutes;
+        if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 240) config.git.testTimeoutMinutes = v;
+        else bad('git.testTimeoutMinutes');
+      }
+    } else bad('git');
+  }
+  if ('guard' in raw) {
+    const mode = isObj(raw.guard) ? raw.guard.mode : undefined;
+    if (mode === 'enforce' || mode === 'shadow') config.guard.mode = mode;
+    else bad('guard.mode');
+  }
   if ('telemetry' in raw && raw.telemetry !== false) bad('telemetry');
   return { config, errors };
 }
@@ -82,10 +113,16 @@ export function saveConfigAtomic(path: string, config: Config): void {
 }
 
 /**
- * Changes only the language inside the user's file and keeps every other entry as written (even invalid or unknown ones).
+ * Changes only the given entries (language, the bypass switch, the guard mode) inside the user's file and keeps every other entry as written (even invalid or unknown ones).
  * A file that cannot be parsed is never overwritten: the caller reports `config.unreadable`.
  */
-export function saveLanguage(path: string, language: Language): { ok: true } | { ok: false; code: 'config.unreadable' } {
+export interface ConfigPatch {
+  language?: Language;
+  agents?: { bypassPermissions: boolean };
+  guard?: { mode: 'enforce' | 'shadow' };
+}
+
+export function patchConfig(path: string, patch: ConfigPatch): { ok: true } | { ok: false; code: 'config.unreadable' } {
   let raw: Record<string, unknown> = { schema: 1 };
   if (existsSync(path)) {
     try {
@@ -96,6 +133,12 @@ export function saveLanguage(path: string, language: Language): { ok: true } | {
       return { ok: false, code: 'config.unreadable' };
     }
   }
-  writeJsonAtomic(path, { ...raw, language });
+  const next: Record<string, unknown> = { ...raw };
+  if (patch.language !== undefined) next.language = patch.language;
+  if (patch.agents) next.agents = { ...(isObj(raw.agents) ? raw.agents : {}), ...patch.agents };
+  if (patch.guard) next.guard = { ...(isObj(raw.guard) ? raw.guard : {}), ...patch.guard };
+  writeJsonAtomic(path, next);
   return { ok: true };
 }
+
+export const saveLanguage = (path: string, language: Language): ReturnType<typeof patchConfig> => patchConfig(path, { language });

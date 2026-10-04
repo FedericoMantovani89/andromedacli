@@ -112,3 +112,47 @@ it('after close nothing is started, not even when a slot frees (shutdown must no
   expect(started).toEqual(['a-job']);
   expect(() => scheduler.request(req('c-job'))).toThrow(/closing/);
 });
+
+it('an asynchronous start counts as active at once, and its failure reaches the caller through `ready`', async () => {
+  const registry = new AgentRegistry();
+  const errors: string[] = [];
+  let release!: (ok: boolean) => void;
+  const scheduler = new Scheduler({
+    registry, limits: () => ({ global: 1, perPlan: 1 }),
+    start: (r) => {
+      registry.register({ slug: r.slug, role: 'agent', profile: r.profile, goal: r.goal });
+      registry.onSpawned(r.slug); // synchronous part: the slot is taken
+      return new Promise<void>((ok, no) => { release = (good) => (good ? ok() : no(new Error('worktree failed'))); });
+    },
+    onStartError: (r) => { errors.push(r.slug); },
+  });
+  const first = scheduler.request(req('a-job'));
+  expect(first.status).toBe('started');
+  expect(scheduler.request(req('b-job'))).toEqual({ status: 'queued', position: 1 }); // the slot is already taken
+  const ready = (first as { ready: Promise<void> }).ready;
+  release(false);
+  await expect(ready).rejects.toThrow('worktree failed');
+  expect(errors).toEqual([]); // a failure on the direct path belongs to the caller
+});
+it('a queued request whose asynchronous start fails goes to onStartError and the queue goes on', async () => {
+  const registry = new AgentRegistry();
+  const errors: string[] = [];
+  const started: string[] = [];
+  const scheduler = new Scheduler({
+    registry, limits: () => ({ global: 1, perPlan: 1 }),
+    start: async (r) => {
+      registry.register({ slug: r.slug, role: 'agent', profile: r.profile, goal: r.goal });
+      registry.onSpawned(r.slug);
+      if (r.slug === 'bad-job') { registry.onProcessExit(r.slug); throw new Error('nope'); }
+      started.push(r.slug);
+    },
+    onStartError: (r) => { errors.push(r.slug); },
+  });
+  scheduler.request(req('a-job'));
+  scheduler.request(req('bad-job'));
+  scheduler.request(req('c-job'));
+  registry.onProcessExit('a-job');
+  await new Promise((r) => setTimeout(r, 20));
+  expect(errors).toEqual(['bad-job']);
+  expect(started).toEqual(['a-job', 'c-job']);
+});

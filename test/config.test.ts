@@ -39,3 +39,29 @@ it('the mod is enabled by default and a non-boolean value falls back with an err
   expect(config.mod.enabled).toBe(true);
   expect(errors.map((e) => e.path)).toEqual(['mod.enabled']);
 });
+
+it('git and guard defaults: worktrees on, 15 minute test timeout, guard enforcing, secret patterns present', () => {
+  expect(DEFAULT_CONFIG.git.worktrees).toBe(true);
+  expect(DEFAULT_CONFIG.git.testTimeoutMinutes).toBe(15);
+  expect(DEFAULT_CONFIG.git.secretPatterns).toContain('.env');
+  expect(DEFAULT_CONFIG.guard.mode).toBe('enforce');
+  expect(DEFAULT_CONFIG.agents.bypassPermissions).toBe(false);
+});
+it('accepts valid git and guard entries', () => {
+  const p = join(dir(), 'config.json');
+  writeFileSync(p, JSON.stringify({ git: { worktrees: false, secretPatterns: ['*.token'], testTimeoutMinutes: 30 }, guard: { mode: 'shadow' } }));
+  const { config, errors } = loadConfig(p);
+  expect(errors).toEqual([]);
+  expect(config.git).toEqual({ worktrees: false, secretPatterns: ['*.token'], testTimeoutMinutes: 30 });
+  expect(config.guard.mode).toBe('shadow');
+});
+it('invalid git and guard entries fall back one by one and are reported', () => {
+  const p = join(dir(), 'config.json');
+  writeFileSync(p, JSON.stringify({ git: { worktrees: 'no', secretPatterns: [1], testTimeoutMinutes: 0 }, guard: { mode: 'off' } }));
+  const { config, errors } = loadConfig(p);
+  expect(config.git).toEqual(DEFAULT_CONFIG.git);
+  expect(config.guard.mode).toBe('enforce');
+  expect(errors.map((e) => e.path).sort()).toEqual(['git.secretPatterns', 'git.testTimeoutMinutes', 'git.worktrees', 'guard.mode']);
+  writeFileSync(p, JSON.stringify({ git: 5, guard: 'x' }));
+  expect(loadConfig(p).errors.map((e) => e.path).sort()).toEqual(['git', 'guard.mode']);
+});

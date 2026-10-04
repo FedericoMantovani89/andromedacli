@@ -10,6 +10,8 @@ export interface AgentRuntime {
   /** The first goal was queued for this agent and no turn has completed since: it still counts as active (SPEC 16.7). */
   pendingGoal: boolean;
   lastEventAt?: string;
+  /** The agent's own worktree and branch (Phase 3); absent for the main and when `git.worktrees` is off. */
+  git?: { worktree: string; branch: string };
 }
 
 export interface RegisterInput {
@@ -46,6 +48,11 @@ export class AgentRegistry {
     if (!a) return;
     a.pendingGoal = Boolean(a.goal);
     this.set(a, 'starting');
+  }
+
+  setGit(slug: string, git: { worktree: string; branch: string } | undefined): void {
+    const a = this.agents.get(slug);
+    if (a) a.git = git;
   }
 
   goalDelivered(slug: string): void {

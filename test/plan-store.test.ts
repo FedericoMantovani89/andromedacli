@@ -29,3 +29,19 @@ it('init is idempotent and keeps the original creation date', () => {
   new PlanStore(root).init('shop-api');
   expect(new PlanStore(root).plan.createdAt).toBe(created);
 });
+
+it('keeps a test command in plan.json, trims it, and clears it with an empty string', () => {
+  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
+  expect(s.plan.testCommand).toBeUndefined();
+  s.setTestCommand('  npx vitest run  ');
+  expect(new PlanStore(root).plan.testCommand).toBe('npx vitest run');
+  expect(new PlanStore(root).plan.name).toBe('shop-api');
+  s.setTestCommand('');
+  expect(new PlanStore(root).plan.testCommand).toBeUndefined();
+});
+it('rejects a test command that is too long or not a string', () => {
+  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
+  expect(() => s.setTestCommand('x'.repeat(501))).toThrow('plan.testCommandInvalid');
+  expect(() => s.setTestCommand(5 as unknown as string)).toThrow('plan.testCommandInvalid');
+  expect(() => s.setTestCommand('a\nb')).toThrow('plan.testCommandInvalid');
+});

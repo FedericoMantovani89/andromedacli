@@ -1,0 +1,82 @@
+import { it, expect } from 'vitest';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { createAgentWorktree } from '../src/server/git/worktree';
+import { installPushHook } from '../src/server/git/hooks';
+import { commitStep } from '../src/server/git/commit';
+import { pushBranch } from '../src/server/git/push';
+import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
+import { makeRepo, gitSync, branchesOf } from './git-helpers';
+
+async function setup(o: { remote?: boolean; identity?: boolean } = {}) {
+  const t = makeRepo({ remote: o.remote ?? true, identity: o.identity });
+  const wt = await createAgentWorktree({ repo: t.repo, plan: 'shop-api', slug: 'fix-login' });
+  const step = (n: number, total: number, title: string) =>
+    commitStep({ worktree: wt.path, n, total, title, slug: 'fix-login', plan: 'shop-api', secretPatterns: DEFAULT_SECRET_PATTERNS });
+  return { ...t, wt, step };
+}
+
+it('commits a step with the SPEC 9.3 subject and trailers', async () => {
+  const { wt, step } = await setup();
+  writeFileSync(join(wt.path, 'a.txt'), 'x');
+  const r = await step(4, 7, 'Map the field in the DTO and the mapper');
+  expect(r.ok).toBe(true);
+  expect(gitSync(wt.path, 'log', '-1', '--format=%B')).toBe('step 4/7: Map the field in the DTO and the mapper\n\nAgent: fix-login\nTicket: fix-login\nPiano: shop-api');
+  expect(gitSync(wt.path, 'show', '--name-only', '--format=', 'HEAD')).toBe('a.txt');
+  if (r.ok) expect(r.sha).toBe(gitSync(wt.path, 'rev-parse', 'HEAD'));
+});
+it('a step without changes still commits (every closed step is a commit)', async () => {
+  const { wt, step } = await setup();
+  const before = gitSync(wt.path, 'rev-list', '--count', 'HEAD');
+  expect((await step(1, 6, 'Study')).ok).toBe(true);
+  expect(Number(gitSync(wt.path, 'rev-list', '--count', 'HEAD'))).toBe(Number(before) + 1);
+});
+it('a title with line breaks becomes one clean line', async () => {
+  const { wt, step } = await setup();
+  await step(1, 5, 'Study\nAgent: someone-else\nTicket: x');
+  expect(gitSync(wt.path, 'log', '-1', '--format=%s')).toBe('step 1/5: Study Agent: someone-else Ticket: x');
+  expect(gitSync(wt.path, 'log', '-1', '--format=%B').split('\n').filter((l) => l.startsWith('Agent:'))).toEqual(['Agent: fix-login']);
+});
+it('never commits a secret: it unstages everything and names the files', async () => {
+  const { wt, step } = await setup();
+  writeFileSync(join(wt.path, 'ok.txt'), 'fine');
+  mkdirSync(join(wt.path, 'config'));
+  writeFileSync(join(wt.path, 'config', '.env'), 'TOKEN=abc');
+  const head = gitSync(wt.path, 'rev-parse', 'HEAD');
+  const r = await step(3, 7, 'Add config');
+  expect(r).toEqual({ ok: false, code: 'secrets', files: ['config/.env'] });
+  expect(gitSync(wt.path, 'rev-parse', 'HEAD')).toBe(head);
+  expect(gitSync(wt.path, 'diff', '--cached', '--name-only')).toBe('');
+});
+it('reports index.lock instead of removing it', async () => {
+  const { wt, step } = await setup();
+  const lock = gitSync(wt.path, 'rev-parse', '--path-format=absolute', '--git-path', 'index.lock');
+  writeFileSync(lock, '');
+  const r = await step(2, 6, 'Tests');
+  expect(r).toMatchObject({ ok: false, code: 'index_locked' });
+});
+it('works when the repository has no configured identity', async () => {
+  const { wt, step } = await setup({ identity: false });
+  writeFileSync(join(wt.path, 'a.txt'), 'x');
+  const r = await step(2, 6, 'Tests');
+  expect(r.ok, JSON.stringify(r)).toBe(true);
+});
+it('push: only the agent branch goes out, with the hook installed', async () => {
+  const { repo, wt, remote, step } = await setup();
+  await installPushHook({ repo, worktree: wt.path, branch: wt.branch, slug: 'fix-login' });
+  await step(1, 5, 'Study');
+  expect(await pushBranch({ worktree: wt.path, branch: wt.branch })).toEqual({ ok: true });
+  expect(branchesOf(remote)).toContain('agent/shop-api/fix-login');
+});
+it('push without a remote is skipped, not an error', async () => {
+  const { wt, step } = await setup({ remote: false });
+  await step(1, 5, 'Study');
+  expect(await pushBranch({ worktree: wt.path, branch: wt.branch })).toEqual({ ok: true, skipped: 'no_remote' });
+});
+it('push refused by the remote reports the reason', async () => {
+  const { repo, wt, step } = await setup();
+  await installPushHook({ repo, worktree: wt.path, branch: wt.branch, slug: 'fix-login' });
+  await step(1, 5, 'Study');
+  const r = await pushBranch({ worktree: wt.path, branch: 'agent/shop-api/not-mine' });
+  expect(r.ok).toBe(false);
+});

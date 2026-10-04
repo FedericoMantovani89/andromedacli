@@ -14,4 +14,5 @@ await build({
 });
 copyFileSync(join(root, 'src', 'ui', 'index.html'), join(out, 'index.html'));
 copyFileSync(join(root, 'src', 'ui', 'styles.css'), join(out, 'styles.css'));
+copyFileSync(join(root, 'src', 'ui', 'splash.jpg'), join(out, 'splash.jpg'));
 copyFileSync(join(root, 'node_modules', '@xterm', 'xterm', 'css', 'xterm.css'), join(out, 'xterm.css'));

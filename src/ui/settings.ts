@@ -1,5 +1,6 @@
-import type { PrereqResult, StateMessage } from '../shared/protocol';
+import type { ApiError, PrereqResult, StateMessage } from '../shared/protocol';
 import { api } from './api';
+import { errorText } from './new-agent';
 import { bindText, k, languageName, resolveLanguage, setLanguage } from './i18n-client';
 
 /**
@@ -61,7 +62,93 @@ export function closeOverlay(): void {
   window.dispatchEvent(new CustomEvent('overlayclosed'));
 }
 
-/** Opens the settings dialog (language and prerequisites). */
+/**
+ * The settings that decide how new agents are launched: the permission bypass, the guard mode and the plan's test command.
+ * The first two apply to sessions launched afterwards (running ones keep what they started with), and the dialog says so.
+ */
+function createAgentSettings(state: StateMessage | undefined): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'settings-agents';
+  const error = document.createElement('div');
+  error.className = 'form-error';
+  const failed = (res: { status: number; body: unknown }): boolean => {
+    if (res.status === 200) { error.textContent = ''; return false; }
+    error.textContent = errorText(res.body as ApiError);
+    return true;
+  };
+
+  const bypassRow = document.createElement('label');
+  bypassRow.className = 'settings-switch';
+  const bypass = document.createElement('input');
+  bypass.type = 'checkbox';
+  bypass.name = 'bypass';
+  bypass.checked = state?.settings.bypassPermissions ?? false;
+  const bypassText = document.createElement('span');
+  bindText(bypassText, 'settings.bypass');
+  bypassRow.append(bypass, bypassText);
+  const warning = document.createElement('p');
+  warning.className = 'settings-warning';
+  bindText(warning, 'settings.bypass.warning');
+  bypass.addEventListener('change', () => {
+    const wanted = bypass.checked;
+    void api<ApiError>('/api/config', { method: 'PUT', body: { agents: { bypassPermissions: wanted } } }).then((res) => {
+      if (failed(res)) bypass.checked = !wanted; // not saved: the switch must not show a state that is not real
+    });
+  });
+
+  const guardRow = document.createElement('label');
+  const guardText = document.createElement('span');
+  bindText(guardText, 'settings.guardMode');
+  const guard = document.createElement('select');
+  guard.name = 'guardMode';
+  for (const mode of ['enforce', 'shadow'] as const) {
+    const o = document.createElement('option');
+    o.value = mode;
+    bindText(o, mode === 'enforce' ? k('settings.guardMode.enforce') : k('settings.guardMode.shadow'));
+    guard.append(o);
+  }
+  guard.value = state?.settings.guardMode ?? 'enforce';
+  let savedMode = guard.value;
+  guard.addEventListener('change', () => {
+    const wanted = guard.value;
+    void api<ApiError>('/api/config', { method: 'PUT', body: { guard: { mode: wanted } } }).then((res) => {
+      if (failed(res)) guard.value = savedMode;
+      else savedMode = wanted;
+    });
+  });
+  guardRow.append(guardText, guard);
+
+  const applies = document.createElement('p');
+  applies.className = 'settings-note';
+  bindText(applies, 'settings.appliesToNew');
+
+  const testForm = document.createElement('form');
+  testForm.className = 'settings-test';
+  const testLabel = document.createElement('label');
+  const testText = document.createElement('span');
+  bindText(testText, 'settings.testCommand');
+  const test = document.createElement('input');
+  test.name = 'testCommand';
+  test.autocomplete = 'off';
+  test.value = state?.plan.testCommand ?? '';
+  testLabel.append(testText, test);
+  const save = document.createElement('button');
+  save.type = 'submit';
+  bindText(save, 'common.save');
+  const help = document.createElement('p');
+  help.className = 'settings-note';
+  bindText(help, 'settings.testCommand.help');
+  testForm.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    void api<ApiError>('/api/plan', { method: 'PUT', body: { testCommand: test.value } }).then((res) => { failed(res); });
+  });
+  testForm.append(testLabel, save, help);
+
+  box.append(bypassRow, warning, guardRow, applies, testForm, error);
+  return box;
+}
+
+/** Opens the settings dialog (language, how agents are launched, prerequisites). */
 export function openSettings(getState: () => StateMessage | undefined): void {
   const overlay = document.getElementById('overlay')!;
   const state = getState();
@@ -79,6 +166,10 @@ export function openSettings(getState: () => StateMessage | undefined): void {
   });
   langRow.append(langText, select);
 
+  const agentsTitle = document.createElement('h2');
+  bindText(agentsTitle, 'settings.agents');
+  const agentSettings = createAgentSettings(state);
+
   const prereqTitle = document.createElement('h2');
   bindText(prereqTitle, 'settings.prerequisites');
   const table = document.createElement('div');
@@ -88,7 +179,7 @@ export function openSettings(getState: () => StateMessage | undefined): void {
   bindText(close, 'common.close');
   close.addEventListener('click', closeOverlay);
 
-  dialog.append(title, langRow, prereqTitle, table, close);
+  dialog.append(title, langRow, agentsTitle, agentSettings, prereqTitle, table, close);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
 }

@@ -7,6 +7,7 @@ import { fail, readBody, send } from './http-util';
 import type { QuestionQueue } from './questions/queue';
 
 export type ToolHandler = (slug: string, body: unknown) => Promise<unknown>;
+export type GuardAnswer = { decision: 'allow' } | { decision: 'deny'; reason: string; rule: string };
 
 export interface V1Context {
   tokens: SessionTokens;
@@ -16,6 +17,8 @@ export interface V1Context {
   /** Everything that must react to a mod event (registry, reading store, scheduler...). */
   handleModEvent(slug: string, e: ModEvent): void;
   tools: Record<string, ToolHandler>;
+  /** The guard's verdict for a tool call of this session (SPEC 14): rules, mode (enforce/shadow) and log live behind it. */
+  guard(slug: string, tool: string, input: Record<string, unknown>): GuardAnswer;
 }
 
 const EVENT_TYPES: ModEvent['type'][] = ['session.start', 'session.end', 'turn.start', 'turn.complete'];
@@ -25,6 +28,10 @@ const TOOL_ROLES: Record<string, ('main' | 'agent')[]> = {
   spawn_agent: ['main'],
   list_agents: ['main', 'agent'],
   ask_user: ['main', 'agent'],
+  // The ticket flow belongs to agents: the console commits, validates and pushes on their behalf (SPEC 8.4).
+  checklist_set: ['agent'],
+  step_done: ['agent'],
+  report_blocked: ['agent'],
 };
 
 /**
@@ -51,6 +58,18 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
   }
 
   if (req.method === 'GET' && path === '/v1/inbox') return send(res, 200, { messages: ctx.inbox.pending(slug) });
+
+  if (req.method === 'POST' && path === '/v1/guard') {
+    let body: unknown;
+    try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+    const b = (typeof body === 'object' && body !== null ? body : {}) as { tool?: unknown; input?: unknown };
+    if (typeof b.tool !== 'string' || typeof b.input !== 'object' || b.input === null || Array.isArray(b.input)) return fail(res, 400, 'bad_request');
+    try {
+      return send(res, 200, ctx.guard(slug, b.tool, b.input as Record<string, unknown>));
+    } catch {
+      return fail(res, 500, 'internal');
+    }
+  }
 
   if (req.method === 'POST' && path === '/v1/ack') {
     let body: unknown;

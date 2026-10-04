@@ -17,6 +17,12 @@ import { Scheduler } from './agents/scheduler';
 import { QuestionQueue } from './questions/queue';
 import { ReadingStore } from './reading/store';
 import { failQueuedStart, launchAgent, spawnAgent } from './agents/spawn';
+import { TicketStore } from './tickets/store';
+import { StepService } from './tickets/steps';
+import { LaunchWatch } from './agents/launch-watch';
+import { evaluate } from './guard/rules';
+import { excludeConsoleFolder } from './git/worktree';
+import { GuardLog } from './guard/log';
 import { languageName, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
 import type { PrereqResult } from '../shared/protocol';
@@ -33,6 +39,12 @@ export interface StartOptions {
   modDir?: string | null;
   /** Injectable command runner for the prerequisite checks (tests). */
   prereqRunner?: Runner;
+  /** How long after a launch the console checks that the agent started and took its goal (default 90 s; tests use less). */
+  launchCheckMs?: number;
+  /** Overrides `git.worktrees` from the configuration (embedding and tests: agents share the plan folder when false). */
+  worktrees?: boolean;
+  /** A test seam: runs once an agent's worktree exists, before its process starts; a throw simulates a failed start. */
+  afterWorktreeCreated?: (slug: string) => void | Promise<void>;
 }
 export interface RunningServer {
   port: number;
@@ -68,6 +80,22 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const questions = new QuestionQueue();
   const reading = new ReadingStore(join(o.planRoot, '.console', 'state', 'reading'));
   const limits = { global: config.agents.maxActiveGlobal, perPlan: config.agents.maxActivePerPlan };
+  // Settings read when a session is launched: a change applies to the sessions started afterwards, never to running ones.
+  const runtime = { bypass: config.agents.bypassPermissions, guardMode: config.guard.mode, git: { ...config.git, ...(o.worktrees !== undefined ? { worktrees: o.worktrees } : {}) } };
+  // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
+  const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[planName, config.guard.mode]]);
+  const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(planName, text); broadcast(); } });
+  const guardLog = new GuardLog(join(o.planRoot, '.console', 'state', 'guard.jsonl'));
+  const tickets = new TicketStore(o.planRoot);
+  const steps = new StepService({
+    tickets, plan: planName,
+    worktreeOf: (slug) => registry.get(slug)?.git,
+    testCommand: () => store.plan.testCommand,
+    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
+    secretPatterns: () => runtime.git.secretPatterns,
+    notifyMain: (_slug, text) => { inbox.push(planName, text); },
+    changed: () => broadcast(),
+  });
   const launchLog = new Map<string, string[]>();
   // The scheduler's callbacks reach `ctx` (defined below) lazily, only once the server is running.
   const scheduler = new Scheduler({
@@ -91,12 +119,32 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     execFileSync('git', ['rev-parse', '--git-dir'], { cwd: o.planRoot, stdio: 'ignore', timeout: 5000 });
     planIsRepo = true;
   } catch { /* not a repository, or git is missing: the checks report the latter */ }
+  // The console's own folder never shows up in the project's git status (kept in .git/info/exclude, not in its .gitignore).
+  if (planIsRepo) await excludeConsoleFolder(o.planRoot).catch(() => { /* cosmetic: the first worktree tries again */ });
 
   const ctx: Context = {
     getPort: () => port,
-    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading,
+    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch,
+    afterWorktreeCreated: o.afterWorktreeCreated,
+    get git() { return runtime.git; },
+    get guardMode() { return runtime.guardMode; },
     modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resolve(import.meta.dirname, '..', '..', 'mod') : undefined)),
     promptsDir: join(o.planRoot, '.console', 'state', 'prompts'),
+    guard: (slug, tool, input) => {
+      const rt = registry.get(slug);
+      const role = rt?.role ?? 'agent';
+      // The judge is the caller's own worktree and role, taken from its session: nothing in the request body can change them.
+      const verdict = evaluate({ role, tool, input }, {
+        worktree: role === 'agent' && rt?.git ? rt.git.worktree : o.planRoot, repo: o.planRoot,
+        branch: rt?.git?.branch ?? '', planBranch: `plan/${planName}`, secretPatterns: runtime.git.secretPatterns,
+      });
+      if (verdict.decision === 'allow') return verdict;
+      const mode = sessionGuardMode.get(slug) ?? runtime.guardMode;
+      const shadow = mode === 'shadow';
+      const detail = [input.command, input.file_path, input.notebook_path, input.path].find((v): v is string => typeof v === 'string') ?? '';
+      guardLog.append({ slug, role, tool, rule: verdict.rule, reason: verdict.reason, mode, outcome: shadow ? 'shadow-allowed' : 'denied', detail });
+      return shadow ? { decision: 'allow' } : verdict;
+    },
     handleModEvent: (slug, e) => {
       // The turn ended: a question its tool call was waiting on (for example an aborted turn) has no asker any more.
       if (e.type === 'turn.complete') questions.dropFrom(slug);
@@ -122,6 +170,24 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
           tool: typeof b.tool === 'string' ? b.tool : undefined, detail: typeof b.detail === 'string' ? b.detail : undefined,
         });
       },
+      checklist_set: async (slug, body) => {
+        const items = (body as { items?: unknown } | null)?.items;
+        if (!Array.isArray(items)) return { status: 'error', code: 'bad_request' };
+        return steps.checklistSet(slug, items as string[]);
+      },
+      step_done: async (slug, body) => {
+        const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+        if (typeof b.n !== 'number' || !Number.isInteger(b.n)) return { status: 'error', code: 'bad_request' };
+        return steps.stepDone(slug, {
+          n: b.n, note: typeof b.note === 'string' ? b.note : undefined, skip: b.skip === true,
+        });
+      },
+      report_blocked: async (slug, body) => {
+        const reason = (body as { reason?: unknown } | null)?.reason;
+        if (typeof reason !== 'string' || reason.trim() === '') return { status: 'error', code: 'bad_request' };
+        steps.reportBlocked(slug, reason.trim().slice(0, 500));
+        return { status: 'ok' };
+      },
       spawn_agent: async (_slug, body) => {
         const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
         if (typeof b.name !== 'string' || typeof b.profile !== 'string' || typeof b.goal !== 'string' || b.goal.trim() === '') {
@@ -135,7 +201,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     planName,
     planRoot: o.planRoot,
     claudeCommand: o.claudeCommand ?? config.claude.command,
-    bypass: config.agents.bypassPermissions,
+    get bypass() { return runtime.bypass; },
     get language() { return language; },
     bundles: loadBundles(o.i18nDir),
     uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
@@ -146,6 +212,14 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     ensurePrereq: () => prereq ? Promise.resolve(prereq) : (startupChecks ??= refreshPrereq()),
     refreshPrereq,
     setLanguage: (l) => { language = l; },
+    applySettings: (s) => {
+      if (s.bypass !== undefined) runtime.bypass = s.bypass;
+      if (s.guardMode !== undefined) runtime.guardMode = s.guardMode;
+    },
+    noteLaunch: (slug) => {
+      sessionGuardMode.set(slug, runtime.guardMode);
+      return { bypass: runtime.bypass };
+    },
     needsSetup: () => !existsSync(configPath),
     broadcastState: () => broadcast(),
   };
@@ -199,6 +273,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     setLimits: (l) => { limits.global = l.global; limits.perPlan = l.perPlan; scheduler.release(); },
     lastLaunchArgs: (slug) => launchLog.get(slug),
     close: async () => {
+      launchWatch.close();
       scheduler.close(); // before killing: exiting processes would otherwise free slots and start queued agents
       await ptys.killAll();
       ws.closeAll();

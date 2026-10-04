@@ -1,1 +1,0 @@
-{"type":"session.start","seq":1,"ts":"2026-10-04T10:08:19.138Z","session":"5156e3b3-7366-4278-854d-dec0390a1bf8","role":"agent","agent":"probe","data":{"event":"session.start","input":{"cwd":"D:\\workspaces\\multiconsole","surface":"terminal","isInteractive":true}},"http":{"status":200,"ms":6}}

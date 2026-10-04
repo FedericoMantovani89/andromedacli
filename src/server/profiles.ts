@@ -66,7 +66,9 @@ export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir
 }
 
 /** An agent's system-prompt addition: its profile plus who it is and what the console offers it. */
-export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string }): string {
+export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string } }): string {
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
-  return writePrompt(o.outDir, `agent-${o.slug}.md`, fill(template, { slug: o.slug, plan: o.plan, profile: o.profile.body }));
+  const gitRules = o.git ? fill(readFileSync(join(promptsDir(), 'agent-git.md'), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, plan: o.plan }) : '';
+  const text = fill(template, { slug: o.slug, plan: o.plan, profile: o.profile.body, git: gitRules });
+  return writePrompt(o.outDir, `agent-${o.slug}.md`, text.replace(/\n{3,}/g, '\n\n'));
 }

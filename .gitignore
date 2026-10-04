@@ -1,3 +1,9 @@
 docs/
 node_modules/
 dist/
+# the console's own state when it runs on this very repository
+.console/
+# scratch space of the executing-plans skill
+.superpowers/
+# stray probe output of real-Claude runs
+logs/

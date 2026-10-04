@@ -8,6 +8,7 @@ export type Profile = (typeof PROFILES)[number];
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
+  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -19,8 +20,12 @@ export interface SessionInfo {
   role: 'main' | 'agent';
   /** Process status (is the process alive). */
   status: SessionStatus;
-  /** What the session is doing, from mod events. */
+  /** What the session is doing, from mod events (plus `studying`/`blocked`, derived from the ticket). */
   state: Activity;
+  /** Closed steps of the agent's checklist; absent until it has one. */
+  progress?: { done: number; total: number };
+  /** The launch check found the agent not started or not working on its goal; clears when it starts working. */
+  launchStalled?: true;
 }
 
 export interface PrereqResult {
@@ -46,7 +51,9 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
-  plan: { name: string };
+  plan: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string };
+  /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
+  settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };
   main: SessionInfo;
   agents: SessionInfo[];
   language: string;

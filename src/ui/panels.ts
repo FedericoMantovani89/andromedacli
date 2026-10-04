@@ -15,10 +15,32 @@ const STATE_KEYS: Record<Activity, string> = {
   waiting_user: k('state.waiting_user'),
   queued: k('state.queued'),
   interrupted: k('state.interrupted'),
+  studying: k('state.studying'),
+  blocked: k('state.blocked'),
 };
 
+/** "Not started yet" next to the state when the launch check found the agent stalled. */
+function applyStalled(el: HTMLElement, stalled: boolean | undefined): void {
+  el.hidden = !stalled;
+  if (stalled) bindText(el, k('panel.launchStalled'));
+  else el.textContent = '';
+}
+
+/** The checklist progress chip ("3/7"): empty and hidden until the agent has a checklist. */
+function applyProgress(el: HTMLElement, progress: SessionInfo['progress']): void {
+  if (!progress) {
+    el.hidden = true;
+    el.textContent = '';
+    delete el.dataset.i18n;
+    delete el.dataset.i18nParams;
+    return;
+  }
+  el.hidden = false;
+  bindText(el, k('panel.progress'), { done: progress.done, total: progress.total });
+}
+
 interface Panel extends PanelHandle {
-  setState(state: Activity): void;
+  setState(state: Activity, progress?: SessionInfo['progress'], stalled?: boolean): void;
   dispose(): void;
 }
 
@@ -41,12 +63,18 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
   badge.className = 'badge';
   bindText(badge, 'panel.badge.activeInput');
   const stateEl = document.createElement('span');
+  const progressEl = document.createElement('span');
+  progressEl.className = 'panel-progress';
+  progressEl.hidden = true;
+  const stalledEl = document.createElement('span');
+  stalledEl.className = 'panel-stalled';
+  stalledEl.hidden = true;
   const readBtn = document.createElement('button');
   readBtn.className = 'panel-read';
   bindText(readBtn, 'reader.open');
   readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
   readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
-  header.append(title, meta, badge, stateEl, readBtn);
+  header.append(title, meta, badge, stateEl, stalledEl, progressEl, readBtn);
 
   const host = document.createElement('div');
   host.className = 'panel-term';
@@ -96,9 +124,11 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
 
   return {
     root, term,
-    setState: (state) => {
+    setState: (state, progress, stalled) => {
+      applyStalled(stalledEl, stalled);
       bindText(stateEl, STATE_KEYS[state]);
       stateEl.className = `panel-state ${state}`;
+      applyProgress(progressEl, progress);
     },
     dispose: () => {
       closed = true;
@@ -119,7 +149,7 @@ export class Workspace {
   private lastAgents: SessionInfo[] = [];
   private newAgentControl: HTMLElement | undefined;
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
-  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; pending: boolean }>();
+  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; pending: boolean }>();
 
   constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string) {
     this.mainId = mainId;
@@ -154,7 +184,7 @@ export class Workspace {
     if (this.mainCol.firstElementChild !== this.panels.get(main.slug)!.root) {
       this.mainCol.replaceChildren(this.panels.get(main.slug)!.root);
     }
-    this.panels.get(main.slug)!.setState(main.state);
+    this.panels.get(main.slug)!.setState(main.state, main.progress);
 
     const bySlug = new Map(agents.map((a) => [a.slug, a]));
     // Agents without a process yet (waiting in the queue) are always bars; the rest follow the 4-panels rule.
@@ -168,7 +198,7 @@ export class Workspace {
       const info = bySlug.get(item.slug)!;
       if (item.mode === 'panel') {
         const p = this.ensurePanel(info);
-        p.setState(info.state);
+        p.setState(info.state, info.progress, info.launchStalled);
         children.push(p.root);
       } else {
         this.dropPanel(item.slug); // the server keeps the scrollback; reconnecting restores it
@@ -214,6 +244,8 @@ export class Workspace {
     if (cached && cached.pending === pending) {
       bindText(cached.state, STATE_KEYS[info.state]);
       cached.state.className = `panel-state ${info.state}`;
+      applyProgress(cached.progress, info.progress);
+      applyStalled(cached.stalled, info.launchStalled);
       return cached.el;
     }
     const el = document.createElement('div');
@@ -227,14 +259,20 @@ export class Workspace {
     const state = document.createElement('span');
     state.className = `panel-state ${info.state}`;
     bindText(state, STATE_KEYS[info.state]);
-    el.append(title, meta, state);
+    const progress = document.createElement('span');
+    progress.className = 'panel-progress';
+    applyProgress(progress, info.progress);
+    const stalled = document.createElement('span');
+    stalled.className = 'panel-stalled';
+    applyStalled(stalled, info.launchStalled);
+    el.append(title, meta, state, stalled, progress);
     if (!pending) { // a queued agent has no terminal to expand yet
       const expand = document.createElement('button');
       bindText(expand, 'panel.expand');
       expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
       el.append(expand);
     }
-    this.bars.set(info.slug, { el, state, pending });
+    this.bars.set(info.slug, { el, state, progress, stalled, pending });
     return el;
   }
 }

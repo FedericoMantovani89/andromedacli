@@ -12,7 +12,7 @@ const planRoot = process.argv[2];
 if (!planRoot) throw new Error('usage: mod-real-claude.ts <trusted-folder>');
 
 const configDir = mkdtempSync(join(tmpdir(), 'real-cfg-'));
-writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', claude: { command: ['claude', '--model', 'haiku'] } }));
+writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false }, claude: { command: ['claude', '--model', 'haiku'] } }));
 rmSync(join(planRoot, '.console'), { recursive: true, force: true });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

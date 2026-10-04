@@ -24,7 +24,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 10000): Promise<b
 
 async function boot(limit = 4) {
   const configDir = mkdtempSync(join(tmpdir(), 'e2e2-cfg-'));
-  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false } }));
   const s = await startServer({
     port: 0, planRoot: mkdtempSync(join(tmpdir(), 'e2e2-plan-')), configDir, planName: 'shop-api',
     claudeCommand: [process.execPath, fixture], modDir: null,

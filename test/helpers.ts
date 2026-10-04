@@ -11,6 +11,10 @@ export type Running = Awaited<ReturnType<typeof startServer>>;
 
 const fixture = join(__dirname, 'fixtures', 'fake-agent.cjs').replace(/\\/g, '/');
 const running: Running[] = [];
+const configFiles = new WeakMap<Running, string>();
+
+/** The config.json a server booted with bootServer reads and writes. */
+export const configFileOf = (s: Running): string => configFiles.get(s)!;
 
 export const goodRunner: Runner = async (cmd) => ({
   code: 0, stdout: cmd === 'node' ? 'v24.15.0' : cmd === 'git' ? 'git version 2.53.0' : '2.1.289 (Claude Code)',
@@ -21,14 +25,19 @@ export function autoClose(): void {
   afterEach(async () => { while (running.length) await running.pop()!.close(); });
 }
 
-export async function bootServer(o: { planName?: string; language?: string } = {}): Promise<Running> {
+/**
+ * A real server with the fake agent. Agents share the plan folder (`git.worktrees: false`, the Phase 2 behaviour) unless the
+ * test passes a repository as `planRoot` and `config: { git: { worktrees: true } }`.
+ */
+export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number } = {}): Promise<Running> {
   const configDir = mkdtempSync(join(tmpdir(), 'h-cfg-'));
-  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en' }));
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en', git: { worktrees: false }, ...o.config }));
   const s = await startServer({
-    port: 0, planRoot: mkdtempSync(join(tmpdir(), 'h-plan-')), configDir, planName: o.planName ?? 'shop-api',
-    claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner, modDir: null,
+    port: 0, planRoot: o.planRoot ?? mkdtempSync(join(tmpdir(), 'h-plan-')), configDir, planName: o.planName ?? 'shop-api',
+    claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner, modDir: null, afterWorktreeCreated: o.afterWorktreeCreated, launchCheckMs: o.launchCheckMs,
   });
   running.push(s);
+  configFiles.set(s, join(configDir, 'config.json'));
   return s;
 }
 

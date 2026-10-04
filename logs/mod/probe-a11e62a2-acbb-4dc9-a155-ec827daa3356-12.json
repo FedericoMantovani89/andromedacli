@@ -1,1 +1,0 @@
-{"type":"session.end","seq":12,"ts":"2026-10-04T10:13:46.836Z","session":"a11e62a2-acbb-4dc9-a155-ec827daa3356","role":"agent","agent":"probe","data":{"event":"session.end","input":{"reason":"other","sessionId":"a11e62a2-acbb-4dc9-a155-ec827daa3356","resume":{"id":"a11e62a2-acbb-4dc9-a155-ec827daa3356"}}},"http":{"status":200,"ms":4}}

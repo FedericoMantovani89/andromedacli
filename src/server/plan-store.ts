@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 
-export interface PlanInfo { name: string; createdAt: string }
+/** `testCommand` is what the console runs for the validation step of every ticket (SPEC 8.3); the user writes it. */
+export interface PlanInfo { name: string; createdAt: string; testCommand?: string }
 export interface AgentRecord { slug: string; profile: string; createdAt: string }
 
 /** Plan state under <repo>/.console/ (SPEC 23): plan.json and state/agents.json. */
@@ -22,6 +23,14 @@ export class PlanStore {
 
   get plan(): PlanInfo {
     return JSON.parse(readFileSync(this.planFile, 'utf8')) as PlanInfo;
+  }
+
+  /** Sets (or, with an empty string, clears) the plan's test command. One line, at most 500 characters. */
+  setTestCommand(command: string): void {
+    if (typeof command !== 'string' || command.length > 500 || /[\r\n]/.test(command)) throw new Error('plan.testCommandInvalid');
+    const { testCommand: _old, ...rest } = this.plan;
+    const trimmed = command.trim();
+    writeJsonAtomic(this.planFile, trimmed === '' ? rest : { ...rest, testCommand: trimmed });
   }
 
   listAgents(): AgentRecord[] {

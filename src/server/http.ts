@@ -8,12 +8,16 @@ import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
 import { validateSlug } from '../shared/slug';
 import { PROFILES, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
-import { saveLanguage } from './config';
+import { patchConfig, type ConfigPatch } from './config';
 import { fail, readBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
 import { spawnAgent } from './agents/spawn';
 import type { Scheduler } from './agents/scheduler';
 import type { ReadingStore } from './reading/store';
+import type { TicketStore } from './tickets/store';
+import type { StepService } from './tickets/steps';
+import type { LaunchWatch } from './agents/launch-watch';
+import type { Config } from './config';
 
 export interface Context extends V1Context {
   getPort(): number;
@@ -38,11 +42,23 @@ export interface Context extends V1Context {
   testMode: boolean;
   configPath: string;
   planIsRepo: boolean;
+  tickets: TicketStore;
+  steps: StepService;
+  launchWatch: LaunchWatch;
+  /** Read at each use: a change made in the Settings dialog applies to the sessions launched afterwards. */
+  readonly git: Config['git'];
+  readonly guardMode: Config['guard']['mode'];
+  /** A test seam: runs after an agent's worktree exists and before its process starts (a throw simulates a failed start). */
+  afterWorktreeCreated?: (slug: string) => void | Promise<void>;
   getPrereq(): PrereqResult[] | null;
   /** Resolves with the checks, waiting for the startup run if it has not finished (unknown is never ok, P7). */
   ensurePrereq(): Promise<PrereqResult[]>;
   refreshPrereq(): Promise<PrereqResult[]>;
   setLanguage(language: string): void;
+  /** Changes what sessions launched from now on get (the bypass switch, the guard mode). Running sessions are untouched. */
+  applySettings(s: { bypass?: boolean; guardMode?: 'enforce' | 'shadow' }): void;
+  /** Called when a session is launched: fixes the settings that session will live with and returns what the launch needs. */
+  noteLaunch(slug: string): { bypass: boolean };
   needsSetup(): boolean;
   broadcastState(): void;
 }
@@ -52,6 +68,7 @@ const STATIC: Record<string, { file: string; type: string }> = {
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
   '/app.js.map': { file: 'app.js.map', type: 'application/json' },
   '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
+  '/splash.jpg': { file: 'splash.jpg', type: 'image/jpeg' },
   '/xterm.css': { file: 'xterm.css', type: 'text/css; charset=utf-8' },
 };
 
@@ -61,11 +78,27 @@ export function buildState(ctx: Context): StateMessage {
     return p === 'running' ? 'running' : p === 'exited' ? 'exited' : 'pending';
   };
   const stateOf = (slug: string) => ctx.registry.get(slug)?.state ?? 'starting';
+  // studying / blocked / progress come from the agent's ticket, never from the terminal.
+  const derived = (slug: string): Pick<SessionInfo, 'state' | 'progress'> => {
+    const base = stateOf(slug);
+    if (!ctx.registry.get(slug)?.git) return { state: base };
+    const ticket = ctx.tickets.get(slug);
+    const total = ticket?.steps.length ?? 0;
+    const progress = total > 0 ? { done: ticket!.steps.filter((x) => x.done).length, total } : undefined;
+    let state = base;
+    if (ticket?.blocked && base !== 'interrupted' && base !== 'queued' && base !== 'waiting_user') state = 'blocked';
+    else if (total === 0 && base === 'working') state = 'studying';
+    return { state, ...(progress ? { progress } : {}) };
+  };
   const main: SessionInfo = { slug: ctx.planName, profile: 'main', role: 'main', status: status(ctx.planName), state: stateOf(ctx.planName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
-  const agents: SessionInfo[] = ctx.store.listAgents().filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug)?.state === 'queued').map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), state: stateOf(a.slug) }));
+  const agents: SessionInfo[] = ctx.store.listAgents()
+    .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}) }));
+  let testCommand: string | undefined;
+  try { testCommand = ctx.store.plan.testCommand; } catch { /* a damaged plan.json: shown as not set */ }
   return {
-    type: 'state', plan: { name: ctx.planName }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
+    type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
   };
@@ -138,13 +171,45 @@ export function createRequestHandler(ctx: Context) {
     if (req.method === 'PUT' && path === '/api/config') {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
-      const language = (body as { language?: unknown } | null)?.language;
-      if (typeof language !== 'string' || (language !== 'auto' && !ctx.bundles.has(language))) return fail(res, 422, 'config.invalid', { path: 'language' });
-      const saved = saveLanguage(ctx.configPath, language);
+      const b = (typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+      const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+      const patch: ConfigPatch = {};
+      // Every entry is checked before anything is written: a bad one changes nothing.
+      if ('language' in b) {
+        if (typeof b.language !== 'string' || (b.language !== 'auto' && !ctx.bundles.has(b.language))) return fail(res, 422, 'config.invalid', { path: 'language' });
+        patch.language = b.language;
+      }
+      if ('agents' in b) {
+        if (!isObj(b.agents)) return fail(res, 422, 'config.invalid', { path: 'agents' });
+        if (typeof b.agents.bypassPermissions !== 'boolean') return fail(res, 422, 'config.invalid', { path: 'agents.bypassPermissions' });
+        patch.agents = { bypassPermissions: b.agents.bypassPermissions };
+      }
+      if ('guard' in b) {
+        if (!isObj(b.guard)) return fail(res, 422, 'config.invalid', { path: 'guard' });
+        if (b.guard.mode !== 'enforce' && b.guard.mode !== 'shadow') return fail(res, 422, 'config.invalid', { path: 'guard.mode' });
+        patch.guard = { mode: b.guard.mode };
+      }
+      if (Object.keys(patch).length === 0) return fail(res, 422, 'config.invalid', { path: '' });
+      const saved = patchConfig(ctx.configPath, patch);
       if (!saved.ok) return fail(res, 409, saved.code);
-      ctx.setLanguage(language);
+      if (patch.language !== undefined) ctx.setLanguage(patch.language);
+      if (patch.agents || patch.guard) ctx.applySettings({ bypass: patch.agents?.bypassPermissions, guardMode: patch.guard?.mode });
       ctx.broadcastState();
-      return send(res, 200, { language });
+      return send(res, 200, patch);
+    }
+
+    if (req.method === 'PUT' && path === '/api/plan') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      if (typeof body !== 'object' || body === null || !('testCommand' in body)) return fail(res, 400, 'bad_request');
+      try {
+        ctx.store.setTestCommand((body as { testCommand: string }).testCommand);
+      } catch {
+        return fail(res, 422, 'plan.testCommandInvalid');
+      }
+      ctx.broadcastState();
+      const saved = ctx.store.plan.testCommand;
+      return send(res, 200, saved ? { testCommand: saved } : {});
     }
 
     return fail(res, 404, 'not_found');

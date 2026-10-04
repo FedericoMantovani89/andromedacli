@@ -11,7 +11,7 @@ const planRoot = process.argv[2];
 if (!planRoot) throw new Error('usage: real-claude-smoke.ts <trusted-folder>');
 
 const configDir = mkdtempSync(join(tmpdir(), 'smoke-cfg-'));
-writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
+writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false } }));
 const s = await startServer({ port: 0, planRoot, configDir, planName: 'smoke-run' });
 const snap = async (id: string): Promise<string> => {
   const r = await fetch(`${s.url}/api/debug/snapshot/${id}`, { headers: { authorization: `Bearer ${s.token}` } });

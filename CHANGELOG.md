@@ -7,7 +7,44 @@ introduces the behaviour.
 
 ## [Unreleased]
 
-Next: Phase 3, git worktrees, checklists and the guard (and the decision on permission prompts without bypass).
+Next: Phase 4 (review and merge); ask before starting.
+
+## Phase 3: git worktrees, checklists and guard (2026-10-04)
+
+### Added
+- Git worktrees: every agent gets its own worktree (`<repo>.worktrees/<name>`) on its own branch `agent/<plan>/<name>`,
+  created from the plan branch `plan/<plan>` (made from HEAD the first time); the session starts inside it. A queued agent
+  gets its worktree only when its slot arrives. Refused up front with `git.notRepo`, `git.noCommits`, `git.worktreeExists`;
+  a failed start leaves no worktree, branch, hook folder, token or process. `git.worktrees: false` keeps the old behaviour.
+- Per-worktree `pre-push` hook (through `extensions.worktreeConfig`, script kept in the repository's git dir): only the
+  agent's own branch can be pushed; other refs, force, deletes and tags are refused.
+- Checklists and tickets: tools `checklist_set`, `step_done`, `report_blocked` (agents only). The console validates the
+  mandatory skeleton (study, tests first, steps, validation, documentation), commits each closed step itself
+  (`step n/N: title`, trailers `Agent:`, `Ticket:`, `Piano:`), refuses secrets (`.env`, keys, credentials, configurable
+  patterns), runs the plan's test command at the validation step with a timeout, and pushes the branch when the last step
+  closes, telling the main. Steps close in order, one at a time; the checklist is also saved in `.console/checklist.md`.
+- Guard: `POST /v1/guard` judges every `Bash`, `PowerShell`, `Write`, `Edit`, `NotebookEdit`, `Read`, `Grep` and `Glob` call
+  with the caller's own role and worktree (git commit/push/force/tag/checkout/merge/reset, config tampering, paths outside the
+  worktree and `.git`, secrets, wide deletes, download-and-run). The main has a shorter list. Fails closed for shell and
+  writing tools when the console is unreachable. `guard.mode` `enforce` or `shadow` (allow and log); refusals are logged to
+  `.console/state/guard.jsonl`.
+- Settings dialog: a switch for `agents.bypassPermissions` (with a warning), the guard mode, and the plan's test command;
+  `PUT /api/config` takes them (and still the language), `PUT /api/plan` the test command. Bypass and guard mode apply to
+  sessions launched afterwards; running sessions keep what they started with.
+- Launch check: 90 s after an agent is launched the console verifies it reported in and took its goal; if not, the main gets a "Launch check:" message (also for agents started from the UI) and the panel shows "Not started yet" until the agent works. Asked for by the architect.
+- Start-up splash (the AndromedaCli picture, `src/ui/splash.jpg`): shown about 2 s, then faded out; it never takes clicks or keys. The page title is the commercial name, AndromedaCli (the repository and package keep the internal name multiconsole).
+- Panel headers show the checklist progress (`3/7`) and two new states, `Studying` (no checklist yet) and `Blocked`.
+
+### Fixed (found by the final review)
+- Guard: commands inside if/then/fi, subshells, brace groups, PowerShell blocks and `iex "..."` are judged like any other; `timeout`, `xargs`, `watch` are looked through; a `cd` earlier in the command moves later relative paths; `rmdir/rd/del -Recurse` and piped `Remove-Item` count as recursive deletes.
+- Guard: the main's `git push` / `git push origin HEAD` / `--all` are refused while the repository is on a protected branch, and pushing an existing tag by name is a tag push.
+- Secrets: `.env.example` and other template files are no longer refused; `credentials.*` narrowed to real credential file types.
+- Several agents started at once no longer race on the plan branch and the repository config (one lock per repository).
+- The agent prompt tells it its worktree has only tracked files (install dependencies first).
+
+### Changed
+- The scheduler can start an agent asynchronously (the worktree is made first); the slot is taken at once.
+- `git` retries a spawn that fails because the machine is busy (EAGAIN, EPERM, EBUSY) a few times.
 
 ## Phase 2: mod and channel (2026-10-04)
 

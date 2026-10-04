@@ -8,6 +8,7 @@ import { Workspace } from './panels';
 import { openSettings } from './settings';
 import { renderStatusBar } from './statusbar';
 import { openWizard } from './wizard';
+import { runSplash } from './splash';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -123,4 +124,5 @@ async function boot(): Promise<void> {
   connectState();
 }
 
+runSplash();
 void boot();

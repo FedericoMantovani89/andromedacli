@@ -27,9 +27,9 @@ async function until(f: () => Promise<boolean> | boolean, ms = 10000): Promise<b
 
 async function boot(opts: { configured: boolean }) {
   const configDir = mkdtempSync(join(tmpdir(), 'e2e-cfg-'));
-  if (opts.configured) writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
+  if (opts.configured) writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false } }));
   const planRoot = mkdtempSync(join(tmpdir(), 'e2e-plan-'));
-  const s = await startServer({ port: 0, planRoot, configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture] });
+  const s = await startServer({ port: 0, planRoot, configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture], worktrees: false });
   s.setLimits({ global: 64, perPlan: 64 }); // fake agents never report events, so they stay "starting" and would hold slots
   const get = async (path: string) => (await fetch(`${s.url}${path}`, { headers: { authorization: `Bearer ${s.token}` } })).json() as Promise<any>;
   const post = async (path: string, body: unknown) => {
@@ -219,7 +219,7 @@ try {
   {
     let hits = '';
     try {
-      hits = execFileSync('git', ['grep', '--no-index', '-nP', '[àèéìòùÀÈÉÌÒÙ]', '--', 'src', 'scripts', ':!src/i18n/messages_it.properties'], { cwd: root, encoding: 'utf8' });
+      hits = execFileSync('git', ['grep', '--no-index', '-nP', '[àèéìòùÀÈÉÌÒÙ]', '--', 'src', 'scripts', ':!src/i18n/messages_it.properties', ':!*.jpg'], { cwd: root, encoding: 'utf8' });
     } catch { /* git grep exits 1 when nothing matches */ }
     check('no Italian text in code or comments', hits.trim() === '', hits.slice(0, 300));
   }

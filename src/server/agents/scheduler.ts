@@ -8,14 +8,18 @@ export interface SpawnRequest {
   source: 'main' | 'user';
 }
 
-export type RequestResult = { status: 'started' } | { status: 'queued'; position: number };
+/** `ready` is present when the start is asynchronous (it creates a worktree first): it rejects if the start fails. */
+export type RequestResult = { status: 'started'; ready?: Promise<void> } | { status: 'queued'; position: number };
 
 export interface SchedulerOptions {
   registry: AgentRegistry;
   /** Read on every decision, so changing the limits takes effect without restarting anything (SPEC 16.7, 22.2). */
   limits: () => { global: number; perPlan: number };
-  /** Actually starts the process. May throw. */
-  start: (r: SpawnRequest) => void;
+  /**
+   * Actually starts the process. May throw, or return a promise that rejects. Either way the agent must count as active from the
+   * synchronous part of the call (the registry state), so the next decision sees the slot as taken.
+   */
+  start: (r: SpawnRequest) => void | Promise<void>;
   /** A queued request whose start failed (it is dropped; the queue goes on). */
   onStartError?: (r: SpawnRequest, error: unknown) => void;
 }
@@ -42,8 +46,8 @@ export class Scheduler {
   request(r: SpawnRequest): RequestResult {
     if (this.closed) throw new Error('the console is closing');
     if (this.waiting.length === 0 && this.hasRoom()) {
-      this.o.start(r); // an error here belongs to the caller (nothing was queued)
-      return { status: 'started' };
+      const started = this.o.start(r); // an error here belongs to the caller (nothing was queued)
+      return started instanceof Promise ? { status: 'started', ready: started } : { status: 'started' };
     }
     this.waiting.push(r);
     return { status: 'queued', position: this.waiting.length };
@@ -54,7 +58,8 @@ export class Scheduler {
     while (!this.closed && this.waiting.length > 0 && this.hasRoom()) {
       const next = this.waiting.shift()!;
       try {
-        this.o.start(next);
+        const started = this.o.start(next);
+        if (started instanceof Promise) started.catch((error: unknown) => this.o.onStartError?.(next, error));
       } catch (error) {
         this.o.onStartError?.(next, error);
       }

@@ -62,11 +62,11 @@ it('registers the tools of its role once and starts one inbox poller, even if se
   expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user']);
   expect(f.ticks).toHaveLength(1);
 });
-it('an agent gets only list_agents', async () => {
+it('an agent gets list_agents and the ticket tools, never spawn_agent', async () => {
   const { find } = await loadMod();
   const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' } });
   await find('session.start')(f.$, {}, next);
-  expect(f.registeredTools).toEqual(['list_agents']);
+  expect(f.registeredTools).toEqual(['list_agents', 'checklist_set', 'step_done', 'report_blocked']);
 });
 it('delivers an inbox message only after the console confirmed receiving it', async () => {
   const { find } = await loadMod();
@@ -196,4 +196,116 @@ it('if the console is unreachable the native dialog is left in place (the engine
   const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: () => new Error('down') });
   await find('session.start')(f.$, {}, next);
   expect((await find('tool.check')(f.$, bashCheck, asking)).decision).toBe('ask');
+});
+
+it('step_done, checklist_set and report_blocked send only their own fields and return the console answer as text', async () => {
+  const { find } = await loadMod();
+  const bodies: Record<string, unknown> = {};
+  const f = fake$({
+    env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' },
+    fetch: (url, init) => {
+      if (url.includes('/v1/tools/')) { bodies[url.split('/').pop()!] = JSON.parse(init.body ?? '{}'); return { ok: true, text: JSON.stringify({ status: 'closed', n: 3 }) }; }
+      return { ok: true, text: '{}' };
+    },
+  });
+  await find('session.start')(f.$, {}, next);
+  const done = await find('tool.call', 'mcp__console-mod__step_done')(f.$, { n: '3', note: 'x', skip: false, extra: 'ignored' });
+  expect(done).toEqual({ result: JSON.stringify({ status: 'closed', n: 3 }) });
+  expect(bodies.step_done).toEqual({ n: 3, note: 'x', skip: false });
+  await find('tool.call', 'mcp__console-mod__checklist_set')(f.$, { items: ['a', 'b'], extra: 1 });
+  expect(bodies.checklist_set).toEqual({ items: ['a', 'b'] });
+  await find('tool.call', 'mcp__console-mod__report_blocked')(f.$, { reason: 'stuck', extra: 1 });
+  expect(bodies.report_blocked).toEqual({ reason: 'stuck' });
+});
+it('a ticket tool called while the console is unreachable says so instead of throwing', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: (url) => (url.includes('/v1/tools/') ? new Error('ECONNREFUSED') : { ok: true, text: '{}' }) });
+  await find('session.start')(f.$, {}, next);
+  const out = await find('tool.call', 'mcp__console-mod__step_done')(f.$, { n: 1 });
+  expect(out).toEqual({ result: 'The console did not answer.' });
+});
+
+// ---- the guard hook (Phase 3, Task 5) ----
+const GUARDED = ['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit', 'Read', 'Grep', 'Glob'];
+const RISKY = ['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
+const guardFetch = (answer: { decision: string; reason?: string } | 'down' | 'broken') => (url: string) => {
+  if (!url.endsWith('/v1/guard')) return { ok: true, text: '{}' };
+  if (answer === 'down') return new Error('ECONNREFUSED');
+  if (answer === 'broken') return { ok: false, status: 500, text: 'oops' };
+  return { ok: true, text: JSON.stringify(answer) };
+};
+
+it('every guarded tool has a hook, and the console\'s own tools are not guarded', async () => {
+  const { find } = await loadMod();
+  for (const tool of GUARDED) expect(typeof find('tool.call', tool), tool).toBe('function');
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch({ decision: 'deny', reason: 'no' }) });
+  await find('session.start')(f.$, {}, next);
+  f.calls.length = 0;
+  await find('tool.call', 'mcp__console-mod__list_agents')(f.$, {});
+  expect(f.calls.some((c) => c.endsWith('/v1/guard'))).toBe(false);
+});
+it('a deny from the console becomes { deny: reason }; an allow passes the call on', async () => {
+  const { find } = await loadMod();
+  const deny = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch({ decision: 'deny', reason: 'force pushes are not allowed' }) });
+  await find('session.start')(deny.$, {}, next);
+  expect(await find('tool.call', 'Bash')(deny.$, { command: 'git push -f' }, next)).toEqual({ deny: 'force pushes are not allowed' });
+  const allow = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch({ decision: 'allow' }) });
+  await find('session.start')(allow.$, {}, next);
+  const e = { command: 'git status' };
+  expect(await find('tool.call', 'Bash')(allow.$, e, next)).toEqual({ next: e });
+});
+it('sends the console only what it needs (command, paths), never file contents', async () => {
+  const { find } = await loadMod();
+  let sent: any;
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: (url, init) => { if (url.endsWith('/v1/guard')) sent = JSON.parse(init.body ?? '{}'); return { ok: true, text: JSON.stringify({ decision: 'allow' }) }; } });
+  await find('session.start')(f.$, {}, next);
+  await find('tool.call', 'Write')(f.$, { file_path: 'a.ts', content: 'SECRET BODY', extra: 1 }, next);
+  expect(sent).toEqual({ tool: 'Write', input: { file_path: 'a.ts' } });
+  await find('tool.call', 'Edit')(f.$, { file_path: 'a.ts', old_string: 'x', new_string: 'y' }, next);
+  expect(sent).toEqual({ tool: 'Edit', input: { file_path: 'a.ts' } });
+  await find('tool.call', 'NotebookEdit')(f.$, { notebook_path: 'n.ipynb', new_source: 'z' }, next);
+  expect(sent).toEqual({ tool: 'NotebookEdit', input: { notebook_path: 'n.ipynb' } });
+  await find('tool.call', 'Grep')(f.$, { pattern: 'p', path: 'src' }, next);
+  expect(sent).toEqual({ tool: 'Grep', input: { path: 'src' } });
+});
+it.each(['down', 'broken'] as const)('console %s: shell and writing tools are refused, reading tools carry on', async (mode) => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch(mode) });
+  await find('session.start')(f.$, {}, next);
+  for (const tool of RISKY) {
+    const out = await find('tool.call', tool)(f.$, { command: 'x', file_path: 'a' }, next);
+    expect(out, tool).toMatchObject({ deny: expect.stringMatching(/guard/i) });
+  }
+  for (const tool of ['Read', 'Grep', 'Glob']) {
+    const e = { file_path: 'a' };
+    expect(await find('tool.call', tool)(f.$, e, next), tool).toEqual({ next: e });
+  }
+});
+it('an answer that is neither allow nor deny counts as unreachable', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: () => ({ ok: true, text: '{"decision":"maybe"}' }) });
+  await find('session.start')(f.$, {}, next);
+  expect(await find('tool.call', 'Bash')(f.$, { command: 'ls' }, next)).toMatchObject({ deny: expect.any(String) });
+});
+it('a failure inside the guard hook never throws into the session', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' } });
+  await find('session.start')(f.$, {}, next);
+  (f.$ as any).http = undefined; // the engine API breaks
+  await expect(find('tool.call', 'Bash')(f.$, { command: 'ls' }, next)).resolves.toMatchObject({ deny: expect.any(String) });
+  await expect(find('tool.call', 'Read')(f.$, { file_path: 'a' }, next)).resolves.toEqual({ next: { file_path: 'a' } });
+});
+it('outside a console session the guard hook leaves every call alone', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_URL: undefined, CONSOLE_TOKEN: undefined } });
+  await find('session.start')(f.$, {}, next);
+  const e = { command: 'git push -f' };
+  expect(await find('tool.call', 'Bash')(f.$, e, next)).toEqual({ next: e });
+  expect(f.calls).toEqual([]);
+});
+it('the main is guarded too (its few rules live on the console)', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ fetch: guardFetch({ decision: 'deny', reason: 'rm.wide' }) });
+  await find('session.start')(f.$, {}, next);
+  expect(await find('tool.call', 'Bash')(f.$, { command: 'rm -rf /' }, next)).toEqual({ deny: 'rm.wide' });
 });

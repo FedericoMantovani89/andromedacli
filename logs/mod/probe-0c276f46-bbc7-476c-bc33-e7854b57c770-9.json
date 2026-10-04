@@ -1,1 +1,0 @@
-{"type":"turn.step","seq":9,"ts":"2026-10-04T10:06:21.658Z","session":"0c276f46-bbc7-476c-bc33-e7854b57c770","role":"agent","agent":"probe","data":{"event":"turn.step","input":{"turnId":"7cf909a8-a4e2-46dd-9014-341059ce3e60","index":1,"model":"claude-haiku-4-5-20251001","messageCount":23}},"http":{"status":200,"ms":4}}

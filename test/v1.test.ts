@@ -21,7 +21,7 @@ async function boot(): Promise<Running> {
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
   const s = await startServer({
     port: 0, planRoot: mkdtempSync(join(tmpdir(), 'v1-plan-')), configDir, planName: 'shop-api',
-    claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner,
+    claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner, worktrees: false,
   });
   running.push(s);
   return s;

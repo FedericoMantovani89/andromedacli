@@ -34,6 +34,12 @@ button:hover { border-color: var(--accent); }
 .panel-state.waiting_user { color: var(--warn); }
 .panel-state.interrupted { color: var(--bad); }
 .panel-state.idle, .panel-state.starting, .panel-state.queued { color: var(--muted); }
+.panel-state.studying { color: var(--accent, var(--ok)); }
+.panel-state.blocked { color: var(--bad); font-weight: 600; }
+.panel-stalled { margin-left: 6px; color: var(--warn); font-weight: 600; }
+.panel-stalled[hidden] { display: none; }
+.panel-progress { margin-left: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.panel-progress[hidden] { display: none; }
 .badge { display: none; background: var(--accent); color: #fff; border-radius: 3px; padding: 0 6px; font-size: 11px; }
 .panel.active .badge { display: inline-block; }
 .panel-term { flex: 1 1 0; min-height: 0; padding: 4px; }
@@ -77,7 +83,18 @@ button:hover { border-color: var(--accent); }
 #overlay[hidden] { display: none; }
 .dialog { min-width: 420px; max-width: 80vw; background: var(--panel); border: 1px solid var(--border);
   border-radius: 6px; padding: 14px; display: grid; gap: 10px; }
+#splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #06141a; pointer-events: none; opacity: 1; transition: opacity .5s ease; }
+#splash img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#splash.fade { opacity: 0; }
+#splash[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { #splash { transition: none; } }
 .dialog h2 { margin: 0; font-size: 15px; }
+.settings-agents { display: grid; gap: 8px; }
+.settings-switch { display: flex; align-items: center; gap: 8px; }
+.settings-warning { margin: 0; padding: 6px 8px; border: 1px solid var(--warn); border-radius: 6px; color: var(--warn); font-size: 12px; }
+.settings-note { margin: 0; color: var(--muted); font-size: 12px; }
+.settings-test { display: grid; gap: 4px; }
+.settings-test label { display: grid; gap: 2px; }
 .prereq-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; }
 .prereq-ok { color: var(--ok); } .prereq-outdated { color: var(--warn); }
 .prereq-missing, .prereq-error { color: var(--bad); }
