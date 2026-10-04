@@ -33,7 +33,7 @@ const files = [...walk(join(root, 'src', 'ui')), ...walk(join(root, 'src', 'serv
 for (const f of files) {
   const text = readFileSync(f, 'utf8');
   for (const m of text.matchAll(/\b(?:t|k)\(\s*['"]([\w.]+)['"]\s*[,)]/g)) used.add(m[1]!);
-  for (const m of text.matchAll(/\bbindText\(\s*[^,]+,\s*['"]([\w.]+)['"]/g)) used.add(m[1]!);
+  for (const m of text.matchAll(/\b(?:bindText|setPlaceholder)\(\s*[^,]+,\s*['"]([\w.]+)['"]/g)) used.add(m[1]!);
   for (const m of text.matchAll(/\bt\(\s*['"]([\w.]+\.)['"]\s*\+/g)) dynamicPrefixes.push(m[1]!);
   for (const m of text.matchAll(/\bt\(\s*`([\w.]+\.)\$\{/g)) dynamicPrefixes.push(m[1]!);
   for (const m of text.matchAll(/\bbindText\(\s*[^,]+,\s*`([\w.]+\.)\$\{/g)) dynamicPrefixes.push(m[1]!);

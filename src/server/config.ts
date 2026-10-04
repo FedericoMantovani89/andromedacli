@@ -8,8 +8,9 @@ export type Language = string;
 export interface Config {
   schema: 1;
   language: Language;
-  agents: { bypassPermissions: boolean };
+  agents: { bypassPermissions: boolean; maxActiveGlobal: number; maxActivePerPlan: number };
   claude: { command: string[] };
+  mod: { enabled: boolean };
   telemetry: false;
 }
 export interface ConfigError { path: string; code: 'config.invalid' | 'config.unreadable' }
@@ -17,8 +18,9 @@ export interface ConfigError { path: string; code: 'config.invalid' | 'config.un
 export const DEFAULT_CONFIG: Config = {
   schema: 1,
   language: 'auto',
-  agents: { bypassPermissions: false },
+  agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerPlan: 3 },
   claude: { command: ['claude'] },
+  mod: { enabled: true },
   telemetry: false,
 };
 
@@ -47,15 +49,29 @@ export function loadConfig(path: string): { config: Config; errors: ConfigError[
     else bad('language');
   }
   if ('agents' in raw) {
-    if (isObj(raw.agents) && 'bypassPermissions' in raw.agents) {
-      if (typeof raw.agents.bypassPermissions === 'boolean') config.agents.bypassPermissions = raw.agents.bypassPermissions;
-      else bad('agents.bypassPermissions');
-    } else if (!isObj(raw.agents)) bad('agents');
+    if (isObj(raw.agents)) {
+      const a = raw.agents;
+      if ('bypassPermissions' in a) {
+        if (typeof a.bypassPermissions === 'boolean') config.agents.bypassPermissions = a.bypassPermissions;
+        else bad('agents.bypassPermissions');
+      }
+      for (const key of ['maxActiveGlobal', 'maxActivePerPlan'] as const) {
+        if (!(key in a)) continue;
+        const v = a[key];
+        if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64) config.agents[key] = v;
+        else bad(`agents.${key}`);
+      }
+    } else bad('agents');
   }
   if ('claude' in raw) {
     const cmd = isObj(raw.claude) ? raw.claude.command : undefined;
     if (Array.isArray(cmd) && cmd.length > 0 && cmd.every((c) => typeof c === 'string')) config.claude.command = cmd as string[];
     else bad('claude.command');
+  }
+  if ('mod' in raw) {
+    const enabled = isObj(raw.mod) ? raw.mod.enabled : undefined;
+    if (typeof enabled === 'boolean') config.mod.enabled = enabled;
+    else bad('mod.enabled');
   }
   if ('telemetry' in raw && raw.telemetry !== false) bad('telemetry');
   return { config, errors };

@@ -64,7 +64,7 @@ export function createNewAgentControl(getProfiles: () => readonly string[], afte
       ev.preventDefault();
       void api<ApiError | { slug: string }>('/api/agents', { method: 'POST', body: { slug: slug.value, profile: profile.value } })
         .then((res) => {
-          if (res.status === 201) close();
+          if (res.status === 201 || res.status === 202) close(); // 202: queued behind the limit, it starts by itself
           else error.textContent = errorText(res.body as ApiError);
         });
     });

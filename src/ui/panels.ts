@@ -1,18 +1,24 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import type { Activity } from '../shared/activity';
 import type { SessionInfo } from '../shared/protocol';
 import { computeAgentLayout } from '../shared/layout';
 import { wsUrl } from './api';
+import { reconcile } from './dom';
 import { bindText, k } from './i18n-client';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
 
-const STATE_KEYS: Record<SessionInfo['status'], string> = {
-  running: k('state.running'),
-  exited: k('state.exited'),
+const STATE_KEYS: Record<Activity, string> = {
+  starting: k('state.starting'),
+  idle: k('state.idle'),
+  working: k('state.working'),
+  waiting_user: k('state.waiting_user'),
+  queued: k('state.queued'),
+  interrupted: k('state.interrupted'),
 };
 
 interface Panel extends PanelHandle {
-  setStatus(status: SessionInfo['status']): void;
+  setState(state: Activity): void;
   dispose(): void;
 }
 
@@ -35,7 +41,12 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
   badge.className = 'badge';
   bindText(badge, 'panel.badge.activeInput');
   const stateEl = document.createElement('span');
-  header.append(title, meta, badge, stateEl);
+  const readBtn = document.createElement('button');
+  readBtn.className = 'panel-read';
+  bindText(readBtn, 'reader.open');
+  readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
+  readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
+  header.append(title, meta, badge, stateEl, readBtn);
 
   const host = document.createElement('div');
   host.className = 'panel-term';
@@ -85,9 +96,9 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
 
   return {
     root, term,
-    setStatus: (status) => {
-      bindText(stateEl, STATE_KEYS[status]);
-      stateEl.className = `panel-state ${status}`;
+    setState: (state) => {
+      bindText(stateEl, STATE_KEYS[state]);
+      stateEl.className = `panel-state ${state}`;
     },
     dispose: () => {
       closed = true;
@@ -96,17 +107,6 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void): Pan
       term.dispose();
     },
   };
-}
-
-/**
- * Makes `parent`'s children equal `desired` while moving as few nodes as possible. Re-parenting a node makes the
- * browser drop its keyboard focus, so a state update must never shuffle the panel the user is typing in (P2).
- */
-function reconcile(parent: HTMLElement, desired: HTMLElement[]): void {
-  desired.forEach((child, i) => {
-    if (parent.children[i] !== child) parent.insertBefore(child, parent.children[i] ?? null);
-  });
-  while (parent.children.length > desired.length) parent.lastElementChild!.remove();
 }
 
 /** Owns the panels of the whole workspace: the fixed main on the left, the agents stacked on the right. */
@@ -119,7 +119,7 @@ export class Workspace {
   private lastAgents: SessionInfo[] = [];
   private newAgentControl: HTMLElement | undefined;
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
-  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement }>();
+  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; pending: boolean }>();
 
   constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string) {
     this.mainId = mainId;
@@ -154,16 +154,21 @@ export class Workspace {
     if (this.mainCol.firstElementChild !== this.panels.get(main.slug)!.root) {
       this.mainCol.replaceChildren(this.panels.get(main.slug)!.root);
     }
-    this.panels.get(main.slug)!.setStatus(main.status);
+    this.panels.get(main.slug)!.setState(main.state);
 
     const bySlug = new Map(agents.map((a) => [a.slug, a]));
-    const layout = computeAgentLayout(agents.map((a) => a.slug), this.expanded);
+    // Agents without a process yet (waiting in the queue) are always bars; the rest follow the 4-panels rule.
+    const live = agents.filter((a) => a.status !== 'pending');
+    const layout = [
+      ...computeAgentLayout(live.map((a) => a.slug), this.expanded),
+      ...agents.filter((a) => a.status === 'pending').map((a) => ({ slug: a.slug, mode: 'bar' as const })),
+    ];
     const children: HTMLElement[] = [];
     for (const item of layout) {
       const info = bySlug.get(item.slug)!;
       if (item.mode === 'panel') {
         const p = this.ensurePanel(info);
-        p.setStatus(info.status);
+        p.setState(info.state);
         children.push(p.root);
       } else {
         this.dropPanel(item.slug); // the server keeps the scrollback; reconnecting restores it
@@ -205,9 +210,10 @@ export class Workspace {
 
   private bar(info: SessionInfo): HTMLElement {
     const cached = this.bars.get(info.slug);
-    if (cached) {
-      bindText(cached.state, STATE_KEYS[info.status]);
-      cached.state.className = `panel-state ${info.status}`;
+    const pending = info.status === 'pending';
+    if (cached && cached.pending === pending) {
+      bindText(cached.state, STATE_KEYS[info.state]);
+      cached.state.className = `panel-state ${info.state}`;
       return cached.el;
     }
     const el = document.createElement('div');
@@ -219,13 +225,16 @@ export class Workspace {
     meta.className = 'panel-meta';
     meta.textContent = info.profile;
     const state = document.createElement('span');
-    state.className = `panel-state ${info.status}`;
-    bindText(state, STATE_KEYS[info.status]);
-    const expand = document.createElement('button');
-    bindText(expand, 'panel.expand');
-    expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
-    el.append(title, meta, state, expand);
-    this.bars.set(info.slug, { el, state });
+    state.className = `panel-state ${info.state}`;
+    bindText(state, STATE_KEYS[info.state]);
+    el.append(title, meta, state);
+    if (!pending) { // a queued agent has no terminal to expand yet
+      const expand = document.createElement('button');
+      bindText(expand, 'panel.expand');
+      expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
+      el.append(expand);
+    }
+    this.bars.set(info.slug, { el, state, pending });
     return el;
   }
 }

@@ -1,0 +1,1 @@
+{"type":"tool.AskUserQuestion","seq":6,"ts":"2026-10-04T10:12:10.610Z","session":"a11e62a2-acbb-4dc9-a155-ec827daa3356","role":"agent","agent":"probe","data":{"questions":[{"question":"Which color do you prefer?","header":"Color","options":"[array 2]","multiSelect":false}],"tool":"AskUserQuestion","tool_use_id":"toolu_01SaB2Twc7vZnwfSsjsbkuqs"},"http":{"status":200,"ms":34}}

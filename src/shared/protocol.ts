@@ -1,20 +1,26 @@
 /** Wire types shared by the server and the browser UI. Codes are English constants, never sentences (P11). */
+import type { Activity } from './activity';
+
 export const PROFILES = ['backend', 'dba', 'frontend', 'reviewer', 'recovery'] as const;
 export type Profile = (typeof PROFILES)[number];
 
 /** Error codes the user can act on: each one needs an `error.<code>` text in every language (checked at build). */
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
-  'profile.invalid', 'prereq.blocked', 'agent.spawnFailed',
+  'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
 ] as const;
 
-export type SessionStatus = 'running' | 'exited';
+/** `pending`: no process yet (the agent waits in the queue for a free slot). */
+export type SessionStatus = 'running' | 'exited' | 'pending';
 
 export interface SessionInfo {
   slug: string;
   profile: string;
   role: 'main' | 'agent';
+  /** Process status (is the process alive). */
   status: SessionStatus;
+  /** What the session is doing, from mod events. */
+  state: Activity;
 }
 
 export interface PrereqResult {
@@ -23,6 +29,19 @@ export interface PrereqResult {
   status: 'ok' | 'outdated' | 'missing' | 'error' | 'not_required';
   version?: string;
   message?: string;
+}
+
+/** A question waiting for the human (SPEC 5.6). */
+export interface QueueItem {
+  id: string;
+  from: string;
+  kind: 'question' | 'permission';
+  text: string;
+  tool?: string;
+  detail?: string;
+  options?: string[];
+  multiSelect?: boolean;
+  createdAt: string;
 }
 
 export interface StateMessage {
@@ -40,6 +59,8 @@ export interface StateMessage {
   needsSetup: boolean;
   planIsRepo: boolean;
   planRoot: string;
+  /** Everything that waits for the user: questions from the main and the agents. */
+  queue: QueueItem[];
 }
 
 export interface ApiError {

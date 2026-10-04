@@ -34,6 +34,11 @@ export class PlanStore {
     }
   }
 
+  /** Forgets an agent whose creation failed (a normal agent stays on record: the name stays reserved). */
+  removeAgent(slug: string): void {
+    writeJsonAtomic(this.agentsFile, this.listAgents().filter((a) => a.slug !== slug));
+  }
+
   addAgent(a: { slug: string; profile: string }): void {
     const all = this.listAgents();
     if (all.some((x) => x.slug === a.slug)) throw new Error('slug.duplicate');

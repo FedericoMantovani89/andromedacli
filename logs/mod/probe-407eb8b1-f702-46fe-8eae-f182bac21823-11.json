@@ -1,0 +1,1 @@
+{"type":"spike.probe_wait","seq":11,"ts":"2026-10-04T10:07:58.099Z","session":"407eb8b1-f702-46fe-8eae-f182bac21823","role":"agent","agent":"probe","data":{"elapsed":75064},"http":{"status":200,"ms":5}}

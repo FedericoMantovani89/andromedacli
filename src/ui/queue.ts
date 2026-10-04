@@ -1,0 +1,138 @@
+import type { QueueItem } from '../shared/protocol';
+import { api } from './api';
+import { reconcile } from './dom';
+import { bindText, k, setPlaceholder } from './i18n-client';
+
+interface Entry { el: HTMLElement }
+
+/** Buttons that must not take the keyboard from where it is (answering from the queue never moves the focus). */
+function keepFocus(button: HTMLElement): void {
+  button.addEventListener('mousedown', (ev) => ev.preventDefault());
+}
+
+function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
+  const el = document.createElement('div');
+  el.className = 'queue-item';
+  el.dataset.id = item.id;
+
+  const from = document.createElement('div');
+  from.className = 'queue-from';
+  bindText(from, 'queue.from', { slug: item.from });
+  const text = document.createElement('div');
+  text.className = 'queue-text';
+  text.textContent = item.text; // the question is data
+  el.append(from, text);
+
+  if (item.kind === 'permission') {
+    // An agent's tool wants approval: show what it would do, offer only Allow and Deny (answers "allow" / "deny").
+    const what = document.createElement('div');
+    what.className = 'queue-permission';
+    bindText(what, 'queue.permission', { tool: item.tool ?? '' });
+    const detail = document.createElement('pre');
+    detail.className = 'queue-detail';
+    detail.textContent = item.detail ?? ''; // data: shown as plain text, never as HTML
+    const row = document.createElement('div');
+    row.className = 'queue-options';
+    for (const [value, key] of [['allow', k('queue.allow')], ['deny', k('queue.deny')]] as const) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      bindText(b, key);
+      b.dataset.answer = value;
+      b.addEventListener('click', () => send(value));
+      keepFocus(b);
+      row.append(b);
+    }
+    el.append(what, detail, row);
+    return { el };
+  }
+
+  const free = document.createElement('input');
+  free.className = 'queue-free';
+  free.autocomplete = 'off';
+  setPlaceholder(free, 'queue.otherAnswer');
+
+  const checks: HTMLInputElement[] = [];
+  if (item.options && item.options.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'queue-options';
+    for (const label of item.options) {
+      if (item.multiSelect) {
+        const wrap = document.createElement('label');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.value = label;
+        checks.push(box);
+        const span = document.createElement('span');
+        span.textContent = label;
+        wrap.append(box, span);
+        row.append(wrap);
+      } else {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label; // an option is data
+        b.addEventListener('click', () => send(label));
+        keepFocus(b);
+        row.append(b);
+      }
+    }
+    el.append(row);
+  }
+
+  const answerRow = document.createElement('div');
+  answerRow.className = 'queue-answer';
+  const submit = document.createElement('button');
+  submit.type = 'button';
+  bindText(submit, 'queue.send');
+  const collect = () => {
+    const picked = checks.filter((c) => c.checked).map((c) => c.value);
+    const typed = free.value.trim();
+    send([...picked, ...(typed ? [typed] : [])].join(', '));
+  };
+  submit.addEventListener('click', collect);
+  free.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); collect(); } });
+  answerRow.append(free, submit);
+  el.append(answerRow);
+  return { el };
+}
+
+/** The question drawer. Entries are created once per question and never rebuilt, so typing survives state updates. */
+export function createQueueDrawer(root: HTMLElement) {
+  const title = document.createElement('h2');
+  bindText(title, 'queue.title');
+  const list = document.createElement('div');
+  list.className = 'queue-list';
+  const empty = document.createElement('div');
+  empty.className = 'queue-empty';
+  bindText(empty, 'queue.empty');
+  const close = document.createElement('button');
+  bindText(close, 'common.close');
+  keepFocus(close);
+  const head = document.createElement('div');
+  head.className = 'drawer-head';
+  head.append(title, close);
+  root.append(head, list, empty);
+
+  const entries = new Map<string, Entry>();
+  let open = false;
+  const setOpen = (value: boolean) => { open = value; root.hidden = !value; };
+  close.addEventListener('click', () => setOpen(false));
+  setOpen(false);
+
+  return {
+    isOpen: () => open,
+    toggle: () => setOpen(!open),
+    update(items: QueueItem[]): void {
+      const ids = new Set(items.map((i) => i.id));
+      for (const id of [...entries.keys()]) if (!ids.has(id)) entries.delete(id);
+      for (const item of items) {
+        if (!entries.has(item.id)) {
+          entries.set(item.id, createEntry(item, (answer) => {
+            if (answer.trim() !== '') void api(`/api/queue/${item.id}/answer`, { method: 'POST', body: { answer } });
+          }));
+        }
+      }
+      reconcile(list, items.map((i) => entries.get(i.id)!.el));
+      empty.hidden = items.length > 0;
+    },
+  };
+}

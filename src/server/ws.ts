@@ -11,13 +11,18 @@ function reject(socket: Duplex, status: number, reason: string): void {
 }
 
 /** Two socket kinds (SPEC 4.1): binary terminal bytes per session, and JSON UI state. */
-export function attachWebSockets(server: Server, ctx: Context): { broadcastState(): void; closeAll(): void } {
+export function attachWebSockets(server: Server, ctx: Context): { broadcastState(): void; broadcastJson(payload: unknown): void; closeAll(): void } {
   const wss = new WebSocketServer({ noServer: true });
   const uiSockets = new Set<WebSocket>();
 
   const broadcastState = () => {
     const payload = JSON.stringify(buildState(ctx));
     for (const ws of uiSockets) if (ws.readyState === ws.OPEN) ws.send(payload);
+  };
+
+  const broadcastJson = (payload: unknown) => {
+    const text = JSON.stringify(payload);
+    for (const ws of uiSockets) if (ws.readyState === ws.OPEN) ws.send(text);
   };
 
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -72,6 +77,7 @@ export function attachWebSockets(server: Server, ctx: Context): { broadcastState
 
   return {
     broadcastState,
+    broadcastJson,
     closeAll: () => { for (const ws of wss.clients) ws.terminate(); wss.close(); },
   };
 }

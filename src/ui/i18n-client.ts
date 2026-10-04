@@ -69,7 +69,14 @@ export function bindText(el: HTMLElement, key: string, params?: Record<string, s
   el.textContent = t(key, params);
 }
 
+/** Sets an input's placeholder from a key and remembers it for language changes. */
+export function setPlaceholder(el: HTMLInputElement, key: string): void {
+  el.dataset.i18nPlaceholder = key;
+  el.placeholder = t(key);
+}
+
 export function retranslate(root: ParentNode = document): void {
+  for (const el of root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder!);
   for (const el of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const params = el.dataset.i18nParams ? (JSON.parse(el.dataset.i18nParams) as Record<string, string | number>) : undefined;
     el.textContent = t(el.dataset.i18n!, params);

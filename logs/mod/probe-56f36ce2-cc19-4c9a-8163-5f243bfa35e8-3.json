@@ -1,0 +1,1 @@
+{"type":"turn.start","seq":3,"ts":"2026-10-04T10:13:58.150Z","session":"56f36ce2-cc19-4c9a-8163-5f243bfa35e8","role":"agent","agent":"probe","data":{"event":"turn.start","input":{"text":"Print the integers from 1 to 6000 separated by single spaces, nothing else.","turnId":"12c94043-471c-46f9-be1f-21e7359f943a"}},"http":{"status":200,"ms":3}}

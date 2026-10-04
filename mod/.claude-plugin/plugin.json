@@ -1,0 +1,6 @@
+{
+  "name": "console-mod",
+  "version": "0.1.0",
+  "description": "Reports a console-launched Claude Code session to the multi-agent console and gives it the console's tools.",
+  "author": { "name": "multiconsole" }
+}

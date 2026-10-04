@@ -1,0 +1,115 @@
+import { randomUUID } from 'node:crypto';
+
+export interface Question {
+  id: string;
+  from: string;
+  /** `permission`: an agent's tool wants approval; the only answers are "allow" and "deny". */
+  kind: 'question' | 'permission';
+  text: string;
+  options?: string[];
+  multiSelect?: boolean;
+  /** Permission requests: the tool and what it would do (a command, a file path). */
+  tool?: string;
+  detail?: string;
+  createdAt: string;
+}
+
+export interface WaitResult { answered: boolean; answer?: string; gone?: boolean }
+
+const ANSWERED_KEEP_MS = 60 * 60 * 1000; // an answer stays readable for a late long-poll
+const MAX_TEXT = 4000;
+
+/**
+ * Questions for the human (SPEC 5.6). The asker waits with short long-polls; the human answers from the UI. An answer is
+ * kept for a while so a poll that arrives just after it still gets it; a question whose asker died is dropped.
+ */
+export class QuestionQueue {
+  private readonly open = new Map<string, Question>();
+  private readonly answered = new Map<string, { from: string; answer: string; at: number }>();
+  private readonly waiters = new Map<string, ((r: WaitResult) => void)[]>();
+  private readonly listeners: (() => void)[] = [];
+
+  onChange(cb: () => void): void { this.listeners.push(cb); }
+
+  ask(q: { from: string; text: string; options?: string[]; multiSelect?: boolean; kind?: 'question' | 'permission'; tool?: string; detail?: string }): { id: string } {
+    this.forgetOldAnswers();
+    const id = randomUUID();
+    const permission = q.kind === 'permission';
+    this.open.set(id, {
+      id, from: q.from, kind: permission ? 'permission' : 'question', text: q.text.slice(0, MAX_TEXT),
+      options: permission ? ['allow', 'deny'] : q.options, multiSelect: permission ? false : q.multiSelect,
+      ...(permission ? { tool: (q.tool ?? '').slice(0, 100), detail: (q.detail ?? '').slice(0, 4000) } : {}),
+      createdAt: new Date().toISOString(),
+    });
+    this.changed();
+    return { id };
+  }
+
+  answer(id: string, answer: string): 'ok' | 'unknown' | 'already' | 'invalid' {
+    if (this.answered.has(id)) return 'already';
+    const q = this.open.get(id);
+    if (!q) return 'unknown';
+    const text = answer.trim();
+    if (text === '') return 'invalid';
+    if (q.kind === 'permission' && text !== 'allow' && text !== 'deny') return 'invalid';
+    this.open.delete(id);
+    this.answered.set(id, { from: q.from, answer: text, at: Date.now() });
+    this.resolve(id, { answered: true, answer: text });
+    this.changed();
+    return 'ok';
+  }
+
+  /** Resolves when answered, when the question is gone, or after `ms` with answered:false (the question stays). */
+  wait(id: string, ms: number, from?: string): Promise<WaitResult> {
+    const done = this.answered.get(id);
+    if (done && (from === undefined || done.from === from)) return Promise.resolve({ answered: true, answer: done.answer });
+    const q = this.open.get(id);
+    if (!q || (from !== undefined && q.from !== from)) return Promise.resolve({ answered: false, gone: true });
+    return new Promise((resolve) => {
+      const list = this.waiters.get(id) ?? [];
+      let settled = false;
+      const settle = (r: WaitResult) => { if (!settled) { settled = true; clearTimeout(timer); resolve(r); } };
+      const timer = setTimeout(() => {
+        const rest = (this.waiters.get(id) ?? []).filter((w) => w !== settle);
+        if (rest.length) this.waiters.set(id, rest); else this.waiters.delete(id);
+        settle({ answered: false });
+      }, ms);
+      list.push(settle);
+      this.waiters.set(id, list);
+    });
+  }
+
+  pending(): Question[] { return [...this.open.values()]; }
+
+  hasPending(from: string): boolean {
+    for (const q of this.open.values()) if (q.from === from) return true;
+    return false;
+  }
+
+  /** The asker's process is gone: nobody is waiting for these answers any more. */
+  dropFrom(from: string): void {
+    let any = false;
+    for (const q of [...this.open.values()]) {
+      if (q.from !== from) continue;
+      this.open.delete(q.id);
+      this.resolve(q.id, { answered: false, gone: true });
+      any = true;
+    }
+    if (any) this.changed();
+  }
+
+  private resolve(id: string, r: WaitResult): void {
+    const list = this.waiters.get(id) ?? [];
+    this.waiters.delete(id);
+    for (const settle of list) settle(r);
+  }
+
+  private forgetOldAnswers(): void {
+    const cutoff = Date.now() - ANSWERED_KEEP_MS;
+    for (const [id, a] of this.answered) if (a.at < cutoff) this.answered.delete(id);
+  }
+
+  private changed(): void {
+    for (const cb of this.listeners) cb();
+  }
+}

@@ -1,6 +1,34 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 
+/** One secret per launched session: a session can act only as itself, and the UI token never works on /v1 (SPEC 10.3). */
+export class SessionTokens {
+  private readonly bySlug = new Map<string, string>();
+  private readonly byToken = new Map<string, string>();
+
+  issue(slug: string): string {
+    this.revoke(slug);
+    const token = createToken();
+    this.bySlug.set(slug, token);
+    this.byToken.set(token, slug);
+    return token;
+  }
+
+  tokenFor(slug: string): string | undefined { return this.bySlug.get(slug); }
+
+  slugFor(token: string): string | undefined {
+    // Compare against every issued token in constant time per comparison; the number of sessions is small.
+    for (const [t, slug] of this.byToken) if (tokensEqual(t, token)) return slug;
+    return undefined;
+  }
+
+  revoke(slug: string): void {
+    const t = this.bySlug.get(slug);
+    if (t) this.byToken.delete(t);
+    this.bySlug.delete(slug);
+  }
+}
+
 export const createToken = (): string => randomBytes(32).toString('base64url');
 
 export function tokensEqual(a: string, b: string): boolean {

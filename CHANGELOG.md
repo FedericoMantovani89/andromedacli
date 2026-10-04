@@ -7,7 +7,44 @@ introduces the behaviour.
 
 ## [Unreleased]
 
-Next: Phase 2, the mod and the HTTP channel between Claude Code sessions and the console.
+Next: Phase 3, git worktrees, checklists and the guard (and the decision on permission prompts without bypass).
+
+## Phase 2: mod and channel (2026-10-04)
+
+### Added
+- The console mod (`mod/`, a Claude Code plugin): reports `session.start/end` and `turn.start/complete`, delivers the
+  console's messages through the inbox (`$.prompt.submit`), and exposes tools by role: the main gets `spawn_agent`,
+  `list_agents` and `ask_user`; agents get `list_agents`, and their native `AskUserQuestion` is intercepted.
+- Channel `/v1/*` (events, inbox, ack, tools, question long-polls) with a **per-session token**; the UI token is not valid
+  there and session tokens are not valid on `/api` or the WebSockets.
+- Agent state derived from mod events (`starting`, `idle`, `working`, `waiting_user`, `queued`, `interrupted`), shown
+  in the panel headers; the terminal text never changes it.
+- Limit on active agents (default 4 global, 3 per plan): beyond it `spawn_agent` answers `queued` with the position and
+  the agent starts by itself when a slot frees; lowering the limit stops nobody. One flow serves the UI button and the tool.
+- Question queue (drawer, `Alt+Q`, dot on the plan tab): answers reach the waiting tool call without moving the focus.
+- "Read" panel (`Alt+L` or the Read button): the last 50 answers of each session as sanitised Markdown with normal
+  scrolling, filter and copy; kept on disk under `.console/state/reading/`.
+- Profiles (`prompts/profiles/*.md`, plan > user > shipped), the main's instructions (`prompts/main.md`) and the agent's
+  (`prompts/agent.md`) naming the deferred tools by full name.
+- Tests: scheduler, registry, questions, reading, markdown sanitiser, `/v1` security, launch, profiles; browser e2e with a
+  simulated mod (`test/e2e/phase2.spec.ts`) and a manual contract test with the real Claude Code and the real mod
+  (`test/e2e/mod-real-claude.ts`).
+
+### Added (after the review)
+- Permission routing: an agent's permission prompt goes to the console queue (tool, command, reason; Allow/Deny) instead of
+  waiting unseen in its terminal, and the answer becomes the verdict (mod hook on `tool.check`). The main keeps the native dialog.
+
+### Fixed
+- Command injection through `--model` (and any cmd.exe-bound argument) on Windows: models must be plain ids and unsafe characters are refused.
+- Shutting the console down no longer starts queued agents; a `turn.complete` with a large answer (up to 2 MiB) is accepted;
+  an aborted turn withdraws its question; a queued agent created from the form is no longer shown as an error.
+- The mod sets up its poller and tools once per process, does not inject a message whose acknowledgement failed, and a tool-registration
+  failure no longer silences its events.
+
+### Changed
+- Sessions get `--allowedTools` for the console's own tools, otherwise they stop at a permission prompt without bypass.
+- `POST /api/agents` answers `202 { status: "queued", position }` when the agent has to wait.
+- Oversized request bodies are drained and refused with 400 instead of resetting the connection.
 
 ## Phase 1: console base (2026-10-04)
 

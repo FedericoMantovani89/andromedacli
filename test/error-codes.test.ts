@@ -7,7 +7,7 @@ import { checkErrorCodes } from '../src/shared/i18n-checks';
 
 const root = join(__dirname, '..');
 // Codes the UI shows with the generic message on purpose: they are not something the user can act on.
-const SILENT = new Set(['forbidden', 'unauthorized', 'not_found', 'bad_request', 'internal', 'config.invalid', 'config.unreadable']);
+const SILENT = new Set(['forbidden', 'unauthorized', 'not_found', 'bad_request', 'internal', 'config.invalid', 'config.unreadable', 'already_answered']);
 
 it('every error code the server can send is either user-facing or deliberately silent', () => {
   const sources = ['src/server/http.ts', 'src/shared/slug.ts'].map((f) => readFileSync(join(root, f), 'utf8')).join('\n');

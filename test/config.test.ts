@@ -30,3 +30,12 @@ it('writes atomically (temp file then rename)', () => {
   expect(JSON.parse(readFileSync(p, 'utf8')).language).toBe('en');
   expect(existsSync(p + '.tmp')).toBe(false);
 });
+
+it('the mod is enabled by default and a non-boolean value falls back with an error', () => {
+  expect(DEFAULT_CONFIG.mod.enabled).toBe(true);
+  const p = join(dir(), 'config.json');
+  writeFileSync(p, JSON.stringify({ mod: { enabled: 'no' } }));
+  const { config, errors } = loadConfig(p);
+  expect(config.mod.enabled).toBe(true);
+  expect(errors.map((e) => e.path)).toEqual(['mod.enabled']);
+});

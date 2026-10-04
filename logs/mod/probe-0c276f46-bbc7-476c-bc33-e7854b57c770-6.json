@@ -1,0 +1,1 @@
+{"type":"tool.check","seq":6,"ts":"2026-10-04T10:06:21.560Z","session":"0c276f46-bbc7-476c-bc33-e7854b57c770","role":"agent","agent":"probe","data":{"event":"tool.check","input":{"tool":"ToolSearch","input":{"query":"select:mcp__console-probe__probe_wait","max_results":5},"tool_use_id":"toolu_01PVWDS249M8GUDPGJBpqkhG"}},"http":{"status":200,"ms":20}}
