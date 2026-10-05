@@ -60,6 +60,7 @@ export function restoreAgents(d: RestoreDeps): RestoreResult {
     if (roleOf(r) !== 'agent') continue;
     const ticket = ticketOf(r.slug);
     if (ticket?.status === 'merged' || ticket?.status === 'released') continue; // history: the name stays reserved, nothing to restore
+    if (!ticket && r.sessionId === undefined && !r.worktree) continue; // no ticket, no session, no worktree (an old record): nothing to resume
     const git = r.worktree && r.branch ? { worktree: r.worktree, branch: r.branch } : undefined;
     const base = {
       slug: r.slug, role: 'agent' as const, profile: r.profile,

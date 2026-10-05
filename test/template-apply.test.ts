@@ -85,7 +85,7 @@ it('is idempotent: a second run changes nothing but keeps the plan name, date an
   writeFileSync(join(root, '.console', 'state', 'agents.json'), JSON.stringify([{ slug: 'fix-login', profile: 'backend', createdAt: 'x' }]));
   const head = gitSync(root, 'rev-parse', 'HEAD');
   expect(await applyTemplate({ ...o, name: 'another-name' })).toEqual({ ok: true });
-  expect(readFileSync(join(root, '.console', 'plan.json'), 'utf8')).toBe(first);
+  expect(JSON.parse(readFileSync(join(root, '.console', 'plan.json'), 'utf8'))).toEqual(JSON.parse(first)); // same content (key order may differ)
   expect(planOf(root).name).toBe('shop-api');
   expect(gitSync(root, 'rev-parse', 'HEAD')).toBe(head);
   expect(JSON.parse(readFileSync(join(root, '.console', 'state', 'agents.json'), 'utf8'))).toHaveLength(1);

@@ -65,10 +65,13 @@ it('PUT /api/config saves the notification settings, applies them at once and re
   expect(ok.status).toBe(200);
   const saved = JSON.parse(readFileSync(configFileOf(s), 'utf8')).notifications;
   expect(saved.enabled.question).toBe(false);
-  expect(saved.enabled.permission).toBe(true);
-  expect(saved.quietHours).toEqual({ enabled: true, from: '23:30', to: '07:00' });
+  // The file keeps only what was changed (the generic patch of Phase 6E); the effective settings are complete.
+  expect(saved.quietHours).toEqual({ enabled: true, from: '23:30' });
   expect(saved.groupSeconds).toBe(9);
-  expect((await state(s)).notifications.config.groupSeconds).toBe(9);
+  const effective = (await state(s)).notifications.config;
+  expect(effective.enabled.permission).toBe(true);
+  expect(effective.quietHours).toEqual({ enabled: true, from: '23:30', to: '07:00' });
+  expect(effective.groupSeconds).toBe(9);
 
   for (const bad of [{ groupSeconds: 0 }, { groupSeconds: 61 }, { quietHours: { from: '25:00' } }, { enabled: { nope: true } }, { sound: 'yes' }]) {
     const res = await ui(s, '/api/config', 'PUT', { notifications: bad });

@@ -308,7 +308,7 @@ export function patchConfig(path: string, patch: ConfigPatch): { ok: true } | { 
 export const saveLanguage = (path: string, language: Language): ReturnType<typeof patchConfig> => patchConfig(path, { language });
 
 /** Top-level entries the generic patch can change; anything else in a patch is ignored (and kept as written in the file). */
-const PATCHABLE = ['language', 'agents', 'guard', 'git', 'budget', 'models', 'plugins'] as const;
+const PATCHABLE = ['language', 'agents', 'guard', 'git', 'budget', 'models', 'plugins', 'notifications'] as const;
 
 const leavesOf = (value: Record<string, unknown>, prefix: string, out: string[] = []): string[] => {
   for (const [key, v] of Object.entries(value)) {

@@ -56,8 +56,8 @@ export function autoClose(): void {
  * A real server with the fake agent. Agents share the plan folder (`git.worktrees: false`, the Phase 2 behaviour) unless the
  * test passes a repository as `planRoot` and `config: { git: { worktrees: true } }`.
  */
-export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock; notifier?: Notifier; notifyClock?: NotifyClock } = {}): Promise<Running> {
-  const configDir = mkdtempSync(join(tmpdir(), 'h-cfg-'));
+export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock; configDir?: string; notifier?: Notifier; notifyClock?: NotifyClock } = {}): Promise<Running> {
+  const configDir = o.configDir ?? mkdtempSync(join(tmpdir(), 'h-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en', git: { worktrees: false }, ...o.config }));
   const s = await startServer({
     port: 0, planRoot: o.planRoot ?? mkdtempSync(join(tmpdir(), 'h-plan-')), configDir, planName: o.planName ?? 'shop-api',

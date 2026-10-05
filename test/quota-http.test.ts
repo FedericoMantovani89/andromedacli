@@ -1,9 +1,9 @@
 // The subscription quota wired into the real server: fake agents, a fake sleep clock, `quota` events sent as the main's session token.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { autoClose, bootServer, fakeSleepClock, mod, modEvent, req, state, ui, until, type Running } from './helpers';
+import { autoClose, bootServer, configFileOf, fakeSleepClock, mod, modEvent, req, state, ui, until, type Running } from './helpers';
 
 vi.setConfig({ testTimeout: 30_000 });
 autoClose();
@@ -88,8 +88,8 @@ it('100% with a resetsAt sets sleep.phase "sleeping" and one timer until the res
   await until(async () => (await state(s)).sleep?.attempt === 1);
   expect((await state(s)).sleep.phase).toBe('sleeping');
   expect([...fake.timers.values()].map((t) => t.ms)).toEqual([10 * MIN]);
-  // the sleep is saved so a later phase can resume it
-  const saved = JSON.parse(readFileSync(join(planRoot, '.console', 'state', 'sleep.json'), 'utf8'));
+  // the sleep is saved (console-wide, in the config folder) so a restart can resume it
+  const saved = JSON.parse(readFileSync(join(dirname(configFileOf(s)), 'state', 'sleep.json'), 'utf8'));
   expect(saved).toMatchObject({ phase: 'sleeping', attempt: 1 });
 });
 
@@ -312,15 +312,15 @@ it('a resumed agent whose process ends before its session starts is suspended ag
   await until(async () => (await mod(s, 'shop-api', '/v1/inbox')).body.messages.some((m: { text: string }) => m.text.includes('job-one') && m.text.includes('before its session started')));
 });
 
-it('a sleep saved by an earlier run is shown only while its time is still ahead (no timer behind it otherwise)', async () => {
-  for (const [until, shown] of [['2026-10-05T09:00:00.000Z', false], ['2026-10-05T12:00:00.000Z', true]] as const) {
+it('a sleep saved by an earlier run is re-armed: a time still ahead gets its timer, a time that has passed probes at once (Phase 6A)', async () => {
+  for (const [until, phase] of [['2026-10-05T09:00:00.000Z', 'probing'], ['2026-10-05T12:00:00.000Z', 'sleeping']] as const) {
     const fake = fakeSleepClock(); // 10:00Z
-    const planRoot = mkdtempSync(join(tmpdir(), 'q-plan-'));
-    mkdirSync(join(planRoot, '.console', 'state'), { recursive: true });
-    writeFileSync(join(planRoot, '.console', 'state', 'sleep.json'), JSON.stringify({ until, kind: 'five_hour', attempt: 1, phase: 'sleeping' }));
-    const s = await bootServer({ planRoot, sleepClock: fake.clock });
+    const configDir = mkdtempSync(join(tmpdir(), 'q-cfg-'));
+    mkdirSync(join(configDir, 'state'), { recursive: true });
+    writeFileSync(join(configDir, 'state', 'sleep.json'), JSON.stringify({ until, kind: 'five_hour', attempt: 1, phase: 'sleeping' }));
+    const s = await bootServer({ configDir, sleepClock: fake.clock });
     const st = await state(s);
-    expect(st.sleep !== undefined, until).toBe(shown);
-    expect(fake.timers.size).toBe(0); // nothing resumes by itself (Phase 6)
+    expect(st.sleep?.phase, until).toBe(phase);
+    expect(fake.timers.size, until).toBe(1); // the saved wake-up, or the wait of the probe that started at once
   }
 });

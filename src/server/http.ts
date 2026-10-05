@@ -232,7 +232,7 @@ export function createRequestHandler(source: Context | PlanResolver) {
     if (!token || !tokensEqual(token, ctx.token)) return fail(res, 401, 'unauthorized');
 
     // Opening and closing plans are not about one plan; every other route below is, and takes it from `?plan=` (absent: the first).
-    if (path === '/api/plans' || path.startsWith('/api/plans/')) return handlePlansRoute(ctx, req, res, path);
+    if ((req.method === 'POST' && path === '/api/plans') || (req.method === 'DELETE' && /^\/api\/plans\/[^/]+$/.test(path))) return handlePlansRoute(ctx, req, res, path);
     const asked = url.searchParams.get('plan');
     if (asked !== null) {
       const planCtx = resolve(asked);

@@ -74,6 +74,6 @@ describe('renderRestartNotice', () => {
     expect(text).toContain('- a (ticket: in_progress)');
     expect(text).toContain('- b: the turn in progress was lost');
     expect(text).toContain('resume_agent');
-    expect(text).not.toMatch(/\{\w+\}/);
+    expect(text).not.toMatch(/\{(dormant|interrupted|stopped|repaired)\}/); // every placeholder was filled; "{names}" is the tool's argument
   });
 });
