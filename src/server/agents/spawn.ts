@@ -45,6 +45,9 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   if (!v.ok) return refuse(422, v.code, v.params);
   const profile = typeof r.profile === 'string' ? loadProfile(r.profile, ctx.planRoot) : undefined;
   if (!profile) return refuse(422, 'profile.invalid');
+  // A plan may offer only some profiles (its template); the console's own reviewer, recovery and replacement spawns are exempt.
+  const offered = ctx.store.fields().profiles;
+  if (offered && !r.review && !r.recovery && !r.resumeBranch && !offered.includes(r.profile)) return refuse(422, 'profile.invalid');
 
   const request: SpawnRequest = { ...r, slug: v.slug, model: r.model === '' ? undefined : r.model };
   if (request.model !== undefined && !MODEL_RE.test(request.model)) return refuse(422, 'model.invalid');
@@ -126,13 +129,14 @@ async function startInWorktree(ctx: Context, r: SpawnRequest, profile: Profile, 
 }
 
 function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: string, git: { worktree: string; branch: string } | undefined, bypass: boolean): void {
+  const planFields = ctx.store.fields();
   const launch = buildClaudeLaunch({
     command: ctx.claudeCommand, role: roleOf(r), slug: r.slug, plan: ctx.planName,
     url: `http://127.0.0.1:${ctx.getPort()}`, token: ctx.tokens.issue(r.slug), bypass, baseEnv: process.env,
     pluginDir: ctx.modDir,
     allowedTools: ctx.modDir ? (r.review ? REVIEWER_TOOLS : r.recovery ? RECOVERY_TOOLS : AGENT_TOOLS) : undefined,
-    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, plan: ctx.planName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery) }),
-    model: r.model ?? profile.model,
+    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, plan: ctx.planName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), planRoot: ctx.planRoot, docs: planFields.docs }),
+    model: r.model ?? profile.model ?? planFields.model,
     ...(r.resume ? { resumeId: r.resume.sessionId } : {}),
   });
   ctx.ptys.spawn({ id: r.slug, ...launch, cwd, cols: 120, rows: 30 });
@@ -142,7 +146,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
   // The process already runs: a ticket file that cannot be written leaves the agent without a budget (n/a), it does not undo the start.
   if (git && roleOf(r) === 'agent') {
     try {
-      ctx.budget.begin(r.slug, r.budget ?? profile.budgetTokens ?? ctx.budgetConfig.agentTokens);
+      ctx.budget.begin(r.slug, r.budget ?? profile.budgetTokens ?? planFields.agentTokens ?? ctx.budgetConfig.agentTokens);
     } catch (e) {
       ctx.inbox.push(ctx.planName, `The token budget of "${r.slug}" could not be recorded (${e instanceof Error ? e.message : String(e)}); it runs without one.`);
     }

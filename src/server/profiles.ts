@@ -73,17 +73,38 @@ function writePrompt(outDir: string, name: string, text: string): string {
   return file;
 }
 
-/** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. */
-export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir: string }): string {
+const MAX_PLAN_TEXT = 32 * 1024;
+
+/** A plan's own text file (`.console/main.md`, `.console/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
+function planText(planRoot: string | undefined, file: 'main.md' | 'rules.md'): string | undefined {
+  if (!planRoot) return undefined;
+  try {
+    const path = join(planRoot, '.console', file);
+    if (!existsSync(path)) return undefined;
+    const text = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').trim();
+    return text === '' ? undefined : text.slice(0, MAX_PLAN_TEXT);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `planRoot`, the plan's main.md and rules.md follow. */
+export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir: string; planRoot?: string }): string {
   const template = readFileSync(join(promptsDir(), 'main.md'), 'utf8');
-  return writePrompt(o.outDir, `main-${o.plan}.md`, fill(template, { plan: o.plan, workLanguage: o.workLanguage }));
+  const base = fill(template, { plan: o.plan, workLanguage: o.workLanguage });
+  const extra = [planText(o.planRoot, 'main.md'), planText(o.planRoot, 'rules.md')].filter((x): x is string => x !== undefined);
+  return writePrompt(o.outDir, `main-${o.plan}.md`, extra.length > 0 ? `${base.trimEnd()}\n\n${extra.join('\n\n')}\n` : base);
 }
 
 /** An agent's system-prompt addition: its profile plus who it is and what the console offers it. */
-export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean }): string {
+export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean; planRoot?: string; docs?: string[] }): string {
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
   const rulesFile = o.review ? 'reviewer-git.md' : o.recovery ? 'recovery-git.md' : 'agent-git.md';
   const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, plan: o.plan }) : '';
   const text = fill(template, { slug: o.slug, plan: o.plan, profile: o.profile.body, git: gitRules });
-  return writePrompt(o.outDir, `agent-${o.slug}.md`, text.replace(/\n{3,}/g, '\n\n'));
+  // The plan's rules reach every session; the documents to update concern only the one that writes the work (not a review or a recovery).
+  const docs = o.docs && o.docs.length > 0 && !o.review && !o.recovery ? `At the last step update: ${o.docs.join(', ')}.` : undefined;
+  const extra = [planText(o.planRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
+  const full = extra.length > 0 ? `${text.trimEnd()}\n\n${extra.join('\n\n')}\n` : text;
+  return writePrompt(o.outDir, `agent-${o.slug}.md`, full.replace(/\n{3,}/g, '\n\n'));
 }

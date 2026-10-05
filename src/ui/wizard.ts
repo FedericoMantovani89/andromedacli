@@ -2,6 +2,7 @@ import type { StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
+import { openNewPlanDialog } from './new-plan';
 
 type Step = 'language' | 'prerequisites' | 'plan';
 const STEPS: Step[] = ['language', 'prerequisites', 'plan'];
@@ -21,7 +22,7 @@ export function openWizard(getState: () => StateMessage | undefined): void {
   let index = 0;
 
   const finish = () => {
-    void api('/api/config', { method: 'PUT', body: { language: chosenLanguage } }).then(closeOverlay);
+    return api('/api/config', { method: 'PUT', body: { language: chosenLanguage } }).then(closeOverlay);
   };
 
   const render = () => {
@@ -67,11 +68,18 @@ export function openWizard(getState: () => StateMessage | undefined): void {
     const last = index === STEPS.length - 1;
     const next = document.createElement('button');
     bindText(next, last ? k('wizard.finish') : k('common.next'));
-    next.addEventListener('click', () => { if (last) finish(); else { index += 1; render(); } });
+    next.addEventListener('click', () => { if (last) void finish(); else { index += 1; render(); } });
     const skip = document.createElement('button');
     bindText(skip, 'common.skip');
-    skip.addEventListener('click', () => { if (last) finish(); else { index += 1; render(); } });
+    skip.addEventListener('click', () => { if (last) void finish(); else { index += 1; render(); } });
     actions.append(next, skip);
+    if (last) {
+      // SPEC 29.2 step 6: the user may start from a template. The wizard is finished first (the configuration is saved), then the dialog opens.
+      const fromTemplate = document.createElement('button');
+      bindText(fromTemplate, 'wizard.plan.newPlan');
+      fromTemplate.addEventListener('click', () => { void finish().then(() => openNewPlanDialog(getState)); });
+      actions.append(fromTemplate);
+    }
 
     dialog.append(title, sub, body, actions);
     overlay.replaceChildren(dialog);

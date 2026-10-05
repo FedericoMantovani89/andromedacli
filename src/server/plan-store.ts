@@ -9,9 +9,21 @@ export interface PlanInfo {
   testCommand?: string;
   /** One commit per ticket when merged (default); false keeps the step commits behind a merge commit (SPEC 9.7). */
   squash?: boolean;
-  /** Commands the user gave when the plan was created (Phase 6C); only stored here, `testCommand` is the one the console runs. */
+  /** Phase 6D: what the console builds and lints with (same rules as `testCommand`). */
   buildCommand?: string;
   lintCommand?: string;
+  /** Profile names offered to the new-agent picker (default: all). */
+  profiles?: string[];
+  /** Default model of the plan's agents (behind the request's and the profile's). */
+  model?: string;
+  /** Default token budget of the plan's agents (behind the request's and the profile's). */
+  agentTokens?: number;
+  /** Active-agent limit of this plan (default: `agents.maxActivePerPlan`). */
+  maxActive?: number;
+  /** Files the last checklist step must update. */
+  docs?: string[];
+  /** Extra secret patterns, added to the global ones. */
+  secretPatterns?: string[];
 }
 /** What the console remembers of an agent between runs (Phase 6A). Every field after `createdAt` is optional: older files stay valid. */
 export interface AgentRecord {
@@ -33,6 +45,29 @@ export type AgentPatch = { [K in keyof Omit<AgentRecord, 'slug' | 'createdAt'>]?
 
 /** One line, at most 500 characters (the console runs it through the platform shell: the user wrote it). */
 export const isValidTestCommand = (v: unknown): v is string => typeof v === 'string' && v.length <= 500 && !/[\r\n]/.test(v);
+
+/** A model alias or id: plain characters only, because it becomes a command-line argument (same rule as `MODEL_RE` in spawn.ts). */
+const PLAN_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
+const isStringList = (v: unknown, max: number, maxLen: number): v is string[] =>
+  Array.isArray(v) && v.length <= max && v.every((x) => typeof x === 'string' && x.trim() !== '' && x.length <= maxLen && !/[\r\n]/.test(x));
+const isIntIn = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+
+/** The optional plan fields of Phase 6D that are set through `setFields` (`testCommand` and `squash` have their own setters). */
+export const PLAN_FIELDS = ['buildCommand', 'lintCommand', 'profiles', 'model', 'agentTokens', 'maxActive', 'docs', 'secretPatterns'] as const;
+export type PlanField = (typeof PLAN_FIELDS)[number];
+
+/** Whether a value is acceptable for a plan field. `knownProfiles` limits `profiles` (names the console knows). */
+export function isValidPlanField(field: PlanField, v: unknown, knownProfiles: readonly string[]): boolean {
+  switch (field) {
+    case 'buildCommand': case 'lintCommand': return isValidTestCommand(v);
+    case 'profiles': return isStringList(v, 64, 40) && v.every((p) => knownProfiles.includes(p));
+    case 'model': return typeof v === 'string' && PLAN_MODEL_RE.test(v);
+    case 'agentTokens': return isIntIn(v, 1000, 100_000_000);
+    case 'maxActive': return isIntIn(v, 1, 64);
+    case 'docs': return isStringList(v, 20, 200);
+    case 'secretPatterns': return isStringList(v, 50, 200);
+  }
+}
 
 /** Plan state under <repo>/.console/ (SPEC 23): plan.json and state/agents.json. */
 export class PlanStore {
@@ -74,6 +109,28 @@ export class PlanStore {
     if (c.build?.trim()) next.buildCommand = c.build.trim();
     if (c.lint?.trim()) next.lintCommand = c.lint.trim();
     writeJsonAtomic(this.planFile, next);
+  }
+
+  /**
+   * Sets (or, with `undefined`, `null`, an empty string or an empty list, clears) the Phase 6D fields. Every entry is checked before
+   * anything is written; a bad one throws `plan.fieldInvalid:<field>` and changes nothing.
+   */
+  setFields(patch: Partial<Record<PlanField, unknown>>, knownProfiles: readonly string[]): void {
+    const next: Record<string, unknown> = { ...this.plan };
+    for (const field of PLAN_FIELDS) {
+      if (!(field in patch)) continue;
+      let v = patch[field];
+      if (typeof v === 'string') v = v.trim();
+      if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) { delete next[field]; continue; }
+      if (!isValidPlanField(field, v, knownProfiles)) throw new Error(`plan.fieldInvalid:${field}`);
+      next[field] = v;
+    }
+    writeJsonAtomic(this.planFile, next);
+  }
+
+  /** The plan's optional fields; empty when plan.json cannot be read (a damaged file must not stop a launch). */
+  fields(): Partial<PlanInfo> {
+    try { return this.plan; } catch { return {}; }
   }
 
   listAgents(): AgentRecord[] {

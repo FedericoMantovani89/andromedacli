@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "frontend-web",
+  "name": { "en": "Frontend web", "it": "Frontend web" },
+  "description": {
+    "en": "Web front end built with npm (TypeScript or JavaScript); scripts are read from package.json.",
+    "it": "Front end web con npm (TypeScript o JavaScript); gli script sono letti da package.json."
+  },
+  "profiles": ["frontend"],
+  "commands": { "build": "npm run build", "test": "npm test" },
+  "git": { "squash": true },
+  "docs": ["README.md", "CHANGELOG.md"],
+  "defaults": {},
+  "detect": true
+}

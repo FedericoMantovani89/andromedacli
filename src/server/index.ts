@@ -203,6 +203,8 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   const questions = new QuestionQueue();
   const reading = new ReadingStore(join(o.planRoot, '.console', 'state', 'reading'));
   // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
+  /** The global secret patterns plus the plan's own (Phase 6D). */
+  const secretPatterns = (): string[] => [...runtime.git.secretPatterns, ...(store.fields().secretPatterns ?? [])];
   // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[planName, config.guard.mode]]);
   const tickets = new TicketStore(o.planRoot);
@@ -303,7 +305,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     wipCommit: async (slug, reason) => {
       const worktree = registry.get(slug)?.git?.worktree;
       if (!worktree) return { ok: false, detail: 'no worktree' };
-      const r = await commitWip({ worktree, slug, plan: planName, reason, secretPatterns: runtime.git.secretPatterns });
+      const r = await commitWip({ worktree, slug, plan: planName, reason, secretPatterns: secretPatterns() });
       return r.ok ? { ok: true, sha: r.sha } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
     },
     tellAgent: (slug, text) => { inbox.push(slug, text); },
@@ -336,7 +338,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
       if (!checkout.ok) return { ok: false, code: checkout.code, detail: `the worktree of ${r.from} is not known` };
       if (old) {
         // Whatever is still uncommitted is kept on the branch before the folder goes (git refuses a branch checked out twice).
-        const wip = await commitWip({ worktree: old.worktree, slug: r.from, plan: planName, reason: 'handover', secretPatterns: runtime.git.secretPatterns });
+        const wip = await commitWip({ worktree: old.worktree, slug: r.from, plan: planName, reason: 'handover', secretPatterns: secretPatterns() });
         if (!wip.ok) return { ok: false, code: 'wip_failed', detail: `${wip.code}${wip.files ? `: ${wip.files.join(', ')}` : wip.detail ? `: ${wip.detail}` : ''}` };
         await removeWorktree(o.planRoot, old.worktree);
         rmSync(join(await commonDir(o.planRoot), 'console-hooks', r.from), { recursive: true, force: true });
@@ -370,7 +372,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     wipCommit: async (slug, reason) => {
       const worktree = registry.get(slug)?.git?.worktree;
       if (!worktree) return { ok: false, detail: 'no worktree' };
-      const r = await commitWip({ worktree, slug, plan: planName, reason, secretPatterns: runtime.git.secretPatterns });
+      const r = await commitWip({ worktree, slug, plan: planName, reason, secretPatterns: secretPatterns() });
       return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
     },
     stop: (slug) => { keepHandover(slug); return finishAgent(slug); },
@@ -443,7 +445,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
       if (ticketStatusOf(slug) !== 'in_progress') return { ok: true };
       const worktree = registry.get(slug)?.git?.worktree;
       if (!worktree) return { ok: false, detail: 'no worktree' };
-      const r = await commitWip({ worktree, slug, plan: planName, reason, secretPatterns: runtime.git.secretPatterns });
+      const r = await commitWip({ worktree, slug, plan: planName, reason, secretPatterns: secretPatterns() });
       return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
     },
     restrict: (slug, r) => { restrictions.set(slug, r); },
@@ -512,7 +514,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: () => store.plan.testCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    secretPatterns: () => runtime.git.secretPatterns,
+    secretPatterns,
     notifyMain: (_slug, text) => { inbox.push(planName, text); },
     changed: () => broadcast(),
     stepClosed: (slug, o) => loop.onStepDone(slug, o),
@@ -520,7 +522,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   const launchLog = new Map<string, string[]>();
   // The scheduler's callbacks reach `ctx` (defined below) lazily, only once the server is running.
   const scheduler = new Scheduler({
-    registry, limits: () => limits, multiplier: () => quotaStep,
+    registry, limits: () => ({ global: limits.global, perPlan: store.fields().maxActive ?? limits.perPlan }), multiplier: () => quotaStep,
     // The global limit counts the active agents of every open plan.
     globalActive: () => shared.runtimes.reduce((n, r) => n + r.parts.scheduler.activeCount(), 0),
     start: (r) => launchAgent(ctx, r),
@@ -542,7 +544,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
       url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(planName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir,
       allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
-      appendPromptFile: renderMainPrompt({ plan: planName, workLanguage: languageName(config.language), outDir: ctx.promptsDir }),
+      appendPromptFile: renderMainPrompt({ plan: planName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, planRoot: o.planRoot }),
       ...(resumeId !== undefined ? { resumeId } : {}),
     });
     ptys.spawn({ id: planName, ...launch, cwd: resolve(o.planRoot), cols: 120, rows: 30 });
@@ -595,7 +597,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
       const verdict = evaluate({ role: role === 'main' ? 'main' : 'agent', tool, input }, {
         readOnly: rt?.readOnly === true,
         worktree: role !== 'main' && rt?.git ? rt.git.worktree : o.planRoot, repo: o.planRoot,
-        branch: rt?.git?.branch ?? '', planBranch: `plan/${planName}`, secretPatterns: runtime.git.secretPatterns,
+        branch: rt?.git?.branch ?? '', planBranch: `plan/${planName}`, secretPatterns: secretPatterns(),
         restricted: restrictions.get(slug),
       });
       if (verdict.decision === 'allow') return verdict;

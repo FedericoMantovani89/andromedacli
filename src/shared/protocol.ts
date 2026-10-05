@@ -13,6 +13,7 @@ export const USER_ERROR_CODES = [
   'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
+  'plan.fieldInvalid', 'plan.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
