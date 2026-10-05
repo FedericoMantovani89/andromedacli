@@ -1,5 +1,6 @@
 /** Wire types shared by the server and the browser UI. Codes are English constants, never sentences (P11). */
 import type { Activity } from './activity';
+import type { NotificationsConfig, ToastStatus } from './notify';
 
 export const PROFILES = ['backend', 'dba', 'frontend', 'reviewer', 'recovery'] as const;
 export type Profile = (typeof PROFILES)[number];
@@ -83,6 +84,8 @@ export interface StateMessage {
   quota?: { percent: number; kind: string };
   /** Agents counting against the active-agent limit, and that limit as it is now (the quota step may have cut it). */
   limits?: { active: number; max: number };
+  /** Phase 6B: whether a native toast can be shown (`unknown` until checked, shown as n/a) and the notification settings. */
+  notifications?: { toast: ToastStatus; config: NotificationsConfig };
 }
 
 export interface ApiError {

@@ -2,7 +2,10 @@ import type { StateMessage } from '../shared/protocol';
 import { api, wsUrl } from './api';
 import { bindText, initI18n, initI18nAnonymous, resolveLanguage } from './i18n-client';
 import { createNewAgentControl } from './new-agent';
-import { createQueueDrawer } from './queue';
+import { createQueueDrawer, queueIdFromHash } from './queue';
+import { showBrowserNotification, titleWithCount } from './notify-browser';
+import { startPresence } from './presence';
+import type { NotifyMessage } from '../shared/notify';
 import { createReader, type ReadingEntry } from './reader';
 import { Workspace } from './panels';
 import { openSettings } from './settings';
@@ -39,6 +42,7 @@ function renderChrome(s: StateMessage): void {
   bindText($('queue-btn'), 'header.queue', { count: s.queue.length });
   bindText($('settings-btn'), 'header.settings');
   renderStatusBar($('statusbar'), s);
+  document.title = titleWithCount(document.title, s.queue.length); // the number of things waiting (6C replaces it with the all-plans total)
 }
 
 function apply(s: StateMessage): void {
@@ -81,6 +85,7 @@ function connectState(): void {
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data)) as { type: string };
     if (msg.type === 'state') apply(msg as StateMessage);
+    else if (msg.type === 'notify') showBrowserNotification(msg as NotifyMessage, state?.notifications?.config, document.hasFocus()); // no native toast: the browser fallback
     else window.dispatchEvent(new CustomEvent('console-message', { detail: msg })); // reading entries etc.
   };
   ws.onclose = () => {
@@ -121,6 +126,13 @@ async function boot(): Promise<void> {
   if (res.status !== 200) return;
   await initI18n(resolveLanguage(res.body.language, res.body.languages));
   apply(res.body);
+  // A click on a notification opens the page at `#queue=<id>`: show that item (opening the drawer is not a focus move).
+  const wanted = queueIdFromHash(location.hash);
+  if (wanted) {
+    queueDrawer.openOn(wanted);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  startPresence(() => state, () => workspace?.active ?? '', () => queueDrawer.isOpen());
   connectState();
 }
 

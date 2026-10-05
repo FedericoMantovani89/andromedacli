@@ -39,7 +39,12 @@ export class QuestionQueue {
   private readonly listeners: (() => void)[] = [];
   private readonly handlers = new Map<string, (answer: string) => void>();
 
+  private readonly addListeners: ((q: Question) => void)[] = [];
+
   onChange(cb: () => void): void { this.listeners.push(cb); }
+
+  /** Called with every new item (notifications); a throwing listener never breaks the queue. */
+  onAdd(cb: (q: Question) => void): void { this.addListeners.push(cb); }
 
   ask(
     q: { from: string; text: string; options?: string[]; multiSelect?: boolean; kind?: Question['kind']; tool?: string; detail?: string; payload?: unknown },
@@ -60,6 +65,8 @@ export class QuestionQueue {
     });
     if (onAnswer) this.handlers.set(id, onAnswer);
     this.changed();
+    const added = this.open.get(id)!;
+    for (const cb of this.addListeners) { try { cb(added); } catch { /* a listener must not break the queue */ } }
     return { id };
   }
 

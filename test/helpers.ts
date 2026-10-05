@@ -7,6 +7,8 @@ import { afterEach } from 'vitest';
 import { startServer } from '../src/server/index';
 import type { Runner } from '../src/server/prereq/checks';
 import type { SleepClock } from '../src/server/budget/sleep';
+import type { Notifier } from '../src/server/notify/notifier';
+import type { NotifyClock } from '../src/server/notify/service';
 
 /** A sleep clock that records its timers and moves only when told; `advance` fires what is due. */
 export function fakeSleepClock(start = Date.parse('2026-10-05T10:00:00Z')) {
@@ -54,14 +56,14 @@ export function autoClose(): void {
  * A real server with the fake agent. Agents share the plan folder (`git.worktrees: false`, the Phase 2 behaviour) unless the
  * test passes a repository as `planRoot` and `config: { git: { worktrees: true } }`.
  */
-export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock } = {}): Promise<Running> {
+export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock; notifier?: Notifier; notifyClock?: NotifyClock } = {}): Promise<Running> {
   const configDir = mkdtempSync(join(tmpdir(), 'h-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en', git: { worktrees: false }, ...o.config }));
   const s = await startServer({
     port: 0, planRoot: o.planRoot ?? mkdtempSync(join(tmpdir(), 'h-plan-')), configDir, planName: o.planName ?? 'shop-api',
     claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner, modDir: null, afterWorktreeCreated: o.afterWorktreeCreated, launchCheckMs: o.launchCheckMs,
     // Transcripts: a folder of the test's own (or one nobody writes to), never the user's ~/.claude/projects.
-    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, sleepClock: o.sleepClock,
+    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, sleepClock: o.sleepClock, notifier: o.notifier, notifyClock: o.notifyClock,
   });
   running.push(s);
   configFiles.set(s, join(configDir, 'config.json'));

@@ -5,7 +5,7 @@ export function initToken(): string {
   const fromUrl = new URLSearchParams(location.search).get('token');
   if (fromUrl) {
     try { sessionStorage.setItem(TOKEN_KEY, fromUrl); } catch { /* storage may be blocked */ }
-    history.replaceState(null, '', location.pathname);
+    history.replaceState(null, '', location.pathname + location.hash); // the hash (`#queue=<id>`, from a notification) is read after the first state
     return fromUrl;
   }
   try { return sessionStorage.getItem(TOKEN_KEY) ?? ''; } catch { return ''; }

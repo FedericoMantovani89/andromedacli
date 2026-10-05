@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 import { DEFAULT_SECRET_PATTERNS } from './git/secrets';
+import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES, type NotificationsConfig } from '../shared/notify';
 
 /** "auto" or a language code that has a bundle (checked against the bundles by the server). */
 export type Language = string;
@@ -18,6 +19,8 @@ export interface Config {
   guard: { mode: 'enforce' | 'shadow' };
   /** Budget, loop and quota thresholds (SPEC 16, 17, 18). Applied to sessions launched afterwards; the quota steps are read on every event. */
   budget: BudgetConfig;
+  /** Toasts for everything that needs the user (SPEC 20); read on every event, so a change applies at once. */
+  notifications: NotificationsConfig;
   telemetry: false;
 }
 export interface BudgetConfig {
@@ -40,6 +43,7 @@ export const DEFAULT_CONFIG: Config = {
     loop: { sameCall: 5, sameError: 3, compactions: 2, stepMinutes: 30, silenceMinutes: 5 },
     quota: { halvePercent: 70, freezePercent: 85, stopPercent: 95, staggerSeconds: 60, staggerGroup: 2 },
   },
+  notifications: DEFAULT_NOTIFICATIONS,
   telemetry: false,
 };
 
@@ -149,8 +153,55 @@ export function loadConfig(path: string): { config: Config; errors: ConfigError[
       } else if ('quota' in b) bad('budget.quota');
     } else bad('budget');
   }
+  if ('notifications' in raw) config.notifications = mergeNotifications(config.notifications, raw.notifications, bad);
   if ('telemetry' in raw && raw.telemetry !== false) bad('telemetry');
   return { config, errors };
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Applies the entries of `raw` that are valid on top of `base` and reports each invalid one by path (the default or the earlier
+ * value stays). Used for the configuration file and for the patch the Notifications tab sends.
+ */
+export function mergeNotifications(base: NotificationsConfig, raw: unknown, bad: (path: string) => void): NotificationsConfig {
+  const out = structuredClone(base);
+  if (!isObj(raw)) { bad('notifications'); return out; }
+  if ('enabled' in raw) {
+    if (isObj(raw.enabled)) {
+      for (const type of NOTIFY_TYPES) {
+        const v = raw.enabled[type];
+        if (v === undefined) continue;
+        if (typeof v === 'boolean') out.enabled[type] = v; else bad(`notifications.enabled.${type}`);
+      }
+      for (const key of Object.keys(raw.enabled)) if (!(NOTIFY_TYPES as readonly string[]).includes(key)) bad(`notifications.enabled.${key}`);
+    } else bad('notifications.enabled');
+  }
+  if ('quietHours' in raw) {
+    const q = raw.quietHours;
+    if (isObj(q)) {
+      if ('enabled' in q) { if (typeof q.enabled === 'boolean') out.quietHours.enabled = q.enabled; else bad('notifications.quietHours.enabled'); }
+      for (const key of ['from', 'to'] as const) {
+        if (!(key in q)) continue;
+        const v = q[key];
+        if (typeof v === 'string' && HHMM.test(v)) out.quietHours[key] = v; else bad(`notifications.quietHours.${key}`);
+      }
+    } else bad('notifications.quietHours');
+  }
+  if ('sound' in raw) { if (typeof raw.sound === 'boolean') out.sound = raw.sound; else bad('notifications.sound'); }
+  if ('browserFallback' in raw) { if (typeof raw.browserFallback === 'boolean') out.browserFallback = raw.browserFallback; else bad('notifications.browserFallback'); }
+  if ('groupSeconds' in raw) {
+    const v = raw.groupSeconds;
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 60) out.groupSeconds = v; else bad('notifications.groupSeconds');
+  }
+  return out;
+}
+
+/** The `notifications` entry of PUT /api/config: the merged settings, or the path of the first invalid entry (nothing is written then). */
+export function validateNotificationsPatch(raw: unknown, current: NotificationsConfig): { ok: true; value: NotificationsConfig } | { ok: false; path: string } {
+  let first: string | undefined;
+  const value = mergeNotifications(current, raw, (p) => { first ??= p; });
+  return first === undefined ? { ok: true, value } : { ok: false, path: first };
 }
 
 export function saveConfigAtomic(path: string, config: Config): void {
@@ -165,6 +216,8 @@ export interface ConfigPatch {
   language?: Language;
   agents?: { bypassPermissions: boolean };
   guard?: { mode: 'enforce' | 'shadow' };
+  /** The complete, already validated settings (see `validateNotificationsPatch`). */
+  notifications?: NotificationsConfig;
 }
 
 export function patchConfig(path: string, patch: ConfigPatch): { ok: true } | { ok: false; code: 'config.unreadable' } {
@@ -182,6 +235,7 @@ export function patchConfig(path: string, patch: ConfigPatch): { ok: true } | { 
   if (patch.language !== undefined) next.language = patch.language;
   if (patch.agents) next.agents = { ...(isObj(raw.agents) ? raw.agents : {}), ...patch.agents };
   if (patch.guard) next.guard = { ...(isObj(raw.guard) ? raw.guard : {}), ...patch.guard };
+  if (patch.notifications) next.notifications = patch.notifications;
   writeJsonAtomic(path, next);
   return { ok: true };
 }

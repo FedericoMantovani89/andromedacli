@@ -47,6 +47,9 @@ import { LoopService } from './budget/loop-service';
 import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
+import { NullNotifier, ToastNotifier, type Notifier } from './notify/notifier';
+import { Presence } from './notify/presence';
+import { NotificationService, realNotifyClock, type NotifyClock } from './notify/service';
 
 export interface StartOptions {
   port: number;
@@ -74,6 +77,10 @@ export interface StartOptions {
   tickMs?: number;
   /** A test seam: the clock of the sleep timer (the real one is used by default). */
   sleepClock?: SleepClock;
+  /** A test seam: what raises the toasts (default: the native toast, or nothing under tests). */
+  notifier?: Notifier;
+  /** A test seam: the clock of the notification grouping and quiet hours. */
+  notifyClock?: NotifyClock;
 }
 export interface RunningServer {
   port: number;
@@ -474,8 +481,24 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   // Nobody pushes main from this checkout except the console, after the user approves a release (SPEC 9.1, 15.5).
   if (planIsRepo) await installReleaseHook(o.planRoot).catch(() => 'skipped_existing');
 
+  // Notifications (SPEC 20): the server raises a native toast for what needs the user, also with the browser closed.
+  const notifyClock = o.notifyClock ?? realNotifyClock;
+  const notifier: Notifier = o.notifier ?? (process.env.CONSOLE_TEST === '1' || process.env.VITEST ? new NullNotifier() : new ToastNotifier());
+  const presence = new Presence(() => notifyClock.now());
+  const notify = new NotificationService({
+    config: () => config.notifications, notifier, presence, clock: notifyClock,
+    translate: () => reportLanguage().t,
+    clickUrl: (itemId) => `http://127.0.0.1:${port}/?token=${token}&plan=${encodeURIComponent(planName)}${itemId ? `#queue=${encodeURIComponent(itemId)}` : ''}`,
+    isPending: (id) => questions.pending().some((q) => q.id === id),
+    pushBrowser: (m) => ws.broadcastJson(m),
+    changed: () => broadcast(),
+  });
+
   const ctx: Context = {
     getPort: () => port,
+    notifier, presence, notify,
+    get notificationsConfig() { return config.notifications; },
+    applyNotifications: (n) => { config.notifications = n; },
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep,
@@ -689,6 +712,9 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const url = `http://127.0.0.1:${port}`;
 
   registry.on(() => broadcast());
+  registry.on((slug) => notify.onRegistryChange(registry.get(slug)));
+  questions.onAdd((q) => notify.onItem(q));
+  void notify.checkAvailability();
   // A session waits for the user exactly while it has an open question.
   questions.onChange(() => {
     for (const a of registry.list()) registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
@@ -732,6 +758,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     lastLaunchArgs: (slug) => launchLog.get(slug),
     close: async () => {
       clearInterval(budgetTick);
+      notify.close(); // before killing: the exits below must not announce "interrupted"
       sleep.close();
       resumer.close();
       for (const h of wakeTimers) sleepClock.clearTimeout(h);
