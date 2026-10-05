@@ -58,7 +58,7 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
     if (problem) return refuse(422, problem);
   }
   try {
-    ctx.store.addAgent({ slug: v.slug, profile: r.profile }); // reserves the name, also while it waits in the queue
+    ctx.store.addAgent({ slug: v.slug, profile: r.profile, ...(request.model ? { model: request.model } : {}) }); // reserves the name, also while it waits in the queue
   } catch (e) {
     return refuse(500, 'agent.spawnFailed', { reason: e instanceof Error ? e.message : String(e) });
   }
@@ -148,7 +148,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
     }
   }
   // A resumed session keeps its context: no goal again, only the word to go on (an interactive session waits for a turn).
-  if (r.resume) ctx.inbox.push(r.slug, RESUMED_MESSAGE);
+  if (r.resume) ctx.inbox.push(r.slug, r.resume.reason && r.resume.reason !== 'limit' ? WOKEN_MESSAGE : RESUMED_MESSAGE);
   else if (r.goal) ctx.inbox.push(r.slug, goalMessage(r.goal));
   ctx.launchWatch.watch(r.slug);
 }
@@ -156,12 +156,15 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
 /** What a resumed agent is told first: it has its context, so only that it may go on. */
 export const RESUMED_MESSAGE = 'The usage limit was reset and your session was resumed by the console. Continue your ticket from where you stopped: check the state of your checklist and go on with the next open step.';
 
+/** What a woken agent is told first: the console was restarted, so it only has to go on. */
+export const WOKEN_MESSAGE = 'The console was restarted and your session was resumed; continue your ticket from where you stopped.';
+
 /**
  * Resumes a suspended agent with `claude --resume <sessionId>` in its EXISTING worktree (SPEC 18.4): same slug, a new session
  * token, no new worktree and no goal message. The active-agent limit still applies: the request goes through the scheduler and,
  * if there is no room, starts by itself when a slot frees.
  */
-export async function launchResume(ctx: Context, slug: string, sessionId: string): Promise<{ ok: true } | { ok: false; code: string }> {
+export async function launchResume(ctx: Context, slug: string, sessionId: string, reason: 'limit' | 'user' | 'work' | 'main' = 'limit'): Promise<{ ok: true } | { ok: false; code: string }> {
   if (!SESSION_ID_RE.test(sessionId)) return { ok: false, code: 'no_session' };
   const a = ctx.registry.get(slug);
   if (!a || a.role !== 'agent') return { ok: false, code: 'not_suspended' };
@@ -169,7 +172,9 @@ export async function launchResume(ctx: Context, slug: string, sessionId: string
   if (a.git ? !existsSync(a.git.worktree) : ctx.git.worktrees) return { ok: false, code: 'no_worktree' };
   ctx.registry.revive(slug);
   try {
-    const result = ctx.scheduler.request({ slug, profile: a.profile, source: 'main', resume: { sessionId } });
+    // The model the agent was started with (kept on its record): a resumed session would otherwise fall back to the profile's.
+    const model = ctx.store.listAgents().find((x) => x.slug === slug)?.model;
+    const result = ctx.scheduler.request({ slug, profile: a.profile, source: 'main', resume: { sessionId, reason }, ...(model ? { model } : {}) });
     ctx.broadcastState();
     if (result.status === 'started' && result.ready) await result.ready;
     return { ok: true };
@@ -187,7 +192,10 @@ export function failQueuedStart(ctx: Context, r: SpawnRequest): void {
   ctx.registry.onProcessExit(r.slug);
   if (r.review) ctx.review.abandonReview(r.slug); // the ticket must not stay in review for ever
   if (r.recovery) ctx.recovery.abandon(r.slug); // nor in recovery
-  if (r.resume) {
+  if (r.resume && r.resume.reason && r.resume.reason !== 'limit') {
+    // A woken agent has no limit to blame: its ticket stays as it is and the main decides.
+    ctx.inbox.push(ctx.planName, `Waking "${r.slug}" failed when its turn in the queue came; it is interrupted. Try resume_agent once more, or tell the user.`);
+  } else if (r.resume) {
     // A resumed ticket that could not start waits again as suspended, so the main can try once more.
     try { if (ctx.tickets.get(r.slug)?.status === 'in_progress') ctx.tickets.move(r.slug, 'suspended_limit'); } catch { /* told below anyway */ }
     ctx.inbox.push(ctx.planName, `Resuming "${r.slug}" failed when its turn in the queue came; its ticket is suspended again.`);

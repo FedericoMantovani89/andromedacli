@@ -44,6 +44,25 @@ export class AgentRegistry {
     this.notify(a.slug);
   }
 
+  /**
+   * An agent restored after a console restart (Phase 6A): no process, no quota spent. `dormant` wakes on demand, `interrupted` lost its
+   * turn (or its worktree), `finished` waits for its own flow (a suspended or blocked ticket). It never counts as active.
+   */
+  registerRestored(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: { worktree: string; branch: string }; cwd?: string; state: 'dormant' | 'interrupted' | 'finished' }): void {
+    this.agents.set(a.slug, {
+      slug: a.slug, role: a.role, profile: a.profile, goal: a.goal, state: a.state, pendingGoal: false,
+      ...(a.sessionId !== undefined ? { sessionId: a.sessionId } : {}),
+      ...(a.git ? { git: a.git } : {}),
+      ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
+    });
+    this.notify(a.slug);
+  }
+
+  /** Shorthand for the common case of `registerRestored`. */
+  registerDormant(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: { worktree: string; branch: string }; cwd?: string }): void {
+    this.registerRestored({ ...a, state: 'dormant' });
+  }
+
   get(slug: string): AgentRuntime | undefined { return this.agents.get(slug); }
 
   /** Forgets a session whose creation failed. */

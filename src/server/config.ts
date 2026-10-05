@@ -14,7 +14,7 @@ export interface Config {
   claude: { command: string[] };
   mod: { enabled: boolean };
   /** Worktrees and commits by the console (SPEC 9). `worktrees: false` keeps the Phase 2 behaviour: agents share the plan folder. */
-  git: { worktrees: boolean; secretPatterns: string[]; testTimeoutMinutes: number };
+  git: { worktrees: boolean; secretPatterns: string[]; testTimeoutMinutes: number; staleWorktreeDays: number; staleCheck: boolean };
   /** `shadow` allows everything but logs what `enforce` would have denied (SPEC 14). */
   guard: { mode: 'enforce' | 'shadow' };
   /** Budget, loop and quota thresholds (SPEC 16, 17, 18). Applied to sessions launched afterwards; the quota steps are read on every event. */
@@ -36,7 +36,7 @@ export const DEFAULT_CONFIG: Config = {
   agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerPlan: 3 },
   claude: { command: ['claude'] },
   mod: { enabled: true },
-  git: { worktrees: true, secretPatterns: DEFAULT_SECRET_PATTERNS, testTimeoutMinutes: 15 },
+  git: { worktrees: true, secretPatterns: DEFAULT_SECRET_PATTERNS, testTimeoutMinutes: 15, staleWorktreeDays: 10, staleCheck: true },
   guard: { mode: 'enforce' },
   budget: {
     agentTokens: 400000, alertPercent: 80, limitPercent: 100, stopPercent: 110, graceMinutes: 5,
@@ -112,6 +112,15 @@ export function loadConfig(path: string): { config: Config; errors: ConfigError[
         const v = g.testTimeoutMinutes;
         if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 240) config.git.testTimeoutMinutes = v;
         else bad('git.testTimeoutMinutes');
+      }
+      if ('staleWorktreeDays' in g) {
+        const v = g.staleWorktreeDays;
+        if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 365) config.git.staleWorktreeDays = v;
+        else bad('git.staleWorktreeDays');
+      }
+      if ('staleCheck' in g) {
+        if (typeof g.staleCheck === 'boolean') config.git.staleCheck = g.staleCheck;
+        else bad('git.staleCheck');
       }
     } else bad('git');
   }

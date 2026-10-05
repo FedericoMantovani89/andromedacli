@@ -132,3 +132,7 @@ button:hover { border-color: var(--accent); }
 .install-command { margin: 0; padding: 8px; background: var(--bg); border: 1px solid var(--border); overflow-x: auto; user-select: all; }
 .install-terminal { height: 280px; background: #000; padding: 4px; }
 .install-result { margin: 0; }
+.panel-stale { color: var(--warn); border: 1px solid var(--warn); border-radius: 8px; padding: 0 6px; font-size: 11px; }
+.panel-stale[hidden] { display: none; }
+.panel-summary { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+.panel-state.dormant { color: var(--muted); font-style: italic; }

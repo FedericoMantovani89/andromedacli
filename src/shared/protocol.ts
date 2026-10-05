@@ -12,6 +12,7 @@ export const USER_ERROR_CODES = [
   'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
   'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
   'install.busy', 'install.unavailable',
+  'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -35,6 +36,8 @@ export interface SessionInfo {
   loop?: 1 | 2 | 3;
   /** Token budget of the agent's ticket (Phase 5); absent when the agent has none (no worktree, a reviewer): shown as n/a. */
   budget?: { used: number; limit: number; step: 'ok' | 'alert' | 'limit' | 'stopped' };
+  /** Phase 6A: the agent's worktree has not been touched for longer than `git.staleWorktreeDays`. */
+  stale?: true;
 }
 
 export interface PrereqResult {

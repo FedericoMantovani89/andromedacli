@@ -15,6 +15,10 @@ export interface ResumeDeps {
   suspendedTickets(): string[];
   /** The agent's worktree is still on disk (a resume needs it: nothing new is created). */
   hasWorktree(slug: string): boolean;
+  /** Phase 6A: the agent is dormant or interrupted (restored after a console restart): the main wakes it with the same tool. */
+  wakeable?(slug: string): boolean;
+  /** Wakes a wakeable agent (no ticket change: its ticket is where it was). */
+  wake?(slug: string, sessionId: string): Promise<{ ok: true } | { ok: false; code: string }>;
   /** A start that failed after the tool already answered (a later group, or the launch itself) is told to the main. */
   tellMain(text: string): void;
   changed(): void;
@@ -53,7 +57,7 @@ export class ResumeService {
     const suspended = new Set(this.d.suspendedTickets());
     const sessions = new Map<string, string>();
     for (const name of unique) {
-      if (!suspended.has(name)) return { status: 'refused', code: 'not_suspended', detail: name };
+      if (!suspended.has(name) && !this.isWakeable(name)) return { status: 'refused', code: 'not_suspended', detail: name };
       if (this.pending.has(name)) return { status: 'refused', code: 'not_suspended', detail: `${name} is already being resumed` };
       const sessionId = this.d.registry.get(name)?.sessionId;
       // Without a session to resume the ticket needs a recovery, not a resume.
@@ -111,7 +115,20 @@ export class ResumeService {
   }
 
   /** Back to `in_progress` first, then the launch; a launch that fails puts the ticket back where it was and tells the main. */
+  private isWakeable(name: string): boolean { return this.d.wakeable?.(name) === true && this.d.wake !== undefined; }
+
+  /** A dormant or interrupted agent (Phase 6A): the session resumes as it is; no ticket changes, and a failure only tells the main. */
+  private startWake(name: string, sessionId: string): void {
+    let run: Promise<{ ok: true } | { ok: false; code: string }>;
+    try { run = this.d.wake!(name, sessionId); } catch (err) { run = Promise.reject(err); }
+    void run.then(
+      (r) => { if (!r.ok) this.tell(`Waking "${name}" failed (${r.code}); it stays as it was.`); },
+      (err: unknown) => this.tell(`Waking "${name}" failed (${err instanceof Error ? err.message : String(err)}); it stays as it was.`),
+    ).finally(() => this.safeChanged());
+  }
+
   private start(name: string, sessionId: string): void {
+    if (this.isWakeable(name)) { this.startWake(name, sessionId); return; }
     try {
       this.d.tickets.restart(name);
     } catch (err) {

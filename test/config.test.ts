@@ -52,7 +52,7 @@ it('accepts valid git and guard entries', () => {
   writeFileSync(p, JSON.stringify({ git: { worktrees: false, secretPatterns: ['*.token'], testTimeoutMinutes: 30 }, guard: { mode: 'shadow' } }));
   const { config, errors } = loadConfig(p);
   expect(errors).toEqual([]);
-  expect(config.git).toEqual({ worktrees: false, secretPatterns: ['*.token'], testTimeoutMinutes: 30 });
+  expect(config.git).toEqual({ worktrees: false, secretPatterns: ['*.token'], testTimeoutMinutes: 30, staleWorktreeDays: 10, staleCheck: true });
   expect(config.guard.mode).toBe('shadow');
 });
 it('invalid git and guard entries fall back one by one and are reported', () => {
@@ -64,6 +64,16 @@ it('invalid git and guard entries fall back one by one and are reported', () => 
   expect(errors.map((e) => e.path).sort()).toEqual(['git.secretPatterns', 'git.testTimeoutMinutes', 'git.worktrees', 'guard.mode']);
   writeFileSync(p, JSON.stringify({ git: 5, guard: 'x' }));
   expect(loadConfig(p).errors.map((e) => e.path).sort()).toEqual(['git', 'guard.mode']);
+});
+
+it('validates the stale worktree entries one by one (Phase 6A)', () => {
+  const p = join(dir(), 'config.json');
+  writeFileSync(p, JSON.stringify({ git: { staleWorktreeDays: 30, staleCheck: false } }));
+  expect(loadConfig(p).config.git).toMatchObject({ staleWorktreeDays: 30, staleCheck: false });
+  writeFileSync(p, JSON.stringify({ git: { staleWorktreeDays: 0, staleCheck: 'yes' } }));
+  const r = loadConfig(p);
+  expect(r.config.git).toMatchObject({ staleWorktreeDays: 10, staleCheck: true });
+  expect(r.errors.map((e) => e.path).sort()).toEqual(['git.staleCheck', 'git.staleWorktreeDays']);
 });
 
 describe('budget section', () => {
