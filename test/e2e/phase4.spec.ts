@@ -236,6 +236,7 @@ try {
     const page = await open(`${s.url}/?token=${s.token}`);
     await until(async () => (await page.locator(`${panel('shop-api')} .xterm`).count()) > 0);
     await page.click('#settings-btn');
+    await page.click('.options-tab[data-tab="plans"]');
     check('the squash switch starts on', await page.locator('input[name="squash"]').isChecked());
     await page.uncheck('input[name="squash"]');
     check('turning it off is saved in the plan', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'plan.json'), 'utf8')).squash === false));

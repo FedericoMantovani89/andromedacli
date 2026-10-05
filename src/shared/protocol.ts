@@ -8,7 +8,7 @@ export type Profile = (typeof PROFILES)[number];
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
-  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
+  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */

@@ -9,6 +9,14 @@ introduces the behaviour.
 
 Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
 
+### Phase 6E: options and catalogs
+- The gear opens a tabbed Options dialog (models, profiles, budget and limits, names, plan, git, guard, mod, notifications, language, prerequisites, plugins, server); each editable field saves on change and goes back when the server refuses it.
+- `PUT /api/config` accepts any subset of the configuration: it is deep-merged into the user's file (unknown entries kept), validated, refused with `config.invalid {path}` when a touched entry is invalid, and applied at once to the limits, budget thresholds, git options and catalogs; `GET /api/options` returns the effective configuration and the read-only facts.
+- New config entries `models` (`agent`, `catalogUrl`, `cacheHours`) and `plugins` (`catalogUrl`, `cacheHours`); the saved agent model is used for launches after the ticket, profile and plan levels.
+- Model list from a remote `models.json` with a cache (6 hours by default), a shipped fallback in `catalog/models.json`, a refresh button and a warning when the saved model left the list.
+- Plugin catalog as a read-only list (`catalog/plugins-catalog.json`, `GET /api/plugins`): tiers, trust, requirements, conflicts, "not tested with this version", and the exact install command to copy; nothing is installed or enabled.
+- SPEC delta: the model and plugin catalog URLs are empty by default (repository address still open), so the shipped lists are the source until one is set.
+
 ## Phase 5: budget, blocks, limits (2026-10-05)
 
 ### Added

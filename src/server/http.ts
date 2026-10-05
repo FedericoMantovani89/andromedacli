@@ -1,14 +1,17 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { buildClaudeLaunch } from './pty/claude-launch';
 import { PtyManager } from './pty/pty-manager';
 import { PlanStore } from './plan-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
-import { validateSlug } from '../shared/slug';
+import { GENERIC_WORDS, SLUG_MAX, SLUG_MIN, validateSlug } from '../shared/slug';
 import { PROFILES, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
-import { patchConfig, type ConfigPatch } from './config';
+import { applyConfigPatch, loadConfig } from './config';
+import { loadProfile } from './profiles';
+import type { ModelCatalog } from './catalog/models';
+import type { PluginCatalog } from './catalog/plugins';
 import { fail, readBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
 import { spawnAgent } from './agents/spawn';
@@ -90,6 +93,12 @@ export interface Context extends V1Context {
   noteLaunch(slug: string): { bypass: boolean };
   needsSetup(): boolean;
   broadcastState(): void;
+  /** The model menu (aliases plus the remote or shipped catalog) and the saved agent model (SPEC 12). */
+  models: ModelCatalog;
+  /** The plugin catalog, read-only (SPEC 30). */
+  plugins: PluginCatalog;
+  /** Makes a saved config patch live: limits, budget, git, models, plugins (the language and the bypass/guard switches go through their own setters). */
+  applyConfig(config: Config, applied: Record<string, unknown>): void;
 }
 
 const STATIC: Record<string, { file: string; type: string }> = {
@@ -226,31 +235,33 @@ export function createRequestHandler(ctx: Context) {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
       const b = (typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
-      const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-      const patch: ConfigPatch = {};
-      // Every entry is checked before anything is written: a bad one changes nothing.
-      if ('language' in b) {
-        if (typeof b.language !== 'string' || (b.language !== 'auto' && !ctx.bundles.has(b.language))) return fail(res, 422, 'config.invalid', { path: 'language' });
-        patch.language = b.language;
-      }
-      if ('agents' in b) {
-        if (!isObj(b.agents)) return fail(res, 422, 'config.invalid', { path: 'agents' });
-        if (typeof b.agents.bypassPermissions !== 'boolean') return fail(res, 422, 'config.invalid', { path: 'agents.bypassPermissions' });
-        patch.agents = { bypassPermissions: b.agents.bypassPermissions };
-      }
-      if ('guard' in b) {
-        if (!isObj(b.guard)) return fail(res, 422, 'config.invalid', { path: 'guard' });
-        if (b.guard.mode !== 'enforce' && b.guard.mode !== 'shadow') return fail(res, 422, 'config.invalid', { path: 'guard.mode' });
-        patch.guard = { mode: b.guard.mode };
-      }
-      if (Object.keys(patch).length === 0) return fail(res, 422, 'config.invalid', { path: '' });
-      const saved = patchConfig(ctx.configPath, patch);
-      if (!saved.ok) return fail(res, 409, saved.code);
-      if (patch.language !== undefined) ctx.setLanguage(patch.language);
-      if (patch.agents || patch.guard) ctx.applySettings({ bypass: patch.agents?.bypassPermissions, guardMode: patch.guard?.mode });
+      // The language must have a bundle (the file check alone only knows its shape); everything else is validated against the merged file.
+      if ('language' in b && (typeof b.language !== 'string' || (b.language !== 'auto' && !ctx.bundles.has(b.language)))) return fail(res, 422, 'config.invalid', { path: 'language' });
+      const saved = applyConfigPatch(ctx.configPath, b);
+      if (!saved.ok) return saved.code === 'config.invalid' ? fail(res, 422, saved.code, { path: saved.path }) : fail(res, 409, saved.code);
+      const applied = saved.applied as { language?: string; agents?: { bypassPermissions?: boolean }; guard?: { mode?: 'enforce' | 'shadow' } };
+      if (applied.language !== undefined) ctx.setLanguage(applied.language);
+      if (applied.agents?.bypassPermissions !== undefined || applied.guard?.mode !== undefined) ctx.applySettings({ bypass: applied.agents?.bypassPermissions, guardMode: applied.guard?.mode });
+      ctx.applyConfig(saved.config, saved.applied);
       ctx.broadcastState();
-      return send(res, 200, patch);
+      return send(res, 200, saved.applied);
     }
+
+    // The Options dialog (SPEC 5.8): the effective configuration and the read-only facts it shows.
+    if (req.method === 'GET' && path === '/api/options') {
+      const { config, errors } = loadConfig(ctx.configPath);
+      const dir = dirname(ctx.configPath);
+      const profilesDir = join(dir, 'profiles');
+      return send(res, 200, {
+        config, errors, paths: { configDir: dir, profilesDir, templatesDir: join(dir, 'templates') }, server: { port: ctx.getPort() },
+        profiles: PROFILES.map((name) => ({ name, source: loadProfile(name, ctx.planRoot, profilesDir)?.source ?? null })),
+        names: { minLength: SLUG_MIN, maxLength: SLUG_MAX, banned: GENERIC_WORDS },
+      });
+    }
+    if (req.method === 'GET' && path === '/api/models') return send(res, 200, await ctx.models.list());
+    if (req.method === 'POST' && path === '/api/models/refresh') return send(res, 200, await ctx.models.list(true));
+    if (req.method === 'GET' && path === '/api/plugins') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version));
+    if (req.method === 'POST' && path === '/api/plugins/refresh') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version, true));
 
     if (req.method === 'PUT' && path === '/api/plan') {
       let body: unknown;

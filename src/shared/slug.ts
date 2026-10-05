@@ -2,10 +2,10 @@ export const SLUG_MIN = 3;
 export const SLUG_MAX = 40;
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 // Generic words, English and Italian; "-<digits>" variants are generic too (configurable in Phase 6).
-const GENERIC = ['agent', 'agente', 'task', 'test', 'prova', 'nuovo', 'nuova', 'fix', 'work', 'lavoro', 'temp'];
+export const GENERIC_WORDS = ['agent', 'agente', 'task', 'test', 'prova', 'nuovo', 'nuova', 'fix', 'work', 'lavoro', 'temp'];
 // Windows device names cannot be file or folder names, and the slug becomes both later (ticket folder, worktree).
 const RESERVED_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
-const GENERIC_RE = new RegExp(`^(${GENERIC.join('|')})(-\\d+)?$`);
+const GENERIC_RE = new RegExp(`^(${GENERIC_WORDS.join('|')})(-\\d+)?$`);
 
 export type SlugResult =
   | { ok: true; slug: string }

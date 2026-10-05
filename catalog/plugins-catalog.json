@@ -1,0 +1,216 @@
+{
+  "schema": 1,
+  "updated": "2026-10-04",
+  "marketplaces": [
+    { "id": "claude-plugins-official", "trust": "official" },
+    { "id": "claude-community", "trust": "community", "add": "anthropics/claude-plugins-community" }
+  ],
+  "plugins": [
+    {
+      "id": "jdtls-lsp@claude-plugins-official",
+      "category": "code-intelligence",
+      "summary": {
+        "en": "Java code intelligence (navigation, diagnostics) through Eclipse JDT LS.",
+        "it": "Intelligenza sul codice Java (navigazione, diagnostica) tramite Eclipse JDT LS."
+      },
+      "trust": "official",
+      "tier": "recommended",
+      "appliesTo": ["backend"],
+      "defaultFor": ["template:backend-java"],
+      "requires": ["jdk", "jdtls"],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "typescript-lsp@claude-plugins-official",
+      "category": "code-intelligence",
+      "summary": {
+        "en": "TypeScript code intelligence (navigation, diagnostics) through a language server.",
+        "it": "Intelligenza sul codice TypeScript (navigazione, diagnostica) tramite un language server."
+      },
+      "trust": "official",
+      "tier": "recommended",
+      "appliesTo": ["frontend"],
+      "defaultFor": [],
+      "requires": ["typescript-language-server"],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "security-guidance@claude-plugins-official",
+      "category": "security",
+      "summary": {
+        "en": "A hook checks every edit for common vulnerabilities and asks Claude to fix them in the same session. Complements the guard, does not replace it. To be tried.",
+        "it": "Una hook controlla ogni modifica per vulnerabilità comuni e chiede a Claude di correggere nella stessa sessione. Complementare alla guardia, non sostitutivo. Da provare."
+      },
+      "trust": "official",
+      "tier": "recommended",
+      "appliesTo": ["backend", "frontend", "dba"],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "frontend-design@claude-plugins-official",
+      "category": "design",
+      "summary": {
+        "en": "Design guidance for user interfaces. Useful for the frontend profile when building interface.",
+        "it": "Indicazioni di design per le interfacce. Utile al profilo frontend quando si fa interfaccia."
+      },
+      "trust": "official",
+      "tier": "on_request",
+      "appliesTo": ["frontend"],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "context7@claude-plugins-official",
+      "category": "documentation",
+      "summary": {
+        "en": "Up-to-date library documentation. Fewer mistakes on new APIs; adds network calls.",
+        "it": "Documentazione aggiornata delle librerie. Riduce gli errori su API nuove; aggiunge chiamate di rete."
+      },
+      "trust": "official",
+      "tier": "on_request",
+      "appliesTo": ["backend", "frontend"],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "code-review@claude-plugins-official",
+      "category": "review",
+      "summary": {
+        "en": "Pull request review with several agents in parallel. Not the console's default review flow: it needs a pull request and uses a lot of quota. Only if a plan uses pull requests.",
+        "it": "Review di PR con più agenti in parallelo. Non è il flusso di review predefinito della console: richiede una PR e consuma molta quota. Solo se un piano usa le PR."
+      },
+      "trust": "official",
+      "tier": "on_request",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "plugin-dev@claude-plugins-official",
+      "category": "tooling",
+      "summary": {
+        "en": "Scaffolding and skills for writing plugins. Useful to write the console's mod; not checked whether it covers mods.",
+        "it": "Scaffolding e skill per creare plugin. Utile per scrivere il mod della console; da verificare se copre i mod."
+      },
+      "trust": "official",
+      "tier": "on_request",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": true,
+      "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "commit-commands@claude-plugins-official",
+      "category": "git",
+      "summary": {
+        "en": "Commands that commit and push.",
+        "it": "Comandi che committano e pushano."
+      },
+      "trust": "official",
+      "tier": "discouraged",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": false,
+      "conflicts": [
+        { "en": "Collides with \"the console makes the commits\".", "it": "Collide con la regola «i commit li fa la console»." }
+      ],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "github@claude-plugins-official",
+      "category": "git",
+      "summary": {
+        "en": "GitHub MCP server with write access.",
+        "it": "Server MCP di GitHub con scritture."
+      },
+      "trust": "official",
+      "tier": "discouraged",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": false,
+      "conflicts": [
+        { "en": "Can create pull requests or branches and push through the API, going around the pre-push hook. If needed, with read-only permissions only.", "it": "Può creare PR, branch o fare push via API, aggirando l'hook pre-push. Se serve, solo con permessi di sola lettura." }
+      ],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "feature-dev@claude-plugins-official",
+      "category": "workflow",
+      "summary": {
+        "en": "Imposes its own phased workflow.",
+        "it": "Impone un proprio flusso a fasi."
+      },
+      "trust": "official",
+      "tier": "discouraged",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": false,
+      "conflicts": [
+        { "en": "Overlaps with the console's checklist.", "it": "Si sovrappone alla checklist della console." }
+      ],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "pr-review-toolkit@claude-plugins-official",
+      "category": "review",
+      "summary": {
+        "en": "Heavy multi-agent pull request review.",
+        "it": "Review di PR multi-agente, pesante."
+      },
+      "trust": "official",
+      "tier": "discouraged",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": false,
+      "conflicts": [
+        { "en": "The console's review belongs to the main and the reviewer.", "it": "La review della console è del main e del reviewer." }
+      ],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    }
+  ]
+}
