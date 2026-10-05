@@ -29,6 +29,8 @@ export interface SchedulerOptions {
   registry: AgentRegistry;
   /** Read on every decision, so changing the limits takes effect without restarting anything (SPEC 16.7, 22.2). */
   limits: () => { global: number; perPlan: number };
+  /** Agents counting against the global limit across ALL plans (Phase 6C); absent: this plan's own count (a single plan). */
+  globalActive?: () => number;
   /**
    * Actually starts the process. May throw, or return a promise that rejects. Either way the agent must count as active from the
    * synchronous part of the call (the registry state), so the next decision sees the slot as taken.
@@ -116,6 +118,6 @@ export class Scheduler {
   private hasRoom(): boolean {
     const { global, perPlan } = this.effectiveLimits();
     const active = this.o.registry.list().filter((a) => this.o.registry.isActive(a.slug)).length;
-    return active < Math.min(global, perPlan);
+    return active < perPlan && (this.o.globalActive ? this.o.globalActive() : active) < global;
   }
 }

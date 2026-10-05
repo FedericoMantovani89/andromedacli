@@ -1,12 +1,14 @@
 import http from 'node:http';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createRequestHandler, type Context } from './http';
 import { attachWebSockets } from './ws';
-import { loadBundles } from './i18n-bundles';
-import { loadConfig } from './config';
+import { loadBundles, type Bundles } from './i18n-bundles';
+import { loadConfig, type Config } from './config';
+import { PLAN_NAME_RE, PlanError, type AddPlanOptions, type PlansApi } from './plans-api';
+import { planNameFromDir } from './cli-args';
 import { PlanStore } from './plan-store';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
@@ -34,7 +36,7 @@ import { excludeConsoleFolder } from './git/worktree';
 import { GuardLog } from './guard/log';
 import { languageName, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
-import type { PrereqResult } from '../shared/protocol';
+import type { PlanTab, PrereqResult } from '../shared/protocol';
 import { Ledger } from './budget/ledger';
 import { defaultProjectsDir, pickTranscript, TranscriptReader } from './budget/transcript';
 import { BudgetService } from './budget/service';
@@ -91,6 +93,12 @@ export interface RunningServer {
   setBudgetLimit(slug: string, limit: number): void;
   /** Arguments the session was launched with (a test seam). */
   lastLaunchArgs(slug: string): string[] | undefined;
+  /** Opens another plan (Phase 6C), as `POST /api/plans` does; refuses with a `PlanError`. */
+  addPlan(root: string, name?: string): Promise<{ name: string }>;
+  /** Closes a plan (its sessions end; nothing is deleted on disk); refused for the last open plan. */
+  closePlan(name: string): Promise<void>;
+  /** The open plans, in the order they were opened. */
+  plans(): PlanTab[];
   close(): Promise<void>;
 }
 
@@ -99,29 +107,77 @@ export const WAKE_MESSAGE = 'The subscription limit was reset. Check the suspend
 /** How long a wake-up probe waits for the next quota reading before it counts as still limited. */
 const WAKE_WAIT_MS = 60_000;
 
-/** Starts the console: one HTTP+WebSocket server on 127.0.0.1, the plan store and the main session. */
-export async function startServer(o: StartOptions): Promise<RunningServer> {
-  const configPath = join(o.configDir, 'config.json');
-  const { config } = loadConfig(configPath);
+/** What is one per console, shared by reference by every plan's runtime (Phase 6C). */
+interface Shared {
+  /** The options the console was started with (the plan-bound ones are overridden per plan). */
+  o: StartOptions;
+  configPath: string;
+  config: Config;
+  token: string;
+  bundles: Bundles;
+  ledger: Ledger;
+  /** The account's limits: one reading for every plan. */
+  quotaState: QuotaState;
+  /** One sleep timer; at the reset it wakes the main of every plan. */
+  sleep: SleepTimer;
+  sleepClock: SleepClock;
+  /** The settings and limits read at each launch (Settings dialog), one set for the whole console. */
+  runtime: { bypass: boolean; guardMode: 'enforce' | 'shadow'; git: Config['git'] };
+  limits: { global: number; perPlan: number };
+  /** Every open plan, in the order they were opened. */
+  runtimes: PlanRuntime[];
+  plansApi: PlansApi;
+  getPort(): number;
+  /** Any change in any plan pushes the state to every UI socket (the tab dots need it). */
+  broadcastAll(): void;
+  /** Pushes a message about one plan to that plan's sockets only. */
+  pushToPlan(plan: string, payload: unknown): void;
+  language(): string;
+  setLanguage(l: string): void;
+  getPrereq(): PrereqResult[] | null;
+  ensurePrereq(): Promise<PrereqResult[]>;
+  refreshPrereq(): Promise<PrereqResult[]>;
+}
+
+/** One plan: its own folder, sessions, agents, tickets and queue (a Context), started and closed on its own. */
+export interface PlanRuntime {
+  ctx: Context;
+  name: string;
+  root: string;
+  /** Starts the main session (the server is already listening). */
+  start(): void;
+  close(): Promise<void>;
+  summary(): PlanTab;
+  /** A quota reading some plan reported: this plan's service applies its steps to its own agents. */
+  onQuota(rateLimits: unknown): void;
+  /** The one check at a reset: wakes this plan's main only. */
+  wakeMain(): Promise<WakeResult>;
+  /** The weekly limit's notice for this plan's main and queue. */
+  weeklyNotice(resetsAt: string | undefined): void;
+  /** A test seam of the host (`RunningServer.setBudgetLimit`) and the launch log. */
+  parts: { budget: BudgetService; scheduler: Scheduler };
+}
+
+/** The per-plan part of the console: everything bound to one folder (Phase 6C: a plan runtime; `startServer` hosts the first one). */
+async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName: string }): Promise<PlanRuntime> {
+  // The old single-plan code below reads `o.planRoot` and `o.planName`: here they are this plan's.
+  const o: StartOptions = { ...shared.o, planRoot: p.planRoot, planName: p.planName };
+  const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
   const store = new PlanStore(o.planRoot);
   store.init(o.planName);
   // The plan keeps the name it was created with, even if its folder is renamed later (it is also the main session id).
   const planName = store.plan.name;
   const ptys = new PtyManager();
-  const token = createToken();
   const tokens = new SessionTokens();
   const inbox = new Inbox();
   const registry = new AgentRegistry();
   registry.register({ slug: planName, role: 'main', profile: 'main' });
   const questions = new QuestionQueue();
   const reading = new ReadingStore(join(o.planRoot, '.console', 'state', 'reading'));
-  const limits = { global: config.agents.maxActiveGlobal, perPlan: config.agents.maxActivePerPlan };
-  // Settings read when a session is launched: a change applies to the sessions started afterwards, never to running ones.
-  const runtime = { bypass: config.agents.bypassPermissions, guardMode: config.guard.mode, git: { ...config.git, ...(o.worktrees !== undefined ? { worktrees: o.worktrees } : {}) } };
+  // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
   // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[planName, config.guard.mode]]);
   const tickets = new TicketStore(o.planRoot);
-  const bundles = loadBundles(o.i18nDir);
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(planName, text); broadcast(); } });
   const endTimers = new Set<ReturnType<typeof setTimeout>>(); // reviewers about to be ended; cancelled at shutdown
   /**
@@ -138,6 +194,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     endTimers.add(timer);
   };
   const reportLanguage = () => {
+    const language = shared.language();
     const lang = language !== 'auto' && bundles.has(language) ? language : 'en';
     return { lang, t: createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') }) };
   };
@@ -200,7 +257,6 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   };
   // Token budgets (SPEC 16): usage from the Claude Code transcript, recorded in the monthly ledger, steps on the ticket.
   const projectsDir = o.projectsDir ?? defaultProjectsDir();
-  const ledger = new Ledger(join(o.configDir, 'ledger'));
   const reader = new TranscriptReader();
   const restrictions = new Restrictions();
   const turns = new Map<string, number>(); // turns started per session: the ledger's `turn`
@@ -295,14 +351,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     changed: () => broadcast(),
   });
   // Usage limits of the subscription (SPEC 18): the mod reports them, the service decides the step.
-  const quotaState = new QuotaState();
+  // The quota state, the sleep timer and its clock are console-wide (the limits belong to the account): see `shared`.
   let quotaStep: QuotaStep = 'none'; // read by the scheduler on every decision
-  const sleepFile = join(o.planRoot, '.console', 'state', 'sleep.json');
-  const sleepClock: SleepClock = o.sleepClock ?? {
-    now: () => Date.now(),
-    setTimeout: (fn, ms) => { const h = setTimeout(fn, ms); h.unref?.(); return h; },
-    clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
-  };
   // The probe of a wake-up waits for the next quota reading (the main's next turn reports it), at most WAKE_WAIT_MS.
   const quotaWaiters = new Set<() => void>();
   const wakeTimers = new Set<unknown>();
@@ -344,26 +394,12 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     broadcast();
     return result;
   };
-  const sleep = new SleepTimer({
-    clock: sleepClock,
-    wakeMain,
-    persist: (s) => writeJsonAtomic(sleepFile, s),
-    changed: () => broadcast(),
-    weeklyNotice: (resetsAt) => {
-      inbox.push(planName, `The weekly usage limit is almost used up or reached${resetsAt ? ` (it resets at ${resetsAt})` : ''}: the agents were paused and nothing restarts by itself. The user was asked in the queue; the choices are to wait until the reset, to go on with fewer agents or a cheaper model (set in the configuration), or to stop the plans.`);
-      // SPEC 18.5: the USER gets the choice (the main may not be able to run at all): one item to acknowledge, its text lists the choices.
-      questions.ask({ from: CONSOLE_FROM, text: 'The weekly usage limit is almost used up or reached: nothing restarts by itself.', kind: 'decision', options: ['ok'], payload: { kind: 'weekly_limit', ...(resetsAt ? { resetsAt } : {}) } });
-    },
-  });
-  // A state saved by an earlier run is only shown: nothing resumes by itself (a declared limit, Phase 6).
-  try {
-    const saved = JSON.parse(readFileSync(sleepFile, 'utf8')) as Partial<SleepState>;
-    // Only a sleep still running is shown: a past or unknown time with no timer behind it would show "sleeping" for ever.
-    const until = typeof saved?.until === 'string' ? Date.parse(saved.until) : Number.NaN;
-    if (saved && (saved.phase === 'sleeping' || saved.phase === 'probing') && typeof saved.attempt === 'number' && Number.isFinite(until) && until > sleepClock.now()) {
-      sleep.load({ until: typeof saved.until === 'string' ? saved.until : undefined, ...(saved.kind ? { kind: saved.kind } : {}), attempt: saved.attempt, phase: saved.phase });
-    }
-  } catch { /* no saved state, or unreadable: nothing to show */ }
+  // The sleep timer is console-wide (see `shared`); it calls this plan's `wakeMain` and `weeklyNotice` through the runtime.
+  const weeklyNotice = (resetsAt: string | undefined): void => {
+    inbox.push(planName, `The weekly usage limit is almost used up or reached${resetsAt ? ` (it resets at ${resetsAt})` : ''}: the agents were paused and nothing restarts by itself. The user was asked in the queue; the choices are to wait until the reset, to go on with fewer agents or a cheaper model (set in the configuration), or to stop the plans.`);
+    // SPEC 18.5: the USER gets the choice (the main may not be able to run at all): one item to acknowledge, its text lists the choices.
+    questions.ask({ from: CONSOLE_FROM, text: 'The weekly usage limit is almost used up or reached: nothing restarts by itself.', kind: 'decision', options: ['ok'], payload: { kind: 'weekly_limit', ...(resetsAt ? { resetsAt } : {}) } });
+  };
   const ticketStatusOf = (slug: string) => { try { return tickets.get(slug)?.status; } catch { return undefined; } };
   const quota = new QuotaService({
     state: quotaState, config: () => config.budget.quota,
@@ -428,6 +464,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   // The scheduler's callbacks reach `ctx` (defined below) lazily, only once the server is running.
   const scheduler = new Scheduler({
     registry, limits: () => limits, multiplier: () => quotaStep,
+    // The global limit counts the active agents of every open plan.
+    globalActive: () => shared.runtimes.reduce((n, r) => n + r.parts.scheduler.activeCount(), 0),
     start: (r) => launchAgent(ctx, r),
     onStartError: (r) => failQueuedStart(ctx, r),
   });
@@ -444,7 +482,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     }
     const launch = buildClaudeLaunch({
       command: ctx.claudeCommand, role: 'main', slug: planName, plan: planName,
-      url: `http://127.0.0.1:${port}`, token: tokens.issue(planName), bypass: ctx.bypass, baseEnv: process.env,
+      url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(planName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir,
       allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent'] : undefined,
       appendPromptFile: renderMainPrompt({ plan: planName, workLanguage: languageName(config.language), outDir: ctx.promptsDir }),
@@ -453,17 +491,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     ptys.spawn({ id: planName, ...launch, cwd: resolve(o.planRoot), cols: 120, rows: 30 });
     launchLog.set(planName, launch.args);
   }
-  let port = 0;
-  let broadcast = () => {};
-  let prereq: PrereqResult[] | null = null;
-  let language: string = config.language;
-  const refreshPrereq = async (): Promise<PrereqResult[]> => {
-    // The Claude check runs the configured command (not the test override), so a custom install is judged fairly.
-    prereq = await runChecks(o.prereqRunner, { claudeCommand: config.claude.command });
-    broadcast();
-    return prereq;
-  };
-  let startupChecks: Promise<PrereqResult[]> | undefined;
+  // The port, the prerequisite checks and the language are console-wide (see `shared`); any change pushes to every UI socket.
+  const broadcast = (): void => shared.broadcastAll();
   let planIsRepo = false;
   try {
     execFileSync('git', ['rev-parse', '--git-dir'], { cwd: o.planRoot, stdio: 'ignore', timeout: 5000 });
@@ -475,7 +504,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   if (planIsRepo) await installReleaseHook(o.planRoot).catch(() => 'skipped_existing');
 
   const ctx: Context = {
-    getPort: () => port,
+    getPort: () => shared.getPort(),
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep,
@@ -508,13 +537,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     handleModEvent: (slug, e) => {
       // The account's limits are not agent activity: they never reach the registry nor reset the loop detector's silence. Never awaited.
       if (e.type === 'quota') {
-        // A wake-up probe waiting for this reading judges it once the steps have been applied.
-        void quota.onQuota(e.data?.rateLimits).then(() => {
-          for (const w of [...quotaWaiters]) w();
-          // A low reading ends a sleep even when no probe is waiting (a probe that timed out, a main that reported by itself).
-          const worst = quotaState.worst();
-          if (worst !== undefined && worst.percent < config.budget.quota.freezePercent) sleep.lifted();
-        });
+        // One reading of the account's limits for every plan: each plan's service applies the steps to its own agents.
+        for (const r of shared.runtimes) r.onQuota(e.data?.rateLimits);
         return;
       }
       if (e.type === 'session.start') resumedAwaitingStart.delete(slug);
@@ -648,16 +672,16 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     planRoot: o.planRoot,
     claudeCommand: o.claudeCommand ?? config.claude.command,
     get bypass() { return runtime.bypass; },
-    get language() { return language; },
+    get language() { return shared.language(); },
     bundles,
     uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
     testMode: process.env.CONSOLE_TEST === '1',
     configPath,
     planIsRepo,
-    getPrereq: () => prereq,
-    ensurePrereq: () => prereq ? Promise.resolve(prereq) : (startupChecks ??= refreshPrereq()),
-    refreshPrereq,
-    setLanguage: (l) => { language = l; },
+    getPrereq: () => shared.getPrereq(),
+    ensurePrereq: () => shared.ensurePrereq(),
+    refreshPrereq: () => shared.refreshPrereq(),
+    setLanguage: (l) => { shared.setLanguage(l); },
     applySettings: (s) => {
       if (s.bypass !== undefined) runtime.bypass = s.bypass;
       if (s.guardMode !== undefined) runtime.guardMode = s.guardMode;
@@ -668,27 +692,15 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     },
     needsSetup: () => !existsSync(configPath),
     broadcastState: () => broadcast(),
+    plans: shared.plansApi,
   };
 
-  const server = http.createServer((req, res) => {
-    void createRequestHandler(ctx)(req, res).catch(() => {
-      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ code: 'internal' }));
-    });
-  });
-  const ws = attachWebSockets(server, ctx);
-  broadcast = ws.broadcastState;
-  reading.on((slug, entry) => ws.broadcastJson({ type: 'reading', slug, entry }));
-
-  await new Promise<void>((ok, err) => {
-    server.once('error', err);
-    server.listen(o.port, '127.0.0.1', () => ok()); // never another interface (SPEC 4.5)
-  });
-  const addr = server.address() as AddressInfo;
-  port = addr.port;
-  const url = `http://127.0.0.1:${port}`;
+  // The HTTP and WebSocket servers are console-wide (see `startServer`); a reading entry goes to the sockets of this plan only.
+  reading.on((slug, entry) => shared.pushToPlan(planName, { type: 'reading', slug, entry }));
 
   registry.on(() => broadcast());
+  // A slot freed in this plan may start another plan's queue (the global limit); the plans are released in the order they were opened.
+  registry.on(() => { for (const r of shared.runtimes) if (r.ctx !== ctx) r.parts.scheduler.release(); });
   // A session waits for the user exactly while it has an open question.
   questions.onChange(() => {
     for (const a of registry.list()) registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
@@ -719,20 +731,27 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     loop.tick(); // never throws: the time signals only warn the main
   }, o.tickMs ?? 30_000);
   budgetTick.unref?.();
-  startupChecks = refreshPrereq(); // background; unknown is null in the state and agent creation waits for it
-  launchMain(undefined);
+  /** One quota reading: a wake-up probe waiting for it judges it once the steps have been applied. */
+  const onQuotaReading = (rateLimits: unknown): void => {
+    void quota.onQuota(rateLimits).then(() => {
+      for (const w of [...quotaWaiters]) w();
+      // A low reading ends a sleep even when no probe is waiting (a probe that timed out, a main that reported by itself).
+      const worst = quotaState.worst();
+      if (worst !== undefined && worst.percent < config.budget.quota.freezePercent) sleep.lifted();
+    });
+  };
 
   return {
-    port, address: addr.address, token, url,
-    sessionTokenFor: (slug) => tokens.tokenFor(slug),
-    sendMessage: (slug, text) => inbox.push(slug, text),
-    writeToSession: (slug, data) => ptys.write(slug, data),
-    setLimits: (l) => { limits.global = l.global; limits.perPlan = l.perPlan; scheduler.release(); },
-    setBudgetLimit: (slug, limit) => budget.setLimit(slug, limit),
-    lastLaunchArgs: (slug) => launchLog.get(slug),
+    ctx, name: planName, root: o.planRoot,
+    // The prerequisite checks start with the console (background; unknown is null in the state and agent creation waits for it).
+    start: () => { launchMain(undefined); },
+    summary: () => ({ name: planName, root: o.planRoot, waiting: questions.pending().length, mainStatus: ptys.status(planName) === 'running' ? 'running' : ptys.status(planName) === 'exited' ? 'exited' : 'pending' }),
+    onQuota: onQuotaReading,
+    wakeMain,
+    weeklyNotice,
+    parts: { budget, scheduler },
     close: async () => {
       clearInterval(budgetTick);
-      sleep.close();
       resumer.close();
       for (const h of wakeTimers) sleepClock.clearTimeout(h);
       wakeTimers.clear();
@@ -742,6 +761,213 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       endTimers.clear();
       scheduler.close(); // before killing: exiting processes would otherwise free slots and start queued agents
       await ptys.killAll();
+    },
+  };
+}
+
+/** Where the open plans are remembered between runs. */
+const plansFile = (configDir: string): string => join(configDir, 'plans.json');
+
+/** The remembered plans; a damaged or missing file is no plans. */
+function readPlansFile(configDir: string): { root: string; name: string }[] {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(plansFile(configDir), 'utf8'));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((p): p is { root: string; name: string } => typeof p?.root === 'string' && typeof p?.name === 'string');
+  } catch { return []; }
+}
+
+/** The same folder, as the plans compare it: resolved, and case-insensitive on Windows. */
+const sameFolder = (a: string, b: string): boolean => (process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b));
+
+/**
+ * Starts the console: one HTTP+WebSocket server on 127.0.0.1 hosting the plans (Phase 6C). The plan of `o.planRoot` is opened
+ * first, then the plans remembered in `<configDir>/plans.json` whose folder still exists; each has its own runtime and main session.
+ */
+export async function startServer(o: StartOptions): Promise<RunningServer> {
+  const configPath = join(o.configDir, 'config.json');
+  const { config } = loadConfig(configPath);
+  const token = createToken();
+  const sleepFile = join(o.configDir, 'state', 'sleep.json');
+  const sleepClock: SleepClock = o.sleepClock ?? {
+    now: () => Date.now(),
+    setTimeout: (fn, ms) => { const h = setTimeout(fn, ms); h.unref?.(); return h; },
+    clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  };
+  let port = 0;
+  let language: string = config.language;
+  let prereq: PrereqResult[] | null = null;
+  let startupChecks: Promise<PrereqResult[]> | undefined;
+  const runtimes: PlanRuntime[] = [];
+  // Opening or closing a plan is one at a time: two requests for the same folder must not both pass the duplicate check.
+  let planChain: Promise<unknown> = Promise.resolve();
+  const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = planChain.then(fn);
+    planChain = run.catch(() => undefined);
+    return run;
+  };
+  let closing = false;
+
+  const server = http.createServer((req, res) => {
+    void createRequestHandler(planCtx)(req, res).catch(() => {
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ code: 'internal' }));
+    });
+  });
+  /** `?plan=<name>`: the plan with that name; no name is the first plan. */
+  function planCtx(name?: string): Context | undefined {
+    return name === undefined || name === '' ? runtimes[0]?.ctx : runtimes.find((r) => r.name === name)?.ctx;
+  }
+  const ws = attachWebSockets(server, planCtx);
+
+  const persistPlans = (): void => {
+    writeJsonAtomic(plansFile(o.configDir), runtimes.map((r) => ({ root: r.root, name: r.name })));
+  };
+
+  const shared: Shared = {
+    o, configPath, config, token, bundles: loadBundles(o.i18nDir),
+    ledger: new Ledger(join(o.configDir, 'ledger')),
+    quotaState: new QuotaState(),
+    // The sleep timer and the account's limits are one per console; at a reset every plan's main wakes.
+    sleep: new SleepTimer({
+      clock: sleepClock,
+      // Not async on purpose: every plan sets its wait timer synchronously, inside the sleep timer's own call.
+      wakeMain: () => Promise.all(runtimes.map((r) => r.wakeMain())).then((all) => (all.length === 0 || all.includes('running') ? 'running' : 'limited')),
+      persist: (s) => writeJsonAtomic(sleepFile, s),
+      changed: () => ws.broadcastState(),
+      weeklyNotice: (resetsAt) => { for (const r of runtimes) r.weeklyNotice(resetsAt); },
+    }),
+    sleepClock,
+    // Settings read when a session is launched: a change applies to the sessions started afterwards, never to running ones.
+    runtime: { bypass: config.agents.bypassPermissions, guardMode: config.guard.mode, git: { ...config.git, ...(o.worktrees !== undefined ? { worktrees: o.worktrees } : {}) } },
+    limits: { global: config.agents.maxActiveGlobal, perPlan: config.agents.maxActivePerPlan },
+    runtimes,
+    plansApi: undefined as unknown as PlansApi, // set just below
+    getPort: () => port,
+    broadcastAll: () => ws.broadcastState(),
+    pushToPlan: (plan, payload) => ws.broadcastJson(payload, plan),
+    language: () => language,
+    setLanguage: (l) => { language = l; },
+    getPrereq: () => prereq,
+    ensurePrereq: () => prereq ? Promise.resolve(prereq) : (startupChecks ??= shared.refreshPrereq()),
+    refreshPrereq: async () => {
+      // The Claude check runs the configured command (not the test override), so a custom install is judged fairly.
+      prereq = await runChecks(o.prereqRunner, { claudeCommand: config.claude.command });
+      ws.broadcastState();
+      return prereq;
+    },
+  };
+  // A sleep saved by an earlier run is only shown: nothing resumes by itself.
+  try {
+    const saved = JSON.parse(readFileSync(sleepFile, 'utf8')) as Partial<SleepState>;
+    // Only a sleep still running is shown: a past or unknown time with no timer behind it would show "sleeping" for ever.
+    const until = typeof saved?.until === 'string' ? Date.parse(saved.until) : Number.NaN;
+    if (saved && (saved.phase === 'sleeping' || saved.phase === 'probing') && typeof saved.attempt === 'number' && Number.isFinite(until) && until > sleepClock.now()) {
+      shared.sleep.load({ until: typeof saved.until === 'string' ? saved.until : undefined, ...(saved.kind ? { kind: saved.kind } : {}), attempt: saved.attempt, phase: saved.phase });
+    }
+  } catch { /* no saved state, or unreadable: nothing to show */ }
+
+  /** Checks a folder and a name, opens the plan (runtime, main session) and remembers it. */
+  const addPlan = (a: AddPlanOptions): Promise<{ name: string }> => exclusive(async () => {
+    if (closing) throw new PlanError('plan.badRoot', 409);
+    const root = resolve(a.root);
+    if (runtimes.some((r) => sameFolder(r.root, root))) throw new PlanError('plan.duplicate', 409);
+    const wanted = a.name ?? planNameFromDir(root);
+    if (!PLAN_NAME_RE.test(wanted)) throw new PlanError('plan.badName', 422);
+    if (runtimes.some((r) => r.name === wanted)) throw new PlanError('plan.duplicate', 409);
+    if (a.create) mkdirSync(root, { recursive: true });
+    else if (!(existsSync(root) && statSync(root).isDirectory())) throw new PlanError('plan.badRoot', 422);
+    if (a.templateId) {
+      // The template (Phase 6D) prepares the folder: git init, profiles, rules, commands.
+      const { applyTemplate } = await import('./templates/apply');
+      const done = await applyTemplate({ templateId: a.templateId, root, name: wanted, create: a.create === true, build: a.build, test: a.test, lint: a.lint, configDir: o.configDir });
+      if (!done.ok) throw new PlanError(done.code, 422);
+    }
+    const store = new PlanStore(root);
+    store.init(wanted);
+    if (!a.templateId) {
+      if (a.test !== undefined) store.setTestCommand(a.test);
+      store.setCommands({ build: a.build, lint: a.lint });
+    }
+    // An existing plan.json keeps the name it was created with: it is the one that must be free.
+    const name = store.plan.name;
+    if (runtimes.some((r) => r.name === name)) throw new PlanError('plan.duplicate', 409);
+    const rt = await createPlanRuntime(shared, { planRoot: root, planName: name });
+    runtimes.push(rt);
+    rt.start();
+    persistPlans();
+    ws.broadcastState();
+    return { name };
+  });
+
+  const closePlan = (name: string): Promise<void> => exclusive(async () => {
+    const rt = runtimes.find((r) => r.name === name);
+    if (!rt) throw new PlanError('plan.notFound', 404);
+    if (runtimes.length <= 1) throw new PlanError('plan.closeFailed', 409);
+    runtimes.splice(runtimes.indexOf(rt), 1);
+    persistPlans();
+    try { await rt.close(); } catch { /* the sessions were killed as far as they could be */ }
+    ws.closePlan(name);
+    // Its slots are free: the plans still open may start their queues.
+    for (const r of runtimes) r.parts.scheduler.release();
+    ws.broadcastState();
+  });
+
+  shared.plansApi = {
+    list: () => runtimes.map((r) => r.summary()),
+    contexts: () => runtimes.map((r) => r.ctx),
+    add: addPlan,
+    close: closePlan,
+  };
+
+  // The CLI's plan first, then the remembered ones whose folder still exists (a missing one is skipped and reported once).
+  const first = await createPlanRuntime(shared, { planRoot: o.planRoot, planName: o.planName });
+  runtimes.push(first);
+  const remembered = readPlansFile(o.configDir).filter((p) => !sameFolder(p.root, o.planRoot));
+  const toOpen: { root: string; name: string }[] = [];
+  for (const p of remembered) {
+    if (existsSync(p.root) && statSync(p.root).isDirectory()) toOpen.push(p);
+    else console.warn(`console: the plan "${p.name}" was skipped: its folder ${p.root} does not exist any more`);
+  }
+  for (const p of toOpen) {
+    try {
+      if (runtimes.some((r) => r.name === p.name || sameFolder(r.root, p.root))) continue;
+      const rt = await createPlanRuntime(shared, { planRoot: resolve(p.root), planName: p.name });
+      if (runtimes.some((r) => r.name === rt.name)) { await rt.close(); continue; }
+      runtimes.push(rt);
+    } catch (e) {
+      console.warn(`console: the plan "${p.name}" could not be opened: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  persistPlans();
+
+  await new Promise<void>((ok, err) => {
+    server.once('error', err);
+    server.listen(o.port, '127.0.0.1', () => ok()); // never another interface (SPEC 4.5)
+  });
+  const addr = server.address() as AddressInfo;
+  port = addr.port;
+  const url = `http://127.0.0.1:${port}`;
+
+  startupChecks = shared.refreshPrereq(); // background; unknown is null in the state and agent creation waits for it
+  for (const r of runtimes) r.start();
+
+  return {
+    port, address: addr.address, token, url,
+    sessionTokenFor: (slug) => first.ctx.tokens.tokenFor(slug),
+    sendMessage: (slug, text) => first.ctx.inbox.push(slug, text),
+    writeToSession: (slug, data) => first.ctx.ptys.write(slug, data),
+    setLimits: (l) => { shared.limits.global = l.global; shared.limits.perPlan = l.perPlan; for (const r of runtimes) r.parts.scheduler.release(); },
+    setBudgetLimit: (slug, limit) => first.parts.budget.setLimit(slug, limit),
+    lastLaunchArgs: (slug) => first.ctx.launchLog.get(slug),
+    addPlan: (root, name) => addPlan({ root, ...(name !== undefined ? { name } : {}) }),
+    closePlan,
+    plans: () => runtimes.map((r) => r.summary()),
+    close: async () => {
+      closing = true;
+      shared.sleep.close();
+      await planChain; // an opening or closing in progress ends first
+      for (const r of [...runtimes]) await r.close();
       ws.closeAll();
       await new Promise<void>((done) => server.close(() => done()));
     },

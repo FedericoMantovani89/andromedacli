@@ -9,6 +9,7 @@ export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
   'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
+  'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -83,7 +84,12 @@ export interface StateMessage {
   quota?: { percent: number; kind: string };
   /** Agents counting against the active-agent limit, and that limit as it is now (the quota step may have cut it). */
   limits?: { active: number; max: number };
+  /** Every open plan, in the order they were opened (Phase 6C): the tabs. */
+  plans?: PlanTab[];
 }
+
+/** One tab: `waiting` is the length of that plan's queue (a dot when above zero). */
+export interface PlanTab { name: string; root: string; waiting: number; mainStatus: SessionStatus }
 
 export interface ApiError {
   code: string;
