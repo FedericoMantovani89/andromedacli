@@ -7,3 +7,5 @@ dist/
 .superpowers/
 # stray probe output of real-Claude runs
 logs/
+# local Claude Code instructions, kept out of the repository history
+CLAUDE.md
