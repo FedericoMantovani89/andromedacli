@@ -15,6 +15,12 @@ function payloadKind(item: QueueItem): unknown {
   return typeof p === 'object' && p !== null ? (p as Record<string, unknown>).kind : undefined;
 }
 
+/** The item a notification click points at: `#queue=<id>` in the address. */
+export function queueIdFromHash(hash: string): string | undefined {
+  const m = /^#queue=([\w-]{1,100})$/.exec(hash);
+  return m ? m[1] : undefined;
+}
+
 function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
   if (item.kind === 'confirm') return createConfirmEntry(item, send);
   if (item.kind === 'decision' && payloadKind(item) === 'budget_stop') return createBudgetEntry(item, send);
@@ -130,6 +136,11 @@ export function createQueueDrawer(root: HTMLElement) {
   return {
     isOpen: () => open,
     toggle: () => setOpen(!open),
+    /** A notification click: opens the drawer and brings that item into view (scrolling, never focus). */
+    openOn(id: string): void {
+      setOpen(true);
+      entries.get(id)?.el.scrollIntoView?.({ block: 'nearest' });
+    },
     update(items: QueueItem[]): void {
       const ids = new Set(items.map((i) => i.id));
       for (const id of [...entries.keys()]) if (!ids.has(id)) entries.delete(id);

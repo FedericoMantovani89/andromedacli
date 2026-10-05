@@ -11,6 +11,12 @@ introduces the behaviour.
 - One console now hosts several plans (one per project folder), each with its own main session, agents, tickets, queue and `.console/` folder, shown as tabs with a dot while its queue waits; `+ plan` opens a plan, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
 - `POST /api/plans`, `DELETE /api/plans/<name>`, `?plan=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first plan); `StateMessage.plans`; the open plans are remembered in `<configDir>/plans.json`.
 - The active-agent global limit counts agents of all plans; a freed slot in one plan starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all plans.
+### Phase 6B: notifications
+
+- The server raises a native Windows toast (node-notifier) for questions, permissions, the release confirmation, tickets that need a decision, budget decisions, the weekly limit, other decisions and interrupted agents, also with the browser tab closed.
+- Nothing is announced while the console is in front (focused, queue open or the asking panel active, from a UI heartbeat); events within a few seconds become one toast; quiet hours (local time, may cross midnight), per-type switches and sound are settings.
+- A click on a toast opens the console on that queue item (#queue=<id>); the tab title shows the number of waiting items.
+- When no toast can be shown the state says so and an optional browser notification takes over; the Notifications section of Settings has a test toast button; the doctor checks that the toast module loads.
 
 Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
 
@@ -49,16 +55,16 @@ Next: Phase 6 (multiple plans, full resume, notifications, templates, options); 
 ## Phase 4: review and merge (2026-10-05)
 
 ### Added
-- Ticket pipeline (`tickets/flow.ts`): `in_progress` → `delivered` → `in_review` → `approved` → `merged` → `released`, with
+- Ticket pipeline (`tickets/flow.ts`): `in_progress` â†’ `delivered` â†’ `in_review` â†’ `approved` â†’ `merged` â†’ `released`, with
   `changes_requested`, `conflict` and `needs_user` on the side; an impossible change is refused with a code. The panel header
-  shows it as a chip (`In review`, `Approved`, `Merged`, `Rework 1/2`…), kept after the worktree is gone.
+  shows it as a chip (`In review`, `Approved`, `Merged`, `Rework 1/2`â€¦), kept after the worktree is gone.
 - `report.md` per ticket (`.console/tickets/<name>/`), written by the console without a model: objective, checklist, files
   (from git), tests (the console's own run), documentation, the agents' notes verbatim, the review. Headings follow the
   interface language (`report.*` keys); the squash commit message is English.
 - Main tools: `ticket_report` (facts from git and from the tests the console reruns on exactly the delivered commit),
   `send_back_ticket` (the main's own check), `request_review`, `merge_ticket`, `propose_release`.
 - Reviewer: a read-only agent (`CONSOLE_ROLE=reviewer`, profile `reviewer`) in a detached checkout of the delivered commit;
-  the guard refuses anything that writes (tools, redirects, `rm`, `git add`…). One `review_verdict {pass, notes}` per review.
+  the guard refuses anything that writes (tools, redirects, `rm`, `git add`â€¦). One `review_verdict {pass, notes}` per review.
   A reviewer is started only by `request_review`; its session ends after the verdict.
 - Rounds: a failed review (or red tests on the delivered commit) goes back to the author as a message from the main, with
   three new steps appended to its checklist; after two rework rounds the next failure puts a decision in the user's queue

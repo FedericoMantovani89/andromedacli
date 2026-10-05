@@ -8,7 +8,10 @@ import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
 import { validateSlug } from '../shared/slug';
 import { PROFILES, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
-import { patchConfig, type ConfigPatch } from './config';
+import { patchConfig, validateNotificationsPatch, type ConfigPatch } from './config';
+import type { Notifier } from './notify/notifier';
+import { parsePresence, type Presence } from './notify/presence';
+import type { NotificationService } from './notify/service';
 import { fail, readBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
 import { spawnAgent } from './agents/spawn';
@@ -101,6 +104,14 @@ export interface Context extends V1Context {
   broadcastState(): void;
   /** The console's open plans (Phase 6C); set by the host, shared by every plan's Context. */
   plans?: PlansApi;
+  /** Phase 6B: unique for the whole console (6C shares it between plans). */
+  notifier: Notifier;
+  /** What the user is looking at, as the UI last reported it. */
+  presence: Presence;
+  notify: NotificationService;
+  /** Read at each event. */
+  readonly notificationsConfig: Config['notifications'];
+  applyNotifications(n: Config['notifications']): void;
 }
 
 const STATIC: Record<string, { file: string; type: string }> = {
@@ -161,6 +172,7 @@ export function buildState(ctx: Context): StateMessage {
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
     ...(ctx.plans ? { plans: ctx.plans.list() } : {}),
+    notifications: { toast: ctx.notify.toast(), config: ctx.notificationsConfig },
   };
 }
 
@@ -270,6 +282,22 @@ export function createRequestHandler(source: Context | PlanResolver) {
       if (!out.ok) return fail(res, out.httpStatus, out.code, out.params);
       return send(res, 202, { terminal: out.terminal });
     }
+    // Phase 6B: what the user is looking at (heartbeat of the UI), and the "send a test toast" button.
+    if (req.method === 'POST' && path === '/api/presence') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const report = parsePresence(body);
+      if (!report) return fail(res, 400, 'bad_request');
+      ctx.presence.report(report);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (req.method === 'POST' && path === '/api/notifications/test') {
+      const ok = await ctx.notify.test();
+      ctx.broadcastState();
+      return send(res, 200, { ok });
+    }
 
     if (req.method === 'PUT' && path === '/api/config') {
       let body: unknown;
@@ -292,9 +320,15 @@ export function createRequestHandler(source: Context | PlanResolver) {
         if (b.guard.mode !== 'enforce' && b.guard.mode !== 'shadow') return fail(res, 422, 'config.invalid', { path: 'guard.mode' });
         patch.guard = { mode: b.guard.mode };
       }
+      if ('notifications' in b) {
+        const checked = validateNotificationsPatch(b.notifications, ctx.notificationsConfig);
+        if (!checked.ok) return fail(res, 422, 'config.invalid', { path: checked.path });
+        patch.notifications = checked.value;
+      }
       if (Object.keys(patch).length === 0) return fail(res, 422, 'config.invalid', { path: '' });
       const saved = patchConfig(ctx.configPath, patch);
       if (!saved.ok) return fail(res, 409, saved.code);
+      if (patch.notifications) ctx.applyNotifications(patch.notifications);
       if (patch.language !== undefined) ctx.setLanguage(patch.language);
       if (patch.agents || patch.guard) ctx.applySettings({ bypass: patch.agents?.bypassPermissions, guardMode: patch.guard?.mode });
       ctx.broadcastState();

@@ -50,6 +50,9 @@ import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
+import { NullNotifier, ToastNotifier, type Notifier } from './notify/notifier';
+import { Presence } from './notify/presence';
+import { NotificationService, realNotifyClock, type NotifyClock } from './notify/service';
 
 export interface StartOptions {
   port: number;
@@ -81,6 +84,10 @@ export interface StartOptions {
   installTable?: readonly InstallEntry[];
   /** A test seam: the runner that probes for winget/npm before an install is offered. */
   installRunner?: Runner;
+  /** A test seam: what raises the toasts (default: the native toast, or nothing under tests). */
+  notifier?: Notifier;
+  /** A test seam: the clock of the notification grouping and quiet hours. */
+  notifyClock?: NotifyClock;
 }
 export interface RunningServer {
   port: number;
@@ -511,9 +518,25 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   // Nobody pushes main from this checkout except the console, after the user approves a release (SPEC 9.1, 15.5).
   if (planIsRepo) await installReleaseHook(o.planRoot).catch(() => 'skipped_existing');
 
+  // Notifications (SPEC 20): the server raises a native toast for what needs the user, also with the browser closed.
+  const notifyClock = o.notifyClock ?? realNotifyClock;
+  const notifier: Notifier = o.notifier ?? (process.env.CONSOLE_TEST === '1' || process.env.VITEST ? new NullNotifier() : new ToastNotifier());
+  const presence = new Presence(() => notifyClock.now());
+  const notify = new NotificationService({
+    config: () => config.notifications, notifier, presence, clock: notifyClock,
+    translate: () => reportLanguage().t,
+    clickUrl: (itemId) => `http://127.0.0.1:${shared.getPort()}/?token=${shared.token}&plan=${encodeURIComponent(planName)}${itemId ? `#queue=${encodeURIComponent(itemId)}` : ''}`,
+    isPending: (id) => questions.pending().some((q) => q.id === id),
+    pushBrowser: (m) => shared.pushToPlan(planName, m),
+    changed: () => broadcast(),
+  });
+
   const ctx: Context = {
     getPort: () => shared.getPort(),
     utilityPtys: shared.utilityPtys, installer: shared.installer,
+    notifier, presence, notify,
+    get notificationsConfig() { return config.notifications; },
+    applyNotifications: (n) => { config.notifications = n; },
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep,
@@ -710,6 +733,9 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   registry.on(() => broadcast());
   // A slot freed in this plan may start another plan's queue (the global limit); the plans are released in the order they were opened.
   registry.on(() => { for (const r of shared.runtimes) if (r.ctx !== ctx) r.parts.scheduler.release(); });
+  registry.on((slug) => notify.onRegistryChange(registry.get(slug)));
+  questions.onAdd((q) => notify.onItem(q));
+  void notify.checkAvailability();
   // A session waits for the user exactly while it has an open question.
   questions.onChange(() => {
     for (const a of registry.list()) registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
@@ -761,6 +787,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     parts: { budget, scheduler },
     close: async () => {
       clearInterval(budgetTick);
+      notify.close(); // before killing: the exits below must not announce "interrupted"
       resumer.close();
       for (const h of wakeTimers) sleepClock.clearTimeout(h);
       wakeTimers.clear();

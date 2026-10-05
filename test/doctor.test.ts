@@ -13,7 +13,8 @@ const byId = (r: Awaited<ReturnType<typeof runDoctor>>, id: string) => r.checks.
 
 it('reports ok when everything works, including the live security self-test', async () => {
   const r = await runDoctor({ ...dirs(), run: goodRunner });
-  expect(r.checks.map((c) => c.id)).toEqual(['node', 'git', 'claude', 'server.security', 'config', 'i18n', 'disk']);
+  expect(r.checks.map((c) => c.id)).toEqual(['node', 'git', 'claude', 'server.security', 'config', 'i18n', 'disk', 'notifications']);
+  expect(byId(r, 'notifications')).toMatchObject({ status: 'ok' }); // the toast module loads (nothing is sent)
   expect(byId(r, 'server.security')).toMatchObject({ status: 'ok' });
   expect(r.ok).toBe(true);
 }, 40000);

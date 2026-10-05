@@ -2,6 +2,7 @@ import type { ApiError, PrereqResult, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { errorText } from './new-agent';
 import { openInstallDialog } from './install-dialog';
+import { renderNotificationsTab } from './options-notifications';
 import { bindText, k, languageName, resolveLanguage, setLanguage } from './i18n-client';
 
 /**
@@ -213,7 +214,13 @@ export function openSettings(getState: () => StateMessage | undefined): void {
   bindText(close, 'common.close');
   close.addEventListener('click', closeOverlay);
 
-  dialog.append(title, langRow, agentsTitle, agentSettings, prereqTitle, table, close);
+  // Phase 6B: until the tabbed Options dialog exists, notifications are one more section here.
+  const notifyTitle = document.createElement('h2');
+  bindText(notifyTitle, 'settings.notifications');
+  const notifyBox = document.createElement('div');
+  if (state) renderNotificationsTab(notifyBox, state);
+
+  dialog.append(title, langRow, agentsTitle, agentSettings, notifyTitle, notifyBox, prereqTitle, table, close);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
 }

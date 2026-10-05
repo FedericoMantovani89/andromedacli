@@ -7,7 +7,8 @@ import { loadConfig } from '../config';
 import { loadBundles } from '../i18n-bundles';
 import { startServer } from '../index';
 import { checkBundles } from '../../shared/i18n-checks';
-import { runChecks, type CheckResult, type Runner } from './checks';
+import { ToastNotifier, type Notifier } from '../notify/notifier';
+import { runChecks,type CheckResult, type Runner } from './checks';
 
 export type DoctorStatus = 'ok' | 'warn' | 'fail' | 'error';
 export interface DoctorCheck { id: string; status: DoctorStatus; detail?: string; fix?: string }
@@ -72,7 +73,7 @@ async function securitySelfTest(): Promise<DoctorCheck> {
 }
 
 /** Read-only health checks of what Phase 1 has built (the rest of SPEC 29.6 arrives with the phases that build it). */
-export async function runDoctor(o: { configDir: string; planRoot: string; run?: Runner }): Promise<DoctorReport> {
+export async function runDoctor(o: { configDir: string; planRoot: string; run?: Runner; notifier?: Notifier }): Promise<DoctorReport> {
   const loaded = loadConfig(join(o.configDir, 'config.json'));
   const checks: DoctorCheck[] = (await runChecks(o.run, { claudeCommand: loaded.config.claude.command })).map(fromPrereq);
 
@@ -96,6 +97,16 @@ export async function runDoctor(o: { configDir: string; planRoot: string; run?: 
       : { id: 'disk', status: 'warn', detail: `${Math.round(free / 1024 ** 2)} MiB free`, fix: 'Free some disk space: agent worktrees need room.' });
   } catch (e) {
     checks.push({ id: 'disk', status: 'error', detail: e instanceof Error ? e.message : String(e) });
+  }
+
+  // SPEC 29.6 "Notifiche": the toast module loads. It never sends a toast.
+  try {
+    const available = await (o.notifier ?? new ToastNotifier()).available();
+    checks.push(available
+      ? { id: 'notifications', status: 'ok' }
+      : { id: 'notifications', status: 'error', detail: 'the toast module could not be loaded', fix: 'Reinstall the dependencies (npm install); the browser fallback in Options > Notifications works meanwhile.' });
+  } catch (e) {
+    checks.push({ id: 'notifications', status: 'error', detail: e instanceof Error ? e.message : String(e), fix: 'Reinstall the dependencies (npm install).' });
   }
 
   return { ok: !checks.some((c) => c.status === 'fail' || c.status === 'error'), checks };
