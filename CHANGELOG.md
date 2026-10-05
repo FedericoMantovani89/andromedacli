@@ -7,6 +7,14 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Added
+- With no plan open (nothing remembered and no `--plan-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-plan dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
+- `GET /api/host` tells the page what the console knows without a plan (plans, language, languages); plan routes with no plan answer `404 plan.notFound`.
+
+### Changed
+- `serve` without `--plan-root` no longer opens the current folder: it opens the plans remembered in `plans.json`, or shows the welcome screen. `startServer` takes `planRoot` and `planName` as optional.
+- The request handler takes the console-wide part (`HostContext`) apart from a plan's `Context`.
+
 Next: Phase 7 (external providers, optional); ask before starting.
 
 ## Phase 6: multiple plans, full resume, notifications, templates, options (2026-10-05)

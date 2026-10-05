@@ -9,6 +9,11 @@ it('reads flags', () => {
   const a = parseCliArgs(['serve', '--port', '8000', '--plan-root', 'E:/x', '--no-open'], 'D:/work');
   expect(a).toMatchObject({ command: 'serve', port: 8000, planRoot: 'E:/x', noOpen: true });
 });
+it('knows whether the plan folder was given: without --plan-root the console opens the remembered plans, or none', () => {
+  expect(parseCliArgs([], 'D:/work/shop-api').planRootGiven).toBe(false);
+  expect(parseCliArgs(['serve', '--port', '8000'], 'D:/work').planRootGiven).toBe(false);
+  expect(parseCliArgs(['serve', '--plan-root', 'E:/x'], 'D:/work').planRootGiven).toBe(true);
+});
 it('reads doctor --json', () => {
   expect(parseCliArgs(['doctor', '--json'], 'D:/work')).toMatchObject({ command: 'doctor', json: true });
 });

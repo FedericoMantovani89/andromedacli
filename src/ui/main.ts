@@ -1,4 +1,4 @@
-import type { StateMessage } from '../shared/protocol';
+import type { HostInfo, StateMessage } from '../shared/protocol';
 import { api, getSelectedPlan, setSelectedPlan, wsUrl } from './api';
 import { openNewPlanDialog } from './new-plan';
 import { neighbourPlan, openClosePlanDialog, renderPlanTabs, titleWithWaiting } from './plan-tabs';
@@ -14,6 +14,7 @@ import { openSettings } from './settings';
 import { renderStatusBar } from './statusbar';
 import { openWizard } from './wizard';
 import { runSplash } from './splash';
+import { showWelcome } from './welcome';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -191,6 +192,14 @@ $('settings-btn').addEventListener('click', () => openSettings(() => state));
 $('queue-btn').addEventListener('click', () => queueDrawer.toggle());
 
 async function boot(): Promise<void> {
+  // A console with no plan open has no state to show: it asks for a project first (and reloads once there is one).
+  const host = await api<HostInfo>('/api/host');
+  if (host.status === 401) return showUnauthorized();
+  if (host.status === 200 && host.body.plans.length === 0) {
+    await initI18n(resolveLanguage(host.body.language, host.body.languages));
+    showWelcome();
+    return;
+  }
   let res = await api<StateMessage>('/api/state');
   if (res.status === 404 && getSelectedPlan() !== undefined) { // the plan remembered by this tab is not open any more
     setSelectedPlan(undefined);

@@ -4,6 +4,8 @@ export interface CliArgs {
   command: 'serve' | 'doctor';
   port: number;
   planRoot: string;
+  /** `--plan-root` was given: only then does `serve` open that folder; otherwise it opens the remembered plans (or none). */
+  planRootGiven: boolean;
   noOpen: boolean;
   json: boolean;
 }
@@ -11,7 +13,7 @@ export interface CliArgs {
 export const DEFAULT_PORT = 7391;
 
 export function parseCliArgs(argv: string[], cwd: string): CliArgs {
-  const args: CliArgs = { command: 'serve', port: DEFAULT_PORT, planRoot: cwd, noOpen: false, json: false };
+  const args: CliArgs = { command: 'serve', port: DEFAULT_PORT, planRoot: cwd, planRootGiven: false, noOpen: false, json: false };
   const rest = [...argv];
   const first = rest[0];
   if (first && !first.startsWith('-')) {
@@ -31,6 +33,7 @@ export function parseCliArgs(argv: string[], cwd: string): CliArgs {
       const v = rest[++i];
       if (!v) throw new Error('--plan-root needs a folder');
       args.planRoot = v;
+      args.planRootGiven = true;
     } else throw new Error(`unknown option "${flag}"`);
   }
   return args;

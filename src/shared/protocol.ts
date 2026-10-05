@@ -10,7 +10,7 @@ export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
   'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
-  'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
+  'folder.pickBusy', 'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
   'plan.fieldInvalid', 'plan.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
@@ -109,3 +109,11 @@ export interface ApiError {
 
 /** Control message the browser sends as a text frame on a terminal socket; keyboard input is a binary frame. */
 export interface ResizeMessage { type: 'resize'; cols: number; rows: number }
+
+/** What the console knows about itself with or without a plan (`GET /api/host`): the welcome screen asks this first. */
+export interface HostInfo {
+  plans: PlanTab[];
+  language: string;
+  languages: string[];
+  needsSetup: boolean;
+}

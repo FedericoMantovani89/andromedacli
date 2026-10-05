@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { createRequestHandler, type Context } from './http';
+import { createRequestHandler, type Context, type HostContext } from './http';
 import { attachWebSockets } from './ws';
 import { loadBundles, type Bundles } from './i18n-bundles';
 import { loadConfig, type Config } from './config';
@@ -58,14 +58,18 @@ import { NotificationService, realNotifyClock, type NotifyClock } from './notify
 import { AgentPersister } from './agents/persist';
 import { renderRestartNotice, restoreAgents } from './agents/restore';
 import { WakeService } from './agents/wake';
+import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
 
 export interface StartOptions {
   port: number;
-  planRoot: string;
+  /** The plan folder to open first. Absent: only the plans remembered in `<configDir>/plans.json` are opened (possibly none: the welcome screen). */
+  planRoot?: string;
   configDir: string;
-  planName: string;
+  planName?: string;
+  /** A test seam: replaces the native "choose a folder" window. */
+  pickFolder?: () => Promise<PickFolderResult>;
   /** Folder with messages_<lang>.properties (default: the shipped ones; tests). */
   i18nDir?: string;
   claudeCommand?: string[];
@@ -185,7 +189,7 @@ export interface PlanRuntime {
 /** The per-plan part of the console: everything bound to one folder (Phase 6C: a plan runtime; `startServer` hosts the first one). */
 async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName: string }): Promise<PlanRuntime> {
   // The old single-plan code below reads `o.planRoot` and `o.planName`: here they are this plan's.
-  const o: StartOptions = { ...shared.o, planRoot: p.planRoot, planName: p.planName };
+  const o: StartOptions & { planRoot: string; planName: string } = { ...shared.o, planRoot: p.planRoot, planName: p.planName };
   const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
   const store = new PlanStore(o.planRoot);
   store.init(o.planName);
@@ -958,8 +962,25 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   };
   let closing = false;
 
+  // What the request handler needs from the console itself: it answers even when no plan is open.
+  const host: HostContext = {
+    getPort: () => port, token, uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
+    version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
+    get bundles() { return shared.bundles; },
+    get plans() { return shared.plansApi; },
+    ensurePrereq: () => shared.ensurePrereq(),
+    // The window's title follows the interface language ("auto" is resolved by the browser, so the server uses English for it).
+    pickFolder: o.pickFolder ?? createFolderPicker({
+      title: () => {
+        const lang = shared.language() !== 'auto' && shared.bundles.has(shared.language()) ? shared.language() : 'en';
+        const t = createTranslator({ lang, messages: shared.bundles.get(lang) ?? {}, fallback: shared.bundles.get('en') });
+        return t('folder.pick.title');
+      },
+    }),
+    info: () => ({ plans: runtimes.map((r) => r.summary()), language: shared.language(), languages: [...shared.bundles.keys()].sort(), needsSetup: !existsSync(configPath) }),
+  };
   const server = http.createServer((req, res) => {
-    void createRequestHandler(planCtx)(req, res).catch(() => {
+    void createRequestHandler(planCtx, host)(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ code: 'internal' }));
     });
@@ -1081,9 +1102,9 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   };
 
   // The CLI's plan first, then the remembered ones whose folder still exists (a missing one is skipped and reported once).
-  const first = await createPlanRuntime(shared, { planRoot: o.planRoot, planName: o.planName });
-  runtimes.push(first);
-  const remembered = readPlansFile(o.configDir).filter((p) => !sameFolder(p.root, o.planRoot));
+  if (o.planRoot !== undefined) runtimes.push(await createPlanRuntime(shared, { planRoot: o.planRoot, planName: o.planName ?? planNameFromDir(o.planRoot) }));
+  const given = o.planRoot;
+  const remembered = readPlansFile(o.configDir).filter((p) => given === undefined || !sameFolder(p.root, given));
   const toOpen: { root: string; name: string }[] = [];
   for (const p of remembered) {
     if (existsSync(p.root) && statSync(p.root).isDirectory()) toOpen.push(p);
@@ -1115,12 +1136,13 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   return {
     port, address: addr.address, token, url,
-    sessionTokenFor: (slug) => first.ctx.tokens.tokenFor(slug),
-    sendMessage: (slug, text) => first.ctx.inbox.push(slug, text),
-    writeToSession: (slug, data) => first.ctx.ptys.write(slug, data),
+    // The members below are bound to the first plan (the one a request with no `?plan=` gets).
+    sessionTokenFor: (slug) => runtimes[0]?.ctx.tokens.tokenFor(slug),
+    sendMessage: (slug, text) => runtimes[0]!.ctx.inbox.push(slug, text),
+    writeToSession: (slug, data) => runtimes[0]!.ctx.ptys.write(slug, data),
     setLimits: (l) => { shared.limits.global = l.global; shared.limits.perPlan = l.perPlan; for (const r of runtimes) r.parts.scheduler.release(); },
-    setBudgetLimit: (slug, limit) => first.parts.budget.setLimit(slug, limit),
-    lastLaunchArgs: (slug) => first.ctx.launchLog.get(slug),
+    setBudgetLimit: (slug, limit) => runtimes[0]!.parts.budget.setLimit(slug, limit),
+    lastLaunchArgs: (slug) => runtimes[0]?.ctx.launchLog.get(slug),
     addPlan: (root, name) => addPlan({ root, ...(name !== undefined ? { name } : {}) }),
     closePlan,
     plans: () => runtimes.map((r) => r.summary()),

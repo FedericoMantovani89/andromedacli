@@ -34,14 +34,15 @@ async function main(): Promise<void> {
     process.exit(report.ok ? 0 : 1);
   }
 
-  const planRoot = resolve(args.planRoot);
+  // Only an explicit --plan-root opens a folder; otherwise the remembered plans open, or the welcome screen asks for a project.
+  const planRoot = args.planRootGiven ? resolve(args.planRoot) : undefined;
   try {
     const server = await startServer({
-      port: args.port, planRoot, configDir: configDir(), planName: planNameFromDir(planRoot),
+      port: args.port, configDir: configDir(), ...(planRoot ? { planRoot, planName: planNameFromDir(planRoot) } : {}),
     });
     const link = `${server.url}/?token=${server.token}`;
     console.log(`Console: ${link}`);
-    console.log(`Plan folder: ${planRoot} (state in ${join(planRoot, '.console')})`);
+    if (planRoot) console.log(`Plan folder: ${planRoot} (state in ${join(planRoot, '.console')})`);
     if (!args.noOpen) openBrowser(link);
     const stop = () => { void server.close().then(() => process.exit(0)); };
     process.on('SIGINT', stop);

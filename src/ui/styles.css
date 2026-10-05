@@ -149,3 +149,11 @@ button:hover { border-color: var(--accent); }
 .options-plugin-title { display: flex; gap: 8px; align-items: baseline; }
 .options-command-row { display: flex; gap: 6px; }
 .options-command { flex: 1; font-family: Consolas, "Courier New", monospace; }
+
+/* Phase 6 follow-up: the welcome screen (no plan open) and the folder row of the new-plan dialog */
+#topbar[hidden], #workspace[hidden], #statusbar[hidden] { display: none; }
+#welcome { display: grid; gap: 12px; place-content: center; justify-items: center; min-height: 100vh; text-align: center; padding: 24px; }
+#welcome h1 { margin: 0; font-size: 22px; }
+#welcome p { margin: 0; max-width: 56ch; color: var(--muted); }
+.folder-row { display: flex; gap: 8px; align-items: end; }
+.folder-row label { flex: 1; }

@@ -51,9 +51,9 @@ function api(s: Server) {
   return { ui, asMod, event, state, agent };
 }
 
-async function boot(o: { planRoot: string; configDir: string; notifier?: { available(): Promise<boolean>; notify(n: Toast): Promise<void> } }): Promise<Server> {
+async function boot(o: { planRoot?: string; configDir: string; notifier?: { available(): Promise<boolean>; notify(n: Toast): Promise<void> } }): Promise<Server> {
   const s = await startServer({
-    port: 0, planRoot: o.planRoot, configDir: o.configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null,
+    port: 0, ...(o.planRoot ? { planRoot: o.planRoot, planName: 'shop-api' } : {}), configDir: o.configDir, claudeCommand: [process.execPath, fixture], modDir: null,
     projectsDir: tmp('e2e6-proj-'), ...(o.notifier ? { notifier: o.notifier } : {}),
   } as Parameters<typeof startServer>[0]);
   servers.push(s);
@@ -166,6 +166,30 @@ try {
       const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: 'en-US' });
       await page.goto(`${s.url}/?token=${s.token}`);
       check('the page shows a tab for each plan and the new-plan button', await until(async () => (await page.locator('#tabs button').count()) >= 3));
+    } finally { await browser.close(); }
+    await s.close();
+  }
+
+  // 4. No plan open: the page asks for a project; creating one starts the console as usual.
+  {
+    const configDir = tmp('e2e6-cfg-');
+    writeConfig(configDir);
+    const s = await boot({ configDir });
+    const S = api(s);
+    check('with nothing remembered the host lists no plan', ((await S.ui('/api/host')).json?.plans ?? []).length === 0);
+    const browser = await chromium.launch({ channel: 'msedge', headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: 'en-US' });
+      await page.goto(`${s.url}/?token=${s.token}`);
+      check('the page asks for a project', await until(async () => (await page.locator('#welcome h1').count()) > 0 && (await page.locator('#overlay input[name="folder"]').count()) > 0));
+      check('the plan chrome is hidden', await page.locator('#topbar').isHidden() && await page.locator('#statusbar').isHidden());
+      check('the dialog has a Browse button', (await page.locator('#overlay button.browse-folder').count()) === 1);
+      const project = tmp('e2e6-new-');
+      await page.fill('#overlay input[name="folder"]', project);
+      await page.click('#overlay button[type="submit"]');
+      check('after creating the project the page starts as usual (tab and new-plan button)', await until(async () => (await page.locator('#tabs button').count()) >= 2));
+      check('the plan is open on the server', ((await S.ui('/api/host')).json?.plans ?? []).length === 1);
+      check('the welcome screen is gone', (await page.locator('#welcome').count()) === 0);
     } finally { await browser.close(); }
     await s.close();
   }

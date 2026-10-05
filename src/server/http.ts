@@ -7,8 +7,9 @@ import { PlanStore } from './plan-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
 import { GENERIC_WORDS, SLUG_MAX, SLUG_MIN, validateSlug } from '../shared/slug';
-import { PROFILES, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
+import { PROFILES, type HostInfo, type PlanTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
 import { applyConfigPatch, loadConfig } from './config';
+import type { PickFolderResult } from './pick-folder';
 import type { Notifier } from './notify/notifier';
 import { parsePresence, type Presence } from './notify/presence';
 import type { NotificationService } from './notify/service';
@@ -192,31 +193,41 @@ export function buildState(ctx: Context): StateMessage {
   };
 }
 
-export function createRequestHandler(source: Context | PlanResolver) {
+/** The console-wide part the request handler needs; unlike a plan's Context it exists even when no plan is open. */
+export interface HostContext {
+  getPort(): number;
+  token: string;
+  uiDist: string;
+  version: string;
+  bundles: Bundles;
+  plans: PlansApi;
+  ensurePrereq(): Promise<PrereqResult[]>;
+  info(): HostInfo;
+  /** The native "choose a folder" window (the server runs on the user's own machine). */
+  pickFolder(): Promise<PickFolderResult>;
+}
+
+export function createRequestHandler(source: Context | PlanResolver, host: HostContext) {
   const resolve: PlanResolver = typeof source === 'function' ? source : () => source;
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    // Until the token is checked only console-wide things are used, so the first plan answers for them; then `ctx` becomes the asked plan.
-    const first = resolve();
-    if (!first) return fail(res, 503, 'internal');
-    let ctx: Context = first;
-    if (!isAllowedHost(req.headers.host, ctx.getPort())) return fail(res, 403, 'forbidden');
-    const url = new URL(req.url ?? '/', `http://127.0.0.1:${ctx.getPort()}`);
+    if (!isAllowedHost(req.headers.host, host.getPort())) return fail(res, 403, 'forbidden');
+    const url = new URL(req.url ?? '/', `http://127.0.0.1:${host.getPort()}`);
     const path = url.pathname;
 
     // Static UI files: no token needed, the page itself carries the token in its URL.
     const asset = req.method === 'GET' ? STATIC[path] : undefined;
     if (asset) {
-      const file = join(ctx.uiDist, asset.file);
+      const file = join(host.uiDist, asset.file);
       if (!existsSync(file)) return fail(res, 404, 'not_found');
       res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' });
-      res.end(path === '/' ? renderIndex(readFileSync(file, 'utf8'), ctx.version) : readFileSync(file));
+      res.end(path === '/' ? renderIndex(readFileSync(file, 'utf8'), host.version) : readFileSync(file));
       return;
     }
 
     // UI texts are not secret and the page needs them to explain a wrong token, so they only need the Host check.
     const i18n = /^\/i18n\/(\w+)$/.exec(path);
     if (req.method === 'GET' && i18n) {
-      const payload = bundlePayload(ctx.bundles, i18n[1]!);
+      const payload = bundlePayload(host.bundles, i18n[1]!);
       return payload ? send(res, 200, payload) : fail(res, 404, 'not_found');
     }
 
@@ -224,21 +235,25 @@ export function createRequestHandler(source: Context | PlanResolver) {
     if (path.startsWith('/v1/')) {
       // The plan that issued the session token is the one that answers (tokens are random, no plan can use another's).
       const t = extractToken(req.headers, url);
-      const owner = t ? (ctx.plans?.contexts() ?? [ctx]).find((c) => c.tokens.slugFor(t) !== undefined) : undefined;
-      return handleV1(owner ?? ctx, req, res, url);
+      const owner = t ? host.plans.contexts().find((c) => c.tokens.slugFor(t) !== undefined) : undefined;
+      return owner ? handleV1(owner, req, res, url) : fail(res, 401, 'unauthorized');
     }
 
     const token = extractToken(req.headers, url);
-    if (!token || !tokensEqual(token, ctx.token)) return fail(res, 401, 'unauthorized');
+    if (!token || !tokensEqual(token, host.token)) return fail(res, 401, 'unauthorized');
 
     // Opening and closing plans are not about one plan; every other route below is, and takes it from `?plan=` (absent: the first).
-    if ((req.method === 'POST' && path === '/api/plans') || (req.method === 'DELETE' && /^\/api\/plans\/[^/]+$/.test(path))) return handlePlansRoute(ctx, req, res, path);
-    const asked = url.searchParams.get('plan');
-    if (asked !== null) {
-      const planCtx = resolve(asked);
-      if (!planCtx) return fail(res, 404, 'not_found');
-      ctx = planCtx;
+    if ((req.method === 'POST' && path === '/api/plans') || (req.method === 'DELETE' && /^\/api\/plans\/[^/]+$/.test(path))) return handlePlansRoute(host, req, res, path);
+    // What the console knows without any plan: the welcome screen asks this before anything else.
+    if (req.method === 'GET' && path === '/api/host') return send(res, 200, host.info());
+    if (req.method === 'POST' && path === '/api/pick-folder') {
+      const picked = await host.pickFolder();
+      return picked.status === 'busy' ? fail(res, 409, 'folder.pickBusy') : send(res, 200, picked);
     }
+    const asked = url.searchParams.get('plan');
+    const planCtx = asked !== null ? resolve(asked) : resolve();
+    if (!planCtx) return fail(res, 404, 'plan.notFound');
+    const ctx: Context = planCtx;
 
     if (req.method === 'GET' && path === '/api/state') return send(res, 200, buildState(ctx));
 

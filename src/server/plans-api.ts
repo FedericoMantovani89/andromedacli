@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isAbsolute } from 'node:path';
 import type { PlanTab } from '../shared/protocol';
-import type { Context } from './http';
+import type { Context, HostContext } from './http';
 import { fail, readBody, send } from './http-util';
 
 /** What `POST /api/plans` accepts (SPEC 5.1): a folder, optionally a name, a template and the project's commands. */
@@ -37,9 +37,8 @@ export const PLAN_NAME_RE = /^[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]$/;
 const optString = (v: unknown): string | undefined | null => (v === undefined ? undefined : typeof v === 'string' && v.length <= 500 && !/[\r\n]/.test(v) ? v : null);
 
 /** The plan-independent routes: `POST /api/plans` and `DELETE /api/plans/<name>` (the token was checked by the caller). */
-export async function handlePlansRoute(ctx: Context, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
-  const plans = ctx.plans;
-  if (!plans) return fail(res, 404, 'not_found');
+export async function handlePlansRoute(host: Pick<HostContext, 'plans' | 'ensurePrereq'>, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+  const plans = host.plans;
   if (req.method === 'POST' && path === '/api/plans') {
     let body: unknown;
     try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
@@ -53,7 +52,7 @@ export async function handlePlansRoute(ctx: Context, req: IncomingMessage, res: 
     if (b.create !== undefined && typeof b.create !== 'boolean') return fail(res, 400, 'bad_request');
     if (!isAbsolute(b.root.trim())) return fail(res, 422, 'plan.badRoot');
     // Same rule as an agent: nothing starts while a required prerequisite is not ok (unknown is never ok).
-    const blocked = (await ctx.ensurePrereq()).find((c) => c.required && c.status !== 'ok');
+    const blocked = (await host.ensurePrereq()).find((c) => c.required && c.status !== 'ok');
     if (blocked) return fail(res, 422, 'prereq.blocked', { tool: blocked.id });
     try {
       const out = await plans.add({
