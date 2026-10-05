@@ -236,6 +236,7 @@ try {
     await until(async () => (await page.locator(`${panel('shop-api')} .xterm`).count()) > 0);
     await spawn('first-job');
     await page.click('#settings-btn');
+    await page.click('.options-tab[data-tab="guard"]');
     check('the dialog has a bypass switch that starts off', (await page.locator('input[name="bypass"]').count()) === 1 && !(await page.locator('input[name="bypass"]').isChecked()));
     check('the bypass warning is visible', (await page.locator('.settings-warning').innerText()).includes('guard is the only brake'));
     check('the dialog says running agents are unaffected', (await page.locator('.settings-agents .settings-note').first().innerText()).includes('running agents keep'));
@@ -243,6 +244,7 @@ try {
     check('the switch is saved in config.json', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).agents?.bypassPermissions === true));
     await page.selectOption('select[name="guardMode"]', 'shadow');
     check('the guard mode is saved', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).guard?.mode === 'shadow'));
+    await page.click('.options-tab[data-tab="plans"]');
     await page.fill('input[name="testCommand"]', 'npx vitest run');
     await page.click('.settings-test button[type="submit"]');
     check('the test command is saved in the plan', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'plan.json'), 'utf8')).testCommand === 'npx vitest run'));

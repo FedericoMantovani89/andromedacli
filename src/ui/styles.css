@@ -136,3 +136,16 @@ button:hover { border-color: var(--accent); }
 .panel-stale[hidden] { display: none; }
 .panel-summary { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
 .panel-state.dormant { color: var(--muted); font-style: italic; }
+.options-dialog { width: min(760px, 92vw); max-height: 88vh; grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+.options-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.options-tab.selected { border-color: var(--accent); }
+.options-panel { overflow: auto; min-height: 0; padding-right: 6px; }
+.options-heading { margin: 8px 0 0; font-size: 13px; }
+.options-field { display: grid; gap: 2px; }
+.options-field input, .options-field select, .options-field textarea { max-width: 100%; }
+.options-row { display: flex; gap: 12px; justify-content: space-between; }
+.options-plugin { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 6px 0; display: grid; gap: 4px; }
+.options-plugin p { margin: 0; }
+.options-plugin-title { display: flex; gap: 8px; align-items: baseline; }
+.options-command-row { display: flex; gap: 6px; }
+.options-command { flex: 1; font-family: Consolas, "Courier New", monospace; }

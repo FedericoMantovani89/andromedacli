@@ -9,6 +9,8 @@ import { loadBundles, type Bundles } from './i18n-bundles';
 import { loadConfig, type Config } from './config';
 import { PLAN_NAME_RE, PlanError, type AddPlanOptions, type PlansApi } from './plans-api';
 import { planNameFromDir } from './cli-args';
+import { ModelCatalog } from './catalog/models';
+import { PluginCatalog } from './catalog/plugins';
 import { PlanStore } from './plan-store';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
@@ -118,6 +120,8 @@ export interface RunningServer {
   plans(): PlanTab[];
   close(): Promise<void>;
 }
+
+const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The one message the main gets when a usage limit resets (SPEC 18.4). */
 export const WAKE_MESSAGE = 'The subscription limit was reset. Check the suspended tickets with list_agents and resume them with mcp__console-mod__resume_agent.';
@@ -292,8 +296,8 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   const turns = new Map<string, number>(); // turns started per session: the ledger's `turn`
   const budget: BudgetService = new BudgetService({
     tickets, ledger, reader, plan: planName, root: resolve(o.planRoot),
-    // The loaded object, read on every call. The file is read once at startup and the Settings dialog does not edit `budget`, so
-    // today this never changes while the console runs: "applies to the sessions launched afterwards" holds trivially.
+    // The loaded object, read on every call. The Options dialog edits `budget` in place (applyConfig below), so a change is seen here
+    // at once and applies to the sessions launched afterwards (a running agent keeps the limit it began with).
     config: () => config.budget,
     now: () => Date.now(),
     transcriptOf: (slug) => {
@@ -781,6 +785,30 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     needsSetup: () => !existsSync(configPath),
     broadcastState: () => broadcast(),
     plans: shared.plansApi,
+    models: new ModelCatalog({ configDir: o.configDir, config: () => config.models }),
+    plugins: new PluginCatalog({ configDir: o.configDir, config: () => config.plugins }),
+    applyConfig: (next, applied) => {
+      // In place, per sub-object: closures that read `config.budget` / `runtime.git` keep seeing the live object.
+      if (isPlain(applied.agents)) {
+        for (const key of ['maxActiveGlobal', 'maxActivePerPlan'] as const) {
+          if (key in applied.agents) config.agents[key] = next.agents[key];
+        }
+        limits.global = config.agents.maxActiveGlobal;
+        limits.perPlan = config.agents.maxActivePerPlan;
+        for (const r of shared.runtimes) r.parts.scheduler.release();
+      }
+      if (isPlain(applied.budget)) {
+        const { loop, quota, ...flat } = next.budget;
+        Object.assign(config.budget, flat);
+        Object.assign(config.budget.loop, loop);
+        Object.assign(config.budget.quota, quota);
+      }
+      if (isPlain(applied.git)) {
+        for (const key of Object.keys(applied.git) as (keyof Config['git'])[]) Object.assign(runtime.git, { [key]: next.git[key] });
+      }
+      if (isPlain(applied.models)) Object.assign(config.models, next.models);
+      if (isPlain(applied.plugins)) Object.assign(config.plugins, next.plugins);
+    },
   };
 
   // The HTTP and WebSocket servers are console-wide (see `startServer`); a reading entry goes to the sockets of this plan only.

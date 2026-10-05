@@ -21,6 +21,10 @@ export interface Config {
   budget: BudgetConfig;
   /** Toasts for everything that needs the user (SPEC 20); read on every event, so a change applies at once. */
   notifications: NotificationsConfig;
+  /** The model agents are launched with ('' = Claude Code's default) and where the model list comes from (SPEC 12). */
+  models: { agent: string; catalogUrl: string; cacheHours: number };
+  /** The plugin catalog (a list to read; SPEC 30). */
+  plugins: { catalogUrl: string; cacheHours: number };
   telemetry: false;
 }
 export interface BudgetConfig {
@@ -44,6 +48,8 @@ export const DEFAULT_CONFIG: Config = {
     quota: { halvePercent: 70, freezePercent: 85, stopPercent: 95, staggerSeconds: 60, staggerGroup: 2 },
   },
   notifications: DEFAULT_NOTIFICATIONS,
+  models: { agent: '', catalogUrl: '', cacheHours: 6 },
+  plugins: { catalogUrl: '', cacheHours: 6 },
   telemetry: false,
 };
 
@@ -51,20 +57,40 @@ export const DEFAULT_CONFIG: Config = {
 export const configDir = (): string =>
   process.env.CONSOLE_CONFIG_DIR ?? join(process.env.APPDATA ?? homedir(), 'console');
 
+/** Same rule as `MODEL_RE` in agents/spawn.ts (not imported: spawn.ts reaches profiles.ts, which imports this file). */
+const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
+
+/** A catalog address: https, or plain http only for this machine (tests). Empty means "the shipped list only". */
+export const isCatalogUrl = (v: unknown): v is string => {
+  if (typeof v !== 'string') return false;
+  if (v === '') return true;
+  if (v.length > 500) return false;
+  let u: URL;
+  try { u = new URL(v); } catch { return false; }
+  if (u.username !== '' || u.password !== '') return false;
+  return u.protocol === 'https:' || (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost'));
+};
+const isCacheHours = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 168;
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** SPEC 29.7: an invalid entry never blocks the console; the default is used and the error is reported. */
 export function loadConfig(path: string): { config: Config; errors: ConfigError[] } {
-  const config: Config = structuredClone(DEFAULT_CONFIG);
-  const errors: ConfigError[] = [];
-  if (!existsSync(path)) return { config, errors };
+  if (!existsSync(path)) return { config: structuredClone(DEFAULT_CONFIG), errors: [] };
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(path, 'utf8'));
   } catch {
-    return { config, errors: [{ path: '', code: 'config.unreadable' }] };
+    return { config: structuredClone(DEFAULT_CONFIG), errors: [{ path: '', code: 'config.unreadable' }] };
   }
-  if (!isObj(raw)) return { config, errors: [{ path: '', code: 'config.unreadable' }] };
+  if (!isObj(raw)) return { config: structuredClone(DEFAULT_CONFIG), errors: [{ path: '', code: 'config.unreadable' }] };
+  return validateConfig(raw);
+}
+
+/** Validates a parsed config object entry by entry: an invalid entry keeps its default and is reported. */
+export function validateConfig(raw: Record<string, unknown>): { config: Config; errors: ConfigError[] } {
+  const config: Config = structuredClone(DEFAULT_CONFIG);
+  const errors: ConfigError[] = [];
   const bad = (p: string) => errors.push({ path: p, code: 'config.invalid' });
 
   if ('language' in raw) {
@@ -163,6 +189,36 @@ export function loadConfig(path: string): { config: Config; errors: ConfigError[
     } else bad('budget');
   }
   if ('notifications' in raw) config.notifications = mergeNotifications(config.notifications, raw.notifications, bad);
+  if ('models' in raw) {
+    if (isObj(raw.models)) {
+      const m = raw.models;
+      if ('agent' in m) {
+        if (typeof m.agent === 'string' && (m.agent === '' || MODEL_RE.test(m.agent))) config.models.agent = m.agent;
+        else bad('models.agent');
+      }
+      if ('catalogUrl' in m) {
+        if (isCatalogUrl(m.catalogUrl)) config.models.catalogUrl = m.catalogUrl;
+        else bad('models.catalogUrl');
+      }
+      if ('cacheHours' in m) {
+        if (isCacheHours(m.cacheHours)) config.models.cacheHours = m.cacheHours;
+        else bad('models.cacheHours');
+      }
+    } else bad('models');
+  }
+  if ('plugins' in raw) {
+    if (isObj(raw.plugins)) {
+      const m = raw.plugins;
+      if ('catalogUrl' in m) {
+        if (isCatalogUrl(m.catalogUrl)) config.plugins.catalogUrl = m.catalogUrl;
+        else bad('plugins.catalogUrl');
+      }
+      if ('cacheHours' in m) {
+        if (isCacheHours(m.cacheHours)) config.plugins.cacheHours = m.cacheHours;
+        else bad('plugins.cacheHours');
+      }
+    } else bad('plugins');
+  }
   if ('telemetry' in raw && raw.telemetry !== false) bad('telemetry');
   return { config, errors };
 }
@@ -250,3 +306,58 @@ export function patchConfig(path: string, patch: ConfigPatch): { ok: true } | { 
 }
 
 export const saveLanguage = (path: string, language: Language): ReturnType<typeof patchConfig> => patchConfig(path, { language });
+
+/** Top-level entries the generic patch can change; anything else in a patch is ignored (and kept as written in the file). */
+const PATCHABLE = ['language', 'agents', 'guard', 'git', 'budget', 'models', 'plugins'] as const;
+
+const leavesOf = (value: Record<string, unknown>, prefix: string, out: string[] = []): string[] => {
+  for (const [key, v] of Object.entries(value)) {
+    const p = prefix ? `${prefix}.${key}` : key;
+    if (isObj(v) && Object.keys(v).length > 0) leavesOf(v, p, out);
+    else out.push(p);
+  }
+  return out;
+};
+
+const deepMerge = (base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, v] of Object.entries(patch)) {
+    const current = out[key];
+    out[key] = isObj(v) && isObj(current) ? deepMerge(current, v) : v;
+  }
+  return out;
+};
+
+export type PatchResult =
+  | { ok: true; config: Config; applied: Record<string, unknown> }
+  | { ok: false; code: 'config.unreadable' }
+  | { ok: false; code: 'config.invalid'; path: string };
+
+/**
+ * Generic patch (SPEC 22, 29.7): deep-merges the given entries into the user's file (every other entry stays as written, even invalid or
+ * unknown ones), validates the merged object and refuses when an entry the patch touched is invalid: nothing is written then.
+ * `claude.command`, `mod.enabled` and `telemetry` are not in the patchable list (restart needed, security).
+ */
+export function applyConfigPatch(path: string, patch: Record<string, unknown>): PatchResult {
+  const applied: Record<string, unknown> = {};
+  for (const key of PATCHABLE) if (key in patch) applied[key] = patch[key];
+  if (Object.keys(applied).length === 0) return { ok: false, code: 'config.invalid', path: '' };
+  let raw: Record<string, unknown> = { schema: 1 };
+  if (existsSync(path)) {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+      if (!isObj(parsed)) return { ok: false, code: 'config.unreadable' };
+      raw = parsed;
+    } catch {
+      return { ok: false, code: 'config.unreadable' };
+    }
+  }
+  const merged = deepMerge(raw, applied);
+  const { config, errors } = validateConfig(merged);
+  for (const leaf of leavesOf(applied, '')) {
+    const hit = errors.find((e) => e.path === leaf || e.path.startsWith(`${leaf}.`) || leaf.startsWith(`${e.path}.`));
+    if (hit) return { ok: false, code: 'config.invalid', path: hit.path.length < leaf.length ? hit.path : leaf };
+  }
+  writeJsonAtomic(path, merged);
+  return { ok: true, config, applied };
+}

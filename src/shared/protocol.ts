@@ -14,6 +14,7 @@ export const USER_ERROR_CODES = [
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
   'plan.fieldInvalid', 'plan.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
+  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */

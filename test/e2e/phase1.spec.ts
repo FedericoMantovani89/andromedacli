@@ -111,6 +111,7 @@ try {
     again.on('framenavigated', () => { navigations++; });
     check('English badge before switching', (await again.locator('.badge').first().innerText()) === 'ACTIVE INPUT');
     await again.click('#settings-btn');
+    await again.click('.options-tab[data-tab="language"]');
     await again.selectOption('.dialog select', 'it');
     check('badge switches to Italian without reloading',
       await until(async () => (await again.locator('.badge').first().innerText()) === 'INPUT ATTIVO') && navigations === 0);

@@ -136,7 +136,8 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
     pluginDir: ctx.modDir,
     allowedTools: ctx.modDir ? (r.review ? REVIEWER_TOOLS : r.recovery ? RECOVERY_TOOLS : AGENT_TOOLS) : undefined,
     appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, plan: ctx.planName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), planRoot: ctx.planRoot, docs: planFields.docs }),
-    model: r.model ?? profile.model ?? planFields.model,
+    // request > profile > plan (Phase 6D) > the global choice in Options (Phase 6E) > Claude Code's own default (no --model)
+    model: r.model ?? profile.model ?? planFields.model ?? ctx.models.agentModel(),
     ...(r.resume ? { resumeId: r.resume.sessionId } : {}),
   });
   ctx.ptys.spawn({ id: r.slug, ...launch, cwd, cols: 120, rows: 30 });

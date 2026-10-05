@@ -1,0 +1,10 @@
+{
+  "updated": "2026-10-03",
+  "models": [
+    { "id": "claude-opus-5-5", "label": "Opus 5.5" },
+    { "id": "claude-opus-5-5[1m]", "label": "Opus 5.5 · 1M" },
+    { "id": "claude-sonnet-5-5", "label": "Sonnet 5.5" },
+    { "id": "claude-sonnet-5", "label": "Sonnet 5" },
+    { "id": "claude-haiku-4-5", "label": "Haiku 4.5" }
+  ]
+}
