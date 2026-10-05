@@ -11,6 +11,9 @@ introduces the behaviour.
 - With no plan open (nothing remembered and no `--plan-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-plan dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
 - `GET /api/host` tells the page what the console knows without a plan (plans, language, languages); plan routes with no plan answer `404 plan.notFound`.
 
+### Fixed
+- The guard no longer asks the network whether a UNC path (`\servershare...`) exists: it is never inside a local folder, so it is decided at once (the lookup of an unknown server name took about 20 s per call).
+
 ### Changed
 - `serve` without `--plan-root` no longer opens the current folder: it opens the plans remembered in `plans.json`, or shows the welcome screen. `startServer` takes `planRoot` and `planName` as optional.
 - The request handler takes the console-wide part (`HostContext`) apart from a plan's `Context`.

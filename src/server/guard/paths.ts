@@ -35,6 +35,10 @@ export function realResolve(p: string, cwd: string): string | null {
   const t = translatePath(p);
   if (t === null) return null;
   const abs = win32.resolve(cwd, t);
+  // A network path (\\server\share\...) is never inside a local folder, and checking whether it exists asks the network to resolve
+  // the server name, which takes many seconds when the name is unknown: it stays as written, with no lookup. (A local path in the
+  // extended form \\?\C:\... was already turned into C:\... above.)
+  if (abs.startsWith('\\\\')) return abs;
   let existing = abs;
   const rest: string[] = [];
   while (!existsSync(existing)) {
