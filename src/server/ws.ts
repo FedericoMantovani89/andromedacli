@@ -66,21 +66,24 @@ export function attachWebSockets(server: Server, source: Context | PlanResolver)
     }
     if (term) {
       const id = term[1]!;
-      if (ctx.ptys.status(id) === 'unknown') return reject(socket, 404, 'Not Found');
+      // A plan's own sessions first, then the console-wide utility terminals (assisted installs), which take no keyboard input.
+      const utility = ctx.ptys.status(id) === 'unknown' && ctx.utilityPtys.status(id) !== 'unknown';
+      const pm = utility ? ctx.utilityPtys : ctx.ptys;
+      if (pm.status(id) === 'unknown') return reject(socket, 404, 'Not Found');
       wss.handleUpgrade(req, socket, head, (ws) => {
         termSockets.set(ws, ctx.planName);
         ws.on('close', () => termSockets.delete(ws));
-        const snapshot = ctx.ptys.snapshot(id);
+        const snapshot = pm.snapshot(id);
         if (snapshot.length > 0) ws.send(snapshot, { binary: true });
-        const unsubscribe = ctx.ptys.subscribe(id, (chunk) => {
+        const unsubscribe = pm.subscribe(id, (chunk) => {
           if (ws.readyState === ws.OPEN) ws.send(chunk, { binary: true });
         });
         ws.on('message', (data: Buffer, isBinary: boolean) => {
-          if (isBinary) { ctx.ptys.write(id, data); return; }
+          if (isBinary) { if (!utility) pm.write(id, data); return; }
           try {
             const msg = JSON.parse(data.toString('utf8')) as ResizeMessage;
             if (msg.type === 'resize' && Number.isInteger(msg.cols) && Number.isInteger(msg.rows)) {
-              ctx.ptys.resize(id, msg.cols, msg.rows);
+              pm.resize(id, msg.cols, msg.rows);
             }
           } catch { /* ignore malformed control frames */ }
         });

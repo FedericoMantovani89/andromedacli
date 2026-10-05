@@ -123,6 +123,12 @@ button:hover { border-color: var(--accent); }
 .settings-note { margin: 0; color: var(--muted); font-size: 12px; }
 .settings-test { display: grid; gap: 4px; }
 .settings-test label { display: grid; gap: 2px; }
-.prereq-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; }
+.prereq-row { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 10px; align-items: center; }
 .prereq-ok { color: var(--ok); } .prereq-outdated { color: var(--warn); }
 .prereq-missing, .prereq-error { color: var(--bad); }
+
+/* Phase 6F: assisted install */
+.install-dialog { width: 640px; }
+.install-command { margin: 0; padding: 8px; background: var(--bg); border: 1px solid var(--border); overflow-x: auto; user-select: all; }
+.install-terminal { height: 280px; background: #000; padding: 4px; }
+.install-result { margin: 0; }

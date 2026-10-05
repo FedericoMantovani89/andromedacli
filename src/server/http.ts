@@ -33,6 +33,7 @@ import { handlePlansRoute, type PlansApi } from './plans-api';
 
 /** Finds the plan a request or socket asked for with `?plan=<name>`; no name means the first plan; undefined when it is not open. */
 export type PlanResolver = (name?: string) => Context | undefined;
+import type { InstallService } from './prereq/install';
 
 export interface Context extends V1Context {
   getPort(): number;
@@ -76,6 +77,10 @@ export interface Context extends V1Context {
   quotaState: QuotaState;
   /** Sleep until a usage limit lifts (SPEC 18.4). */
   sleep: SleepTimer;
+  /** Console-wide terminals that are not agent sessions (assisted installs, Phase 6F); served on /ws/term/<id> after the plan's own. */
+  utilityPtys: PtyManager;
+  /** Assisted installation of prerequisites: console-wide, one install at a time. */
+  installer: InstallService;
   /** Read at each use: a change made in the Settings dialog applies to the sessions launched afterwards. */
   readonly git: Config['git'];
   /** The budget thresholds and the default token limit, read at each launch. */
@@ -145,7 +150,9 @@ export function buildState(ctx: Context): StateMessage {
   try { ({ testCommand, squash } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
+  const installed = ctx.installer.state();
   return {
+    ...(installed ? { install: installed } : {}),
     ...(worst ? { quota: { percent: worst.percent, kind: worst.kind } } : {}),
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One plan per console today: the stricter of the global and the per-plan limit is the one that holds.
@@ -247,6 +254,22 @@ export function createRequestHandler(source: Context | PlanResolver) {
     }
 
     if (req.method === 'POST' && path === '/api/prereq/recheck') return send(res, 200, await ctx.refreshPrereq());
+
+    // Assisted install (Phase 6F): the request names a tool, the shipped table names the command.
+    const install = /^\/api\/prereq\/([a-z]+)\/install$/.exec(path);
+    if (req.method === 'GET' && install) {
+      const d = await ctx.installer.describe(install[1]!);
+      if (d.ok) return send(res, 200, d.info);
+      return d.code === 'not_found' ? fail(res, 404, 'not_found') : send(res, 200, { unavailable: d.unavailable });
+    }
+    if (req.method === 'POST' && install) {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const b = (typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+      const out = await ctx.installer.start(install[1]!, b);
+      if (!out.ok) return fail(res, out.httpStatus, out.code, out.params);
+      return send(res, 202, { terminal: out.terminal });
+    }
 
     if (req.method === 'PUT' && path === '/api/config') {
       let body: unknown;

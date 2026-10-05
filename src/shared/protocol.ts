@@ -10,6 +10,7 @@ export const USER_ERROR_CODES = [
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
   'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
   'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
+  'install.busy', 'install.unavailable',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -36,7 +37,7 @@ export interface SessionInfo {
 }
 
 export interface PrereqResult {
-  id: 'node' | 'git' | 'claude';
+  id: 'node' | 'git' | 'claude' | 'gh';
   required: boolean;
   status: 'ok' | 'outdated' | 'missing' | 'error' | 'not_required';
   version?: string;
@@ -86,6 +87,8 @@ export interface StateMessage {
   limits?: { active: number; max: number };
   /** Every open plan, in the order they were opened (Phase 6C): the tabs. */
   plans?: PlanTab[];
+  /** The last assisted install that ended (Phase 6F); absent until one did since the console started. */
+  install?: { id: string; result: 'needs_admin' | 'failed' | 'done'; exitCode: number };
 }
 
 /** One tab: `waiting` is the length of that plan's queue (a dot when above zero). */

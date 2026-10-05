@@ -17,6 +17,7 @@ const FIX: Record<CheckResult['id'], string> = {
   node: 'Install Node.js 22 or newer: winget install OpenJS.NodeJS.LTS',
   git: 'Install Git for Windows: winget install Git.Git',
   claude: 'Install or update Claude Code (2.1.287 or newer): https://code.claude.com/docs',
+  gh: 'Optional, only for pull requests. Install the GitHub CLI: winget install GitHub.cli',
 };
 const MIN_FREE_BYTES = 2 * 1024 ** 3;
 

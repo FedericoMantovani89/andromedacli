@@ -49,6 +49,7 @@ import { LoopService } from './budget/loop-service';
 import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
+import { InstallService, type InstallEntry } from './prereq/install';
 
 export interface StartOptions {
   port: number;
@@ -76,6 +77,10 @@ export interface StartOptions {
   tickMs?: number;
   /** A test seam: the clock of the sleep timer (the real one is used by default). */
   sleepClock?: SleepClock;
+  /** A test seam: replaces the shipped table of installable tools (Phase 6F), so a test runs a trivial command instead of winget. */
+  installTable?: readonly InstallEntry[];
+  /** A test seam: the runner that probes for winget/npm before an install is offered. */
+  installRunner?: Runner;
 }
 export interface RunningServer {
   port: number;
@@ -137,6 +142,9 @@ interface Shared {
   getPrereq(): PrereqResult[] | null;
   ensurePrereq(): Promise<PrereqResult[]>;
   refreshPrereq(): Promise<PrereqResult[]>;
+  /** Terminals that are not agent sessions (assisted installs): one set and one installer for the whole console. */
+  utilityPtys: PtyManager;
+  installer: InstallService;
 }
 
 /** One plan: its own folder, sessions, agents, tickets and queue (a Context), started and closed on its own. */
@@ -505,6 +513,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
 
   const ctx: Context = {
     getPort: () => shared.getPort(),
+    utilityPtys: shared.utilityPtys, installer: shared.installer,
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep,
@@ -824,7 +833,17 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     writeJsonAtomic(plansFile(o.configDir), runtimes.map((r) => ({ root: r.root, name: r.name })));
   };
 
+  // The install runs from the console's own folder and records in the config dir; one at a time for the whole console.
+  const utilityPtys = new PtyManager();
+  const installer = new InstallService({
+    ...(o.installTable ? { table: o.installTable } : {}),
+    ptys: utilityPtys, cwd: resolve(import.meta.dirname, '..', '..'), logPath: join(o.configDir, 'install.log'),
+    prereq: () => shared.ensurePrereq(), refresh: () => shared.refreshPrereq(), changed: () => ws.broadcastState(),
+    ...(o.installRunner ?? o.prereqRunner ? { run: (o.installRunner ?? o.prereqRunner)! } : {}),
+  });
+
   const shared: Shared = {
+    utilityPtys, installer,
     o, configPath, config, token, bundles: loadBundles(o.i18nDir),
     ledger: new Ledger(join(o.configDir, 'ledger')),
     quotaState: new QuotaState(),
@@ -968,6 +987,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       shared.sleep.close();
       await planChain; // an opening or closing in progress ends first
       for (const r of [...runtimes]) await r.close();
+      await utilityPtys.killAll();
       ws.closeAll();
       await new Promise<void>((done) => server.close(() => done()));
     },

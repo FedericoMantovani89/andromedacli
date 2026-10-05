@@ -1,6 +1,7 @@
 import type { ApiError, PrereqResult, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { errorText } from './new-agent';
+import { openInstallDialog } from './install-dialog';
 import { bindText, k, languageName, resolveLanguage, setLanguage } from './i18n-client';
 
 /**
@@ -42,6 +43,20 @@ export function renderPrereqTable(container: HTMLElement, results: PrereqResult[
     const need = document.createElement('span');
     bindText(need, r.required ? k('prereq.required') : k('prereq.optional'));
     row.append(name, status, detail, need);
+    // A missing, outdated or unreadable tool can be installed from here, after the user has seen and approved the command (Phase 6F).
+    const fixable = r.status === 'missing' || r.status === 'outdated' || r.status === 'error';
+    const action = document.createElement(fixable ? 'button' : 'span');
+    if (fixable) {
+      bindText(action, r.status === 'missing' ? k('prereq.install') : k('prereq.update'));
+      action.addEventListener('click', () => {
+        openInstallDialog(r.id, () => {
+          void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => {
+            if (res.status === 200) renderPrereqTable(container, res.body);
+          });
+        });
+      });
+    }
+    row.append(action);
     container.append(row);
   }
   const again = document.createElement('button');

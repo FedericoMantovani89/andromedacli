@@ -14,6 +14,12 @@ introduces the behaviour.
 
 Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
 
+### Phase 6F: assisted install
+- The prerequisites table (Options and the first-start wizard) has an Install/Update button for a missing, outdated or unreadable tool: a dialog shows the exact command and where it comes from, the console runs it itself in a read-only terminal after the click, then checks again.
+- Installs come from a shipped table of fixed commands (winget for Node.js, Git and the GitHub CLI; the scoped npm package for Claude Code); the console never elevates, runs one install at a time, and records each in `install.log` in the config folder.
+- A failed install that looks like a permission problem says it needs administrator rights; the dialog says the commands are not verified on this machine yet.
+- New optional prerequisite: the GitHub CLI (`gh`); missing never blocks anything.
+
 ## Phase 5: budget, blocks, limits (2026-10-05)
 
 ### Added
