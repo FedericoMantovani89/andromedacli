@@ -95,3 +95,30 @@ it('a model name that is not a plain model id is refused before anything starts'
     if (model !== '') expect((await state(s)).agents).toEqual([]);
   }
 });
+
+it('a queued replacement whose start fails later hands its ticket to the user (never in_progress with no agent)', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { failQueuedStart } = await import('../src/server/agents/spawn');
+  const { TicketStore } = await import('../src/server/tickets/store');
+  const { Inbox } = await import('../src/server/agents/inbox');
+  const { AgentRegistry } = await import('../src/server/agents/registry');
+  const { SessionTokens } = await import('../src/server/security');
+  const tickets = new TicketStore(mkdtempSync(join(tmpdir(), 'fq-')));
+  tickets.setChecklist('fix-login-r2', []); // the ticket moved to the new name, back in_progress
+  const inbox = new Inbox();
+  const registry = new AgentRegistry();
+  registry.register({ slug: 'fix-login-r2', role: 'agent', profile: 'backend', queued: true });
+  const ctx = {
+    tickets, inbox, registry, tokens: new SessionTokens(), planName: 'shop-api', broadcastState: () => {},
+    review: { abandonReview: () => false }, recovery: { abandon: () => false },
+  } as unknown as Parameters<typeof failQueuedStart>[0];
+  failQueuedStart(ctx, { slug: 'fix-login-r2', profile: 'backend', source: 'main', resumeBranch: 'agent/shop-api/fix-login' });
+  expect(tickets.get('fix-login-r2')!.status).toBe('needs_user');
+  expect(registry.get('fix-login-r2')!.state).toBe('interrupted');
+  const told = inbox.pending('shop-api').map((m) => m.text).join('\n');
+  expect(told).toContain('fix-login-r2');
+  expect(told).toContain('agent/shop-api/fix-login');
+  expect(told).toContain('needs_user');
+});

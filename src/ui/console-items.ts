@@ -1,6 +1,7 @@
 import type { QueueItem } from '../shared/protocol';
 import { bindText, k } from './i18n-client';
 import { renderMarkdown } from './markdown';
+import { formatWhen } from './statusbar';
 
 /** Items the console itself puts in the queue (not an agent's question): a release to approve, a ticket that needs the user. */
 export interface Entry { el: HTMLElement }
@@ -122,11 +123,19 @@ const REASON_KEYS: Record<string, string> = {
   rounds_exhausted: k('queue.decision.reason.rounds_exhausted'),
   conflict_author_gone: k('queue.decision.reason.conflict_author_gone'),
   merge_tests_failed_author_gone: k('queue.decision.reason.merge_tests_failed_author_gone'),
+  recovery_raise: k('queue.decision.reason.recovery_raise'),
+  recovery_change_model: k('queue.decision.reason.recovery_change_model'),
 };
 const OPTION_KEYS: Record<string, string> = {
   send_back: k('queue.decision.send_back'),
   approve: k('queue.decision.approve'),
   leave: k('queue.decision.leave'),
+  restart: k('queue.decision.restart'),
+};
+/** A recovery's raise_budget remedy: the user approves or declines the spend. */
+const RAISE_OPTION_KEYS: Record<string, string> = {
+  approve: k('queue.decision.approveRaise'),
+  decline: k('queue.decision.decline'),
 };
 
 /** "Ticket X needs your decision": why, the review notes, and the options the console offers. */
@@ -156,10 +165,57 @@ export function createDecisionEntry(item: QueueItem, send: (answer: string) => v
 
   const row = document.createElement('div');
   row.className = 'queue-options';
+  const optionKeys = str(p.reason) === 'recovery_raise' ? RAISE_OPTION_KEYS : OPTION_KEYS;
   for (const option of item.options ?? []) {
-    const key = OPTION_KEYS[option];
+    const key = optionKeys[option];
     if (key) row.append(button(key, option, send));
   }
   el.append(row);
+  return { el };
+}
+
+/** "Agent X was stopped at N of M tokens": raise the budget, close the ticket or recover the work. */
+export function createBudgetEntry(item: QueueItem, send: (answer: string) => void): Entry {
+  const p = isObj(item.payload) ? item.payload : {};
+  const el = document.createElement('div');
+  el.className = 'queue-item queue-budget';
+  el.dataset.id = item.id;
+
+  const title = document.createElement('div');
+  title.className = 'queue-text';
+  bindText(title, 'queue.budget.title', { agent: str(p.agent) || str(p.ticket) || item.from, used: num(p.used), limit: num(p.limit) });
+  const row = document.createElement('div');
+  row.className = 'queue-options';
+  row.append(
+    button(k('queue.budget.raise'), 'raise', send),
+    button(k('queue.budget.close'), 'close', send),
+    button(k('queue.budget.recover'), 'recover', send),
+  );
+  el.append(title, row);
+  return { el };
+}
+
+/**
+ * "The weekly limit is (almost) used up" (SPEC 18.5): nothing restarts by itself, so the user reads the choices (wait until the reset,
+ * go on with fewer agents or a cheaper model set in the configuration, stop the plans) and acknowledges with one button.
+ */
+export function createWeeklyEntry(item: QueueItem, send: (answer: string) => void): Entry {
+  const p = isObj(item.payload) ? item.payload : {};
+  const el = document.createElement('div');
+  el.className = 'queue-item queue-weekly';
+  el.dataset.id = item.id;
+
+  const title = document.createElement('div');
+  title.className = 'queue-text';
+  const when = formatWhen(typeof p.resetsAt === 'string' ? p.resetsAt : undefined, Date.now());
+  if (when === null) bindText(title, 'queue.weekly.titleUnknown');
+  else bindText(title, 'queue.weekly.title', { time: when });
+  const choices = document.createElement('div');
+  choices.className = 'queue-why';
+  bindText(choices, 'queue.weekly.choices');
+  const row = document.createElement('div');
+  row.className = 'queue-options';
+  row.append(button(k('queue.weekly.ok'), 'ok', send));
+  el.append(title, choices, row);
   return { el };
 }

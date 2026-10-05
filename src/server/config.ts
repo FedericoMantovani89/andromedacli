@@ -16,7 +16,14 @@ export interface Config {
   git: { worktrees: boolean; secretPatterns: string[]; testTimeoutMinutes: number };
   /** `shadow` allows everything but logs what `enforce` would have denied (SPEC 14). */
   guard: { mode: 'enforce' | 'shadow' };
+  /** Budget, loop and quota thresholds (SPEC 16, 17, 18). Applied to sessions launched afterwards; the quota steps are read on every event. */
+  budget: BudgetConfig;
   telemetry: false;
+}
+export interface BudgetConfig {
+  agentTokens: number; alertPercent: number; limitPercent: number; stopPercent: number; graceMinutes: number;
+  loop: { sameCall: number; sameError: number; compactions: number; stepMinutes: number; silenceMinutes: number };
+  quota: { halvePercent: number; freezePercent: number; stopPercent: number; staggerSeconds: number; staggerGroup: number };
 }
 export interface ConfigError { path: string; code: 'config.invalid' | 'config.unreadable' }
 
@@ -28,6 +35,11 @@ export const DEFAULT_CONFIG: Config = {
   mod: { enabled: true },
   git: { worktrees: true, secretPatterns: DEFAULT_SECRET_PATTERNS, testTimeoutMinutes: 15 },
   guard: { mode: 'enforce' },
+  budget: {
+    agentTokens: 400000, alertPercent: 80, limitPercent: 100, stopPercent: 110, graceMinutes: 5,
+    loop: { sameCall: 5, sameError: 3, compactions: 2, stepMinutes: 30, silenceMinutes: 5 },
+    quota: { halvePercent: 70, freezePercent: 85, stopPercent: 95, staggerSeconds: 60, staggerGroup: 2 },
+  },
   telemetry: false,
 };
 
@@ -103,6 +115,39 @@ export function loadConfig(path: string): { config: Config; errors: ConfigError[
     const mode = isObj(raw.guard) ? raw.guard.mode : undefined;
     if (mode === 'enforce' || mode === 'shadow') config.guard.mode = mode;
     else bad('guard.mode');
+  }
+  if ('budget' in raw) {
+    if (isObj(raw.budget)) {
+      const b = raw.budget;
+      const int = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+      const set = (path: string, v: unknown, lo: number, hi: number, apply: (n: number) => void): void => { if (v === undefined) return; if (int(v, lo, hi)) apply(v); else bad(path); };
+      const c = config.budget;
+      set('budget.agentTokens', b.agentTokens, 1000, 100_000_000, (n) => { c.agentTokens = n; });
+      set('budget.graceMinutes', b.graceMinutes, 0, 120, (n) => { c.graceMinutes = n; });
+      // alert < limit <= stop: an invalid trio keeps all three defaults and is reported on every given entry
+      const trio = { alertPercent: b.alertPercent ?? c.alertPercent, limitPercent: b.limitPercent ?? c.limitPercent, stopPercent: b.stopPercent ?? c.stopPercent };
+      const okTrio = int(trio.alertPercent, 1, 200) && int(trio.limitPercent, 1, 200) && int(trio.stopPercent, 1, 200) && trio.alertPercent < trio.limitPercent && trio.limitPercent <= trio.stopPercent;
+      for (const key of ['alertPercent', 'limitPercent', 'stopPercent'] as const) {
+        if (b[key] === undefined) continue;
+        if (okTrio) c[key] = trio[key] as number; else bad(`budget.${key}`);
+      }
+      if (isObj(b.loop)) {
+        for (const [key, lo, hi] of [['sameCall', 1, 1000], ['sameError', 1, 1000], ['compactions', 1, 1000], ['stepMinutes', 1, 1000], ['silenceMinutes', 1, 1000]] as const) {
+          set(`budget.loop.${key}`, (b.loop as Record<string, unknown>)[key], lo, hi, (n) => { c.loop[key] = n; });
+        }
+      } else if ('loop' in b) bad('budget.loop');
+      if (isObj(b.quota)) {
+        const q = b.quota as Record<string, unknown>;
+        const trioQ = { halvePercent: q.halvePercent ?? c.quota.halvePercent, freezePercent: q.freezePercent ?? c.quota.freezePercent, stopPercent: q.stopPercent ?? c.quota.stopPercent };
+        const okQ = int(trioQ.halvePercent, 1, 100) && int(trioQ.freezePercent, 1, 100) && int(trioQ.stopPercent, 1, 100) && trioQ.halvePercent < trioQ.freezePercent && trioQ.freezePercent < trioQ.stopPercent;
+        for (const key of ['halvePercent', 'freezePercent', 'stopPercent'] as const) {
+          if (q[key] === undefined) continue;
+          if (okQ) c.quota[key] = trioQ[key] as number; else bad(`budget.quota.${key}`);
+        }
+        set('budget.quota.staggerSeconds', q.staggerSeconds, 0, 3600, (n) => { c.quota.staggerSeconds = n; });
+        set('budget.quota.staggerGroup', q.staggerGroup, 1, 16, (n) => { c.quota.staggerGroup = n; });
+      } else if ('quota' in b) bad('budget.quota');
+    } else bad('budget');
   }
   if ('telemetry' in raw && raw.telemetry !== false) bad('telemetry');
   return { config, errors };

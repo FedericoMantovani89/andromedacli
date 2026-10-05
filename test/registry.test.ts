@@ -100,3 +100,12 @@ it('roles include reviewer, the read-only flag is kept, and a reviewer counts as
   expect(r.get('review-x')).toMatchObject({ role: 'reviewer', readOnly: true });
   expect(r.isActive('review-x')).toBe(true); // a reviewer counts against the active-agent limit like any agent
 });
+it('setCwd and session.start store the folder; a recovery agent counts as active', () => {
+  const r = new AgentRegistry();
+  r.register({ slug: 'rec-x', role: 'recovery', profile: 'recovery', goal: 'diagnose' });
+  r.setCwd('rec-x', '/w/one');
+  expect(r.get('rec-x')!.cwd).toBe('/w/one');
+  r.onModEvent('rec-x', { type: 'session.start', sessionId: 's', data: { cwd: '/w/two' } });
+  expect(r.get('rec-x')!.cwd).toBe('/w/two');
+  expect(r.isActive('rec-x')).toBe(true);
+});

@@ -17,10 +17,15 @@ export class PtyManager {
   private readonly entries = new Map<string, Entry>();
   private readonly exitCallbacks: ((id: string, code: number) => void)[] = [];
 
+  /**
+   * Starts a session. An id whose process has exited may be started again (a resumed session): its scrollback and the terminals
+   * already watching it are kept, so an open panel shows the new process without reconnecting. A running id is refused.
+   */
   spawn(o: SpawnOptions): void {
-    if (this.entries.has(o.id)) throw new Error(`pty ${o.id} already exists`);
+    const old = this.entries.get(o.id);
+    if (old && !old.exited) throw new Error(`pty ${o.id} already exists`);
     const pty = nodePty.spawn(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
-    const entry: Entry = { pty, ring: new ByteRing(SCROLLBACK_BYTES), subs: new Set(), exited: false, cols: o.cols, rows: o.rows };
+    const entry: Entry = { pty, ring: old?.ring ?? new ByteRing(SCROLLBACK_BYTES), subs: old?.subs ?? new Set(), exited: false, cols: o.cols, rows: o.rows };
     this.entries.set(o.id, entry);
     pty.onData((data) => {
       const chunk = Buffer.from(data, 'utf8');
@@ -29,6 +34,9 @@ export class PtyManager {
     });
     pty.onExit(({ exitCode }) => {
       entry.exited = true;
+      // A late exit of a process whose id was started again (a resume) is not the new session's exit: it must not mark it
+      // interrupted nor revoke its token.
+      if (this.entries.get(o.id) !== entry) return;
       for (const cb of this.exitCallbacks) cb(o.id, exitCode);
     });
   }

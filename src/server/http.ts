@@ -17,11 +17,18 @@ import type { ReadingStore } from './reading/store';
 import type { TicketStore } from './tickets/store';
 import type { StepService } from './tickets/steps';
 import type { ReviewService } from './tickets/review';
+import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
 import { isValidTestCommand } from './plan-store';
 import { MAX_REWORK_ROUNDS } from './tickets/review';
 import type { Config } from './config';
+import type { BudgetService } from './budget/service';
+import type { Restrictions } from './budget/restrictions';
+import type { LoopService } from './budget/loop-service';
+import type { Ledger } from './budget/ledger';
+import type { QuotaState } from './budget/quota';
+import type { SleepTimer } from './budget/sleep';
 
 export interface Context extends V1Context {
   getPort(): number;
@@ -52,8 +59,23 @@ export interface Context extends V1Context {
   steps: StepService;
   launchWatch: LaunchWatch;
   review: ReviewService;
+  /** Recovery after a stop (SPEC 16.5). */
+  recovery: RecoveryService;
+  /** Token budgets (Phase 5): limits, steps and the usage shown in the state. */
+  budget: BudgetService;
+  /** What the guard holds against each session (budget, loop, limit). */
+  restrictions: Restrictions;
+  /** Loop handling: the level shown in the state. */
+  loop: LoopService;
+  ledger: Ledger;
+  /** The subscription's usage limits as the engine last reported them (SPEC 18.1). */
+  quotaState: QuotaState;
+  /** Sleep until a usage limit lifts (SPEC 18.4). */
+  sleep: SleepTimer;
   /** Read at each use: a change made in the Settings dialog applies to the sessions launched afterwards. */
   readonly git: Config['git'];
+  /** The budget thresholds and the default token limit, read at each launch. */
+  readonly budgetConfig: Config['budget'];
   readonly guardMode: Config['guard']['mode'];
   /** A test seam: runs after an agent's worktree exists and before its process starts (a throw simulates a failed start). */
   afterWorktreeCreated?: (slug: string) => void | Promise<void>;
@@ -86,31 +108,42 @@ export function buildState(ctx: Context): StateMessage {
   };
   const stateOf = (slug: string) => ctx.registry.get(slug)?.state ?? 'starting';
   // studying / blocked / progress come from the agent's ticket, never from the terminal.
-  const derived = (slug: string): Pick<SessionInfo, 'state' | 'progress' | 'ticket'> => {
-    const base = stateOf(slug);
+  const derived = (slug: string): Pick<SessionInfo, 'state' | 'progress' | 'ticket' | 'budget'> => {
     const rt = ctx.registry.get(slug);
     const ticket = rt ? ctx.tickets.get(slug) : undefined;
+    // A ticket stopped by its budget or by the usage limit, whose process is gone, waits for a decision: not finished, not failed.
+    const suspended = (ticket?.status === 'suspended_budget' || ticket?.status === 'suspended_limit') && ctx.ptys.status(slug) !== 'running';
+    const base = suspended ? 'suspended' : stateOf(slug);
     // Where the ticket is in the review pipeline: kept after the worktree is gone (a merged ticket still says "Merged").
     const pipeline = ticket && rt?.role === 'agent' && (ticket.status !== 'in_progress' || ticket.round > 0)
       ? { ticket: { status: ticket.status, round: ticket.round, maxRounds: MAX_REWORK_ROUNDS } }
       : {};
-    if (!rt?.git) return { state: base, ...pipeline };
+    // No budget (a reviewer, an agent without a worktree) is left out, so the UI shows n/a rather than zero.
+    const usage = rt?.role === 'agent' ? ctx.budget.usage(slug) : undefined;
+    const budget = usage ? { budget: usage } : {};
+    if (!rt?.git) return { state: base, ...pipeline, ...budget };
     const total = ticket?.steps.length ?? 0;
     const progress = total > 0 ? { done: ticket!.steps.filter((x) => x.done).length, total } : undefined;
     let state = base;
-    if (ticket?.blocked && base !== 'interrupted' && base !== 'queued' && base !== 'waiting_user') state = 'blocked';
+    if (ticket?.blocked && base !== 'interrupted' && base !== 'queued' && base !== 'waiting_user' && base !== 'suspended') state = 'blocked';
     else if (total === 0 && base === 'working') state = 'studying';
-    return { state, ...(progress ? { progress } : {}), ...pipeline };
+    return { state, ...(progress ? { progress } : {}), ...pipeline, ...budget };
   };
   const main: SessionInfo = { slug: ctx.planName, profile: 'main', role: 'main', status: status(ctx.planName), state: stateOf(ctx.planName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
-    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}) }));
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let squash: boolean | undefined;
   try { ({ testCommand, squash } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
+  const worst = ctx.quotaState.worst();
+  const slept = ctx.sleep.state();
   return {
+    ...(worst ? { quota: { percent: worst.percent, kind: worst.kind } } : {}),
+    ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
+    // One plan per console today: the stricter of the global and the per-plan limit is the one that holds.
+    limits: { active: ctx.scheduler.activeCount(), max: (({ global, perPlan }) => Math.min(global, perPlan))(ctx.scheduler.effectiveLimits()) },
     type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
@@ -177,6 +210,14 @@ export function createRequestHandler(ctx: Context) {
       const outcome = ctx.questions.answer(answer[1]!, text);
       if (outcome === 'ok') return send(res, 200, { ok: true });
       return outcome === 'unknown' ? fail(res, 404, 'not_found') : outcome === 'already' ? fail(res, 409, 'already_answered') : fail(res, 400, 'bad_request');
+    }
+
+    // "Resume now": one probe at once instead of waiting for the reset time. The token check above already ran.
+    if (req.method === 'POST' && path === '/api/sleep/resume') {
+      ctx.sleep.resumeNow();
+      res.writeHead(204);
+      res.end();
+      return;
     }
 
     if (req.method === 'POST' && path === '/api/prereq/recheck') return send(res, 200, await ctx.refreshPrereq());

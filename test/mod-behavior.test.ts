@@ -59,7 +59,7 @@ it('registers the tools of its role once and starts one inbox poller, even if se
   const f = fake$();
   await find('session.start')(f.$, {}, next);
   await find('session.start')(f.$, {}, next);
-  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release']);
+  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent']);
   expect(f.ticks).toHaveLength(1);
 });
 it('an agent gets list_agents and the ticket tools, never spawn_agent', async () => {
@@ -281,6 +281,28 @@ it.each(['down', 'broken'] as const)('console %s: shell and writing tools are re
     expect(await find('tool.call', tool)(f.$, e, next), tool).toEqual({ next: e });
   }
 });
+it('WebFetch, WebSearch and Agent go through the guard and obey a deny', async () => {
+  const { find } = await loadMod();
+  const deny = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch({ decision: 'deny', reason: 'budget used up' }) });
+  await find('session.start')(deny.$, {}, next);
+  const allow = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch({ decision: 'allow' }) });
+  await find('session.start')(allow.$, {}, next);
+  for (const tool of ['WebFetch', 'WebSearch', 'Agent']) {
+    expect(typeof find('tool.call', tool), tool).toBe('function');
+    expect(await find('tool.call', tool)(deny.$, { url: 'https://x.test' }, next), tool).toEqual({ deny: 'budget used up' });
+    expect(deny.calls.some((c) => c.endsWith('/v1/guard'))).toBe(true);
+    const e = { url: 'https://x.test' };
+    expect(await find('tool.call', tool)(allow.$, e, next), tool).toEqual({ next: e });
+  }
+});
+it('with the console unreachable WebFetch carries on while Bash is still refused', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: guardFetch('down') });
+  await find('session.start')(f.$, {}, next);
+  const e = { url: 'https://x.test' };
+  expect(await find('tool.call', 'WebFetch')(f.$, e, next)).toEqual({ next: e });
+  expect(await find('tool.call', 'Bash')(f.$, { command: 'ls' }, next)).toMatchObject({ deny: expect.stringMatching(/guard/i) });
+});
 it('an answer that is neither allow nor deny counts as unreachable', async () => {
   const { find } = await loadMod();
   const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: () => ({ ok: true, text: '{"decision":"maybe"}' }) });
@@ -347,4 +369,111 @@ it('a reviewer\'s permission prompts and native questions go to the console queu
   const verdict = await find('tool.check')(f.$, { tool: 'Bash', tool_use_id: 't1', input: { command: 'npm test' } }, async () => ({ decision: 'ask', reason: 'needs approval' }));
   expect(verdict).toMatchObject({ decision: 'allow' });
   expect(asked).toEqual(['permission']);
+});
+
+// ---- usage limits (Phase 5) ----
+it('session.measure posts a quota event with only the rate limits and passes the event on', async () => {
+  const { find } = await loadMod();
+  const posted: any[] = [];
+  const f = fake$({ fetch: (url, init) => { if (url.endsWith('/v1/events') && init.body) posted.push(JSON.parse(init.body)); return { ok: true, text: '{}' }; } });
+  const rateLimits = [{ kind: 'five_hour', percentUsed: 72, resetsAt: '2026-10-05T15:00:00Z' }];
+  (f.$ as any).session.usage = async () => ({ startedAt: 1, context: { tokens: 5 }, rateLimits, cost: { usd: 1 } });
+  await find('session.start')(f.$, {}, next);
+  posted.length = 0;
+  const e = { changed: ['rateLimits'] };
+  expect(await find('session.measure')(f.$, e, next)).toEqual({ next: e });
+  expect(posted).toEqual([{ type: 'quota', sessionId: 'sid-1', data: { rateLimits } }]);
+});
+it('session.measure posts nothing without rate limits, outside the console, or when usage fails', async () => {
+  const { find } = await loadMod();
+  const none = fake$();
+  (none.$ as any).session.usage = async () => ({ startedAt: 1, rateLimits: [] });
+  await find('session.start')(none.$, {}, next);
+  none.calls.length = 0;
+  await find('session.measure')(none.$, {}, next);
+  expect(none.calls).toEqual([]);
+  const missing = fake$();
+  (missing.$ as any).session.usage = async () => ({ startedAt: 1 });
+  await find('session.start')(missing.$, {}, next);
+  missing.calls.length = 0;
+  await find('session.measure')(missing.$, {}, next);
+  expect(missing.calls).toEqual([]);
+  const broken = fake$();
+  (broken.$ as any).session.usage = async () => { throw new Error('no usage'); };
+  await find('session.start')(broken.$, {}, next);
+  broken.calls.length = 0;
+  expect(await find('session.measure')(broken.$, { x: 1 }, next)).toEqual({ next: { x: 1 } });
+  expect(broken.calls).toEqual([]);
+  const { find: findOut } = await loadMod();
+  const outside = fake$({ env: { CONSOLE_URL: undefined, CONSOLE_TOKEN: undefined } });
+  (outside.$ as any).session.usage = async () => ({ rateLimits: [{ kind: 'five_hour', percentUsed: 1 }] });
+  await findOut('session.start')(outside.$, {}, next);
+  await findOut('session.measure')(outside.$, {}, next);
+  expect(outside.calls).toEqual([]);
+});
+
+// ---- recovery (Phase 5) ----
+it('a recovery session gets only list_agents and recovery_report', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'recovery', CONSOLE_AGENT: 'recover-fix-login' } });
+  await find('session.start')(f.$, {}, next);
+  expect(f.registeredTools).toEqual(['list_agents', 'recovery_report']);
+});
+it('the recovery tools send only their own fields', async () => {
+  const { find } = await loadMod();
+  const bodies: Record<string, unknown> = {};
+  const fetch = (url: string, init: { body?: string }) => { if (url.includes('/v1/tools/')) bodies[url.split('/').pop()!] = JSON.parse(init.body ?? '{}'); return { ok: true, text: '{"status":"ok"}' }; };
+  const m = fake$({ fetch });
+  await find('session.start')(m.$, {}, next);
+  await find('tool.call', 'mcp__console-mod__start_recovery')(m.$, { name: 'fix-login', extra: 1 });
+  const r = fake$({ env: { CONSOLE_ROLE: 'recovery', CONSOLE_AGENT: 'recover-fix-login' }, fetch });
+  await find('session.start')(r.$, {}, next);
+  const out = await find('tool.call', 'mcp__console-mod__recovery_report')(r.$, { verified_steps: [1, 2], diagnosis: 'loop on dist/', remedy: 'exclude_paths', notes: 'skip dist/', extra: 1 });
+  expect(out).toEqual({ result: '{"status":"ok"}' });
+  expect(bodies).toEqual({
+    start_recovery: { name: 'fix-login' },
+    recovery_report: { verified_steps: [1, 2], diagnosis: 'loop on dist/', remedy: 'exclude_paths', notes: 'skip dist/' },
+  });
+});
+it('recovery_report declares its remedy as an enum of the five remedies', async () => {
+  const { find } = await loadMod();
+  const specs: { name: string; inputSchema: any }[] = [];
+  const f = fake$({ env: { CONSOLE_ROLE: 'recovery', CONSOLE_AGENT: 'recover-x' } });
+  (f.$ as any).tool.register = async (spec: { name: string; inputSchema: unknown }) => { specs.push(spec as never); };
+  await find('session.start')(f.$, {}, next);
+  const spec = specs.find((x) => x.name === 'recovery_report')!;
+  expect(spec.inputSchema.properties.remedy.enum).toEqual(['split', 'exclude_paths', 'change_model', 'remove_obstacle', 'raise_budget']);
+  expect(spec.inputSchema.properties.verified_steps).toMatchObject({ type: 'array', items: { type: 'integer' } });
+  expect(spec.inputSchema.required).toEqual(expect.arrayContaining(['verified_steps', 'diagnosis', 'remedy']));
+});
+
+// ---- resume after a usage limit (Phase 5) ----
+it('resume_agent is a main-only tool: no other role registers it', async () => {
+  for (const role of ['agent', 'reviewer', 'recovery']) {
+    const { find } = await loadMod();
+    const f = fake$({ env: { CONSOLE_ROLE: role, CONSOLE_AGENT: 'fix-login' } });
+    await find('session.start')(f.$, {}, next);
+    expect(f.registeredTools, role).not.toContain('resume_agent');
+  }
+  const { find } = await loadMod();
+  const specs: { name: string; inputSchema: any }[] = [];
+  const m = fake$();
+  (m.$ as any).tool.register = async (spec: { name: string; inputSchema: unknown }) => { specs.push(spec as never); };
+  await find('session.start')(m.$, {}, next);
+  const spec = specs.find((x) => x.name === 'resume_agent')!;
+  expect(spec.inputSchema.properties.names).toMatchObject({ type: 'array', items: { type: 'string' } });
+  expect(spec.inputSchema.required).toEqual(['names']);
+});
+it('resume_agent forwards only { names } and returns the console answer as text', async () => {
+  const { find } = await loadMod();
+  const bodies: Record<string, unknown> = {};
+  const answer = { status: 'ok', started: ['fix-login'], scheduled: [] };
+  const f = fake$({ fetch: (url, init) => {
+    if (url.includes('/v1/tools/')) { bodies[url.split('/').pop()!] = JSON.parse(init.body ?? '{}'); return { ok: true, text: JSON.stringify(answer) }; }
+    return { ok: true, text: '{}' };
+  } });
+  await find('session.start')(f.$, {}, next);
+  const out = await find('tool.call', 'mcp__console-mod__resume_agent')(f.$, { names: ['fix-login', 'add-cart'], extra: 1 });
+  expect(out).toEqual({ result: JSON.stringify(answer) });
+  expect(bodies).toEqual({ resume_agent: { names: ['fix-login', 'add-cart'] } });
 });

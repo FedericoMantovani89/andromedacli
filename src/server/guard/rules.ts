@@ -6,7 +6,13 @@ import { headBranch, isTag } from './gitrefs';
 import { commandName, splitCommand, type Segment, type ShellKind } from './shell';
 import { READONLY_RULE, readOnlyViolation } from './readonly';
 
-export interface GuardContext { role?: 'main' | 'agent'; /** A read-only profile (a reviewer): nothing may be changed. */ readOnly?: boolean; worktree: string; repo: string; branch: string; planBranch: string; secretPatterns: string[] }
+export interface GuardContext {
+  role?: 'main' | 'agent';
+  /** A read-only profile (a reviewer): nothing may be changed. */
+  readOnly?: boolean;
+  /** A session held back by the console. For `loop` only the call with this exact signature is refused; for the others every guarded tool is. */
+  restricted?: { reason: 'budget' | 'loop' | 'limit'; signature?: string };
+  worktree: string; repo: string; branch: string; planBranch: string; secretPatterns: string[] }
 export interface GuardCall { role: 'main' | 'agent'; tool: string; input: Record<string, unknown> }
 export type GuardDecision = { decision: 'allow' } | { decision: 'deny'; reason: string; rule: string };
 
@@ -299,9 +305,27 @@ function evaluateFileTool(call: GuardCall, ctx: GuardContext): GuardDecision {
   return ALLOW;
 }
 
-/** Pure rule evaluation (SPEC 14.2). Anything that is not covered by an explicit rule is allowed. */
+const SIGNATURE_KEYS = ['command', 'file_path', 'notebook_path', 'path'] as const;
+/** Identifies a call for the loop check: the tool plus the fields the guard sees, in a fixed order (null when absent). */
+export const callSignature = (tool: string, input: Record<string, unknown>): string =>
+  `${tool}:${JSON.stringify(SIGNATURE_KEYS.map((k) => (typeof input[k] === 'string' ? input[k] : null)))}`;
+
+/**
+ * Pure rule evaluation (SPEC 14.2). Anything that is not covered by an explicit rule is allowed. The console's own tools never come
+ * here (the mod guards only the engine's tools): their handlers answer a restricted session themselves.
+ */
 export function evaluate(call: GuardCall, baseCtx: GuardContext): GuardDecision {
   const ctx: GuardContext = { ...baseCtx, role: call.role };
+  if (call.role === 'agent' && ctx.restricted) {
+    const r = ctx.restricted;
+    if (r.reason === 'loop') {
+      if (r.signature !== undefined && callSignature(call.tool, call.input) === r.signature) return deny('loop.repeat', 'this exact call was repeated without progress: change approach or report_blocked');
+    } else {
+      return deny(r.reason === 'budget' ? 'budget.limit' : 'quota.limit', r.reason === 'budget'
+        ? 'the token budget of this ticket is used up: only step_done is allowed now (close the step with it)'
+        : 'the subscription limit is reached: only step_done is allowed now (close the step with it)');
+    }
+  }
   let d: GuardDecision = ALLOW;
   switch (call.tool) {
     case 'Bash': case 'PowerShell': d = evaluateShell(call, ctx); break;

@@ -30,6 +30,11 @@ export interface StepDeps {
   notifyMain(slug: string, text: string): void;
   /** Something visible changed (progress, blocked flag): the state is pushed to the UI. */
   changed(): void;
+  /**
+   * A step was closed (after the ticket was updated). `skipped`: closed with skip; `empty`: its commit changed no file. Neither is
+   * progress for the loop handling.
+   */
+  stepClosed?(slug: string, o: { skipped: boolean; empty: boolean }): void;
 }
 
 const MIN_STUDY_NOTE = 10;
@@ -123,6 +128,10 @@ export class StepService {
 
     const updated = this.d.tickets.markDone(slug, o.n, { note: note || undefined, sha: commit.sha, skipped: o.skip });
     if (updated.blocked) this.d.tickets.unblock(slug);
+    if (this.d.stepClosed) {
+      const empty = await this.emptyCommit(wt.worktree);
+      try { this.d.stepClosed(slug, { skipped: o.skip === true, empty }); } catch { /* the step is closed whatever the loop bookkeeping does */ }
+    }
     this.writeChecklistFile(slug, wt.worktree, updated.steps);
 
     if (!isDocs) {
@@ -138,6 +147,14 @@ export class StepService {
       status: 'closed', n: o.n, total, sha: commit.sha, delivered: true,
       pushed: push.ok && !('skipped' in push), ...(push.ok ? ('skipped' in push ? { pushNote: 'no_remote' } : {}) : { pushNote: push.detail }),
     };
+  }
+
+  /** The tip commit has the same tree as its parent (it changed no file). A root commit, or git failing, counts as not empty. */
+  private async emptyCommit(worktree: string): Promise<boolean> {
+    const trees = await git(worktree, ['rev-parse', 'HEAD^{tree}', 'HEAD~1^{tree}']);
+    if (trees.code !== 0) return false;
+    const [head, parent] = trees.stdout.trim().split(/\r?\n/);
+    return head !== undefined && head !== '' && head === parent;
   }
 
   /** The console's own commit for this very step, if it is already the tip of the branch. */

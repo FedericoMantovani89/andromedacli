@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
 import type { Step } from './checklist';
@@ -27,6 +27,12 @@ export interface Ticket {
   deliveredSha?: string;
   mergedSha?: string;
   reviewer?: string;
+  /** Budget of this ticket (Phase 5). The usage is not stored here: the ledger is the record (n/a until its first turn). */
+  budget?: { limit: number; step: 'ok' | 'alert' | 'limit' | 'stopped'; limitAt?: string };
+  /** Recovery agents started for this ticket. */
+  recoveries: number;
+  stopCause?: 'budget' | 'loop' | 'limit';
+  handover?: string;
 }
 export interface TicketProgress { done: number; total: number; blocked: boolean; status: TicketStatus }
 
@@ -54,7 +60,7 @@ export class TicketStore {
       const t = JSON.parse(readFileSync(file, 'utf8')) as Ticket;
       if (!Array.isArray(t.steps)) return undefined; // a damaged file must not take the console down
       // Phase 3 files have no pipeline fields.
-      return { ...t, round: typeof t.round === 'number' ? t.round : 0, verdicts: Array.isArray(t.verdicts) ? t.verdicts : [] };
+      return { ...t, round: typeof t.round === 'number' ? t.round : 0, recoveries: typeof t.recoveries === 'number' ? t.recoveries : 0, verdicts: Array.isArray(t.verdicts) ? t.verdicts : [] };
     } catch {
       return undefined;
     }
@@ -77,7 +83,7 @@ export class TicketStore {
   }
 
   private ensure(slug: string): Ticket {
-    return this.get(slug) ?? { slug, steps: [], status: 'in_progress', blocked: false, updatedAt: '', round: 0, verdicts: [] };
+    return this.get(slug) ?? { slug, steps: [], status: 'in_progress', blocked: false, updatedAt: '', round: 0, recoveries: 0, verdicts: [] };
   }
 
   private existing(slug: string): Ticket {
@@ -147,6 +153,32 @@ export class TicketStore {
       .map((title, i) => ({ n: first + i, title, done: false }));
     const { blockedReason: _gone, ...rest } = t;
     return this.save({ ...rest, blocked: false, status: 'in_progress', round, steps: [...t.steps, ...added] });
+  }
+
+  setBudget(slug: string, budget: Ticket['budget']): Ticket { return this.save({ ...this.existing(slug), budget }); }
+  setStopCause(slug: string, stopCause: Ticket['stopCause']): Ticket { return this.save({ ...this.existing(slug), stopCause }); }
+  addRecovery(slug: string): Ticket { const t = this.existing(slug); return this.save({ ...t, recoveries: t.recoveries + 1 }); }
+  setHandover(slug: string, handover: string): Ticket { return this.save({ ...this.existing(slug), handover: handover.slice(0, 4000) }); }
+
+  /** A new agent takes the ticket over after a stop (SPEC 16.5): same checklist and commits, back to `in_progress`. */
+  restart(slug: string): Ticket {
+    const t = this.existing(slug);
+    if (!['suspended_budget', 'blocked', 'recovering', 'suspended_limit'].includes(t.status) || !canMove(t.status, 'in_progress')) throw new Error('ticket.badTransition');
+    const { stopCause: _gone, blockedReason: _stale, ...rest } = t;
+    return this.save({ ...rest, status: 'in_progress', blocked: false });
+  }
+
+  /**
+   * Moves a ticket to another agent name (a replacement agent takes it over, SPEC 16.5): the record is copied whole (steps, goal,
+   * recoveries, handover, budget, status) and then the old file is deleted. Refuses a missing source or a target that exists.
+   */
+  rename(from: string, to: string): Ticket {
+    const t = this.existing(from);
+    const target = this.file(to);
+    if (existsSync(target)) throw new Error('ticket.exists');
+    const moved = this.save({ ...t, slug: to });
+    rmSync(this.file(from), { force: true });
+    return moved;
   }
 
   progress(slug: string): TicketProgress | undefined {

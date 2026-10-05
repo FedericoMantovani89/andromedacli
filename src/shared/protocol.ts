@@ -8,7 +8,7 @@ export type Profile = (typeof PROFILES)[number];
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
-  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid',
+  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -28,6 +28,10 @@ export interface SessionInfo {
   ticket?: { status: string; round: number; maxRounds: number };
   /** The launch check found the agent not started or not working on its goal; clears when it starts working. */
   launchStalled?: true;
+  /** Loop handling (Phase 5): 1 corrected, 2 limited, 3 stopped; absent when none. */
+  loop?: 1 | 2 | 3;
+  /** Token budget of the agent's ticket (Phase 5); absent when the agent has none (no worktree, a reviewer): shown as n/a. */
+  budget?: { used: number; limit: number; step: 'ok' | 'alert' | 'limit' | 'stopped' };
 }
 
 export interface PrereqResult {
@@ -73,6 +77,12 @@ export interface StateMessage {
   planRoot: string;
   /** Everything that waits for the user: questions from the main and the agents. */
   queue: QueueItem[];
+  /** The console is waiting for a usage limit to lift (Phase 5); absent when it is not. `until` is when the next probe is due. */
+  sleep?: { until?: string; phase: 'sleeping' | 'probing' | 'awake'; attempt: number; weekly: boolean };
+  /** The most used usage limit of the subscription; ABSENT when unknown (shown as n/a, never as zero). */
+  quota?: { percent: number; kind: string };
+  /** Agents counting against the active-agent limit, and that limit as it is now (the quota step may have cut it). */
+  limits?: { active: number; max: number };
 }
 
 export interface ApiError {

@@ -7,7 +7,33 @@ introduces the behaviour.
 
 ## [Unreleased]
 
-Next: Phase 5 (budget, blocks, limits); ask before starting.
+Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
+
+## Phase 5: budget, blocks, limits (2026-10-05)
+
+### Added
+- Per-agent token budget: alert at 80% (WIP commit by the console, message to the agent and the main), restriction at 100%, orderly stop after the grace with the ticket in `suspended_budget`; tokens come from the Claude Code transcript (input + cache_creation + output) and are recorded in a monthly ledger.
+- The budget alert tells the agent to write its handover note to `.console/handover.md`; the console reads it (bounded, no symlinks) at the stop and gives it to the new agent.
+- Recovery: after a budget stop or a block the main can start a read-only recovery agent (`start_recovery`) that verifies the work, diagnoses the cause from the ledger and reports a remedy (`recovery_report`); the restart is a new agent on the same branch, at most 2 attempts, and a spend is always the user's decision (a `change_model` remedy asks as well).
+- Loop and block detection from the transcript: repeated identical calls, repeated identical errors and repeated compactions are corrected, then limited, then stopped (ticket `blocked`, recovery by the main) and keep escalating while the loop goes on; silence (any sign of life counts, the notice says whether the process is alive) and a long time without `step_done` only warn the main.
+- Subscription quota: the mod reports the limits (`session.measure`, `quota` event); at 70% the active-agent limit halves, at 85% nothing new starts and agents are told to close the step, at 95% they are restricted, committed and ended in priority order, the main last; a spend limit never drives the steps.
+- Sleep until the reset: from the 95% stop (when the reset time is known) or at 100% the console waits with no attempt in between and, at the reset, wakes only the main (one check, then a backoff of 5, 10 and 20 minutes); a later low reading ends any sleep; the weekly limit does not restart by itself and puts an item in the queue listing the choices.
+- `resume_agent` (main): resumes suspended agents with `--resume`, staggered across calls, refused while the quota is high; with `git.worktrees` off they resume in the plan folder.
+- The status bar shows the quota, the reset date or waiting time, "paused / almost used up" and an always visible "Resume now" button (disabled while awake), and the agents against the current limit; the agent bar shows the budget used, the new ticket states and loop level, and a queue item with raise, close or recover after a budget stop.
+- The guard can restrict a session (budget, loop, quota); the mod now routes WebFetch, WebSearch and Agent through the guard.
+- Budget, loop and quota thresholds are configuration entries (`budget` in config.json) with the SPEC defaults.
+
+### Changed
+- Queued agents start oldest first when several slots free at once.
+- The agent counter and the start limit use the stricter of the global and the per-plan limit.
+- `checklist_set` is refused (`restricted`) while an agent is restricted; "close" on a budget decision is refused while a recovery runs on the ticket.
+
+### Fixed (found by the final review)
+- The quota step comes down to what a lower reading says (after a stop, a five-hour reset with the weekly window at 76% gives `halve`); the wake-up probe counts as running below the freeze threshold; a reset time more than 7 days away is treated as unknown.
+- The 95% stop restricts first, then commits, then ends; only tickets being written get a WIP commit (a delivered branch never moves); a reviewer or recovery stopped by the usage limit gives its ticket back and a recovery ended by the console never leaves the ticket in `recovering`.
+- The loop detector sees a new run of identical calls or errors after a different call (also within one turn) and an error repeated with successes in between; the same-error signal keys on the originating call plus the last 200 characters of the error, so failing tests that differ are not taken for a loop; a skipped or empty step no longer resets a loop.
+- A main restarted at a wake-up keeps its session id; a resumed agent that dies before its session starts is suspended again.
+- A queued replacement whose start fails hands its ticket to the user; a replacement never starts on a new branch; a ticket whose agent is not a live session is never stopped by the budget.
 
 ## Phase 4: review and merge (2026-10-05)
 

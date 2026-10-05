@@ -112,3 +112,52 @@ it('a re-opened ticket and a merge conflict are explained to the author, and the
   expect(reviewer).not.toContain('step_done');
   expect(reviewer).toContain('git diff plan/shop-api...HEAD');
 });
+
+it('console.budget_tokens is read as a number; anything else leaves it undefined', () => {
+  const user = tmp();
+  writeFileSync(join(user, 'bt-ok.md'), '---\nname: bt-ok\ndescription: d here\nconsole:\n  budget_tokens: 12345\n---\nBODY');
+  writeFileSync(join(user, 'bt-bad.md'), '---\nname: bt-bad\ndescription: d here\nconsole:\n  budget_tokens: lots\n---\nBODY');
+  expect(loadProfile('bt-ok', tmp(), user)!.budgetTokens).toBe(12345);
+  expect(loadProfile('bt-bad', tmp(), user)!.budgetTokens).toBeUndefined();
+  for (const name of ['backend', 'dba', 'frontend', 'reviewer', 'recovery']) expect(loadProfile(name, tmp(), tmp()), name).toBeDefined();
+});
+
+it('the recovery profile names its three jobs and the exact report call, and stays read-only', () => {
+  const p = loadProfile('recovery', tmp(), tmp())!;
+  expect(p.readOnly).toBe(true);
+  expect(p.body).toMatch(/verify/i);
+  expect(p.body).toMatch(/diagnos/i);
+  expect(p.body).toMatch(/remedy/i);
+  expect(p.body).toContain('mcp__console-mod__recovery_report');
+  expect(p.body).toContain('select:mcp__console-mod__recovery_report');
+  for (const r of ['split', 'exclude_paths', 'change_model', 'remove_obstacle', 'raise_budget']) expect(p.body, r).toContain(r);
+  expect(p.body).toMatch(/exactly once/i);
+});
+it('a recovery prompt has the read-only recovery rules, not the author or reviewer ones', () => {
+  const dir = tmp();
+  const text = readFileSync(renderAgentPrompt({ profile: loadProfile('recovery', tmp(), tmp())!, slug: 'recover-fix-login', plan: 'shop-api', outDir: dir, git: { worktree: 'D:/w/rc', branch: 'recovery/recover-fix-login' }, recovery: true }), 'utf8');
+  expect(text).toContain('D:/w/rc');
+  expect(text).toMatch(/read-only/i);
+  expect(text).toMatch(/detached/i);
+  expect(text).toContain('git diff plan/shop-api...HEAD');
+  expect(text).toContain('recovery_report');
+  expect(text).not.toContain('checklist_set');
+  expect(text).not.toContain('step_done');
+  expect(text).not.toContain('review_verdict');
+});
+it('the main prompt explains what to do after a stop, and that a spend is the user\'s decision', () => {
+  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
+  expect(text).toContain('mcp__console-mod__start_recovery');
+  expect(text).toContain('select:mcp__console-mod__start_recovery');
+  expect(text).toMatch(/raise_budget[^\n]*user/i);
+});
+it('the main prompt names resume_agent by its full name, says to load it first and never to resume everything at once', () => {
+  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
+  expect(text).toContain('select:mcp__console-mod__resume_agent');
+  expect(text).toMatch(/only what the user still wants, never everything at once/);
+});
+it('the main prompt does not promise a queue decision after a loop stop (only a budget stop creates one)', () => {
+  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'Italian', outDir: tmp() }), 'utf8');
+  expect(text).not.toContain('You are told, and the user gets a decision in the queue.');
+  expect(text).toMatch(/after a loop stop the next move is yours/);
+});

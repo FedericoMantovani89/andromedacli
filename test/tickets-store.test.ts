@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -93,6 +93,65 @@ describe('TicketStore', () => {
     mkdirSync(dir(), { recursive: true });
     writeFileSync(join(dir(), 'a.json'), '{not json');
     expect(new TicketStore(root).get('a')).toBeUndefined();
+  });
+});
+
+describe('TicketStore suspension', () => {
+  it('suspends, counts recoveries and restarts with the checklist kept', () => {
+    const s = new TicketStore(root);
+    s.setChecklist('a', [{ n: 1, title: 'one', done: true }, { n: 2, title: 'two', done: false }] as never);
+    s.setBudget('a', { limit: 1000, step: 'stopped' });
+    s.setStopCause('a', 'budget');
+    s.move('a', 'suspended_budget');
+    expect(s.get('a')).toMatchObject({ status: 'suspended_budget', stopCause: 'budget', recoveries: 0 });
+    s.move('a', 'recovering');
+    expect(s.addRecovery('a').recoveries).toBe(1);
+    const t = s.restart('a');
+    expect(t.status).toBe('in_progress');
+    expect(t.stopCause).toBeUndefined();
+    expect(t.steps).toHaveLength(2);
+    expect(() => s.restart('a')).toThrow('ticket.badTransition');
+  });
+  it('restart drops a stale blocked reason, like reopen', () => {
+    const s = new TicketStore(root);
+    s.setChecklist('a', [{ n: 1, title: 'one', done: false }] as never);
+    s.block('a', 'the API key is missing');
+    s.move('a', 'blocked');
+    const t = s.restart('a');
+    expect(t.blocked).toBe(false);
+    expect(t.blockedReason).toBeUndefined();
+    expect(s.get('a')!.blockedReason).toBeUndefined();
+  });
+});
+
+describe('TicketStore.rename', () => {
+  it('moves the whole record to the new name: steps, recoveries, handover, budget, goal and status', () => {
+    const s = new TicketStore(root);
+    s.setChecklist('a', [{ n: 1, title: 'one', done: true, sha: 'abc' }, { n: 2, title: 'two', done: false }] as never);
+    s.setGoal('a', 'Add multiply');
+    s.setBudget('a', { limit: 1000, step: 'stopped' });
+    s.setHandover('a', 'half done');
+    s.move('a', 'suspended_budget');
+    s.move('a', 'recovering');
+    s.addRecovery('a');
+    const before = s.get('a')!;
+    const t = s.rename('a', 'a-r2');
+    expect(t.slug).toBe('a-r2');
+    expect(s.get('a')).toBeUndefined();
+    expect(existsSync(join(dir(), 'a.json'))).toBe(false);
+    const { updatedAt: _u1, slug: _s1, ...was } = before;
+    const { updatedAt: _u2, slug: _s2, ...now } = s.get('a-r2')!;
+    expect(now).toEqual(was);
+  });
+  it('refuses a missing source, a taken target and bad names, and changes nothing', () => {
+    const s = new TicketStore(root);
+    s.setChecklist('a', []);
+    s.setChecklist('b', []);
+    expect(() => s.rename('ghost', 'c')).toThrow('ticket.missing');
+    expect(() => s.rename('a', 'b')).toThrow('ticket.exists');
+    expect(() => s.rename('a', 'Bad Name')).toThrow('ticket.badSlug');
+    expect(s.get('a')).toBeDefined();
+    expect(s.get('b')).toBeDefined();
   });
 });
 

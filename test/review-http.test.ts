@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { autoClose, bootServer, mod, ui, until, type Running } from './helpers';
+import { autoClose, bootServer, mod, modEvent, ui, until, type Running } from './helpers';
 import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { worktreePathFor } from '../src/server/git/worktree';
 
@@ -294,4 +294,22 @@ it('a reviewer that waits in the queue and then fails to start gives the ticket 
   failReviewers = false;
   s.setLimits({ global: 20, perPlan: 20 });
   expect((await tool(s, 'shop-api', 'request_review', { name: 'fix-login' })).body).toMatchObject({ status: 'ok', reviewer: 'review-fix-login-r2' });
+});
+
+it('a reviewer running when the usage limit stops everything gives the ticket back as delivered; the delivered author is not committed', async () => {
+  const { s, t } = await boot();
+  await deliverTicket(s, t);
+  expect((await tool(s, 'shop-api', 'request_review', { name: 'fix-login' })).body).toMatchObject({ status: 'ok', reviewer: 'review-fix-login' });
+  const author = worktreePathFor(t.repo, 'fix-login');
+  const before = gitSync(author, 'rev-parse', 'HEAD');
+  writeFileSync(join(author, 'stray.txt'), 'not part of the delivery\n'); // a dirty file in the delivered author's worktree
+  await until(async () => (await agentsOf(s)).some((a) => a.slug === 'review-fix-login' && a.status === 'running'));
+  await modEvent(s, 'shop-api', 'quota', { rateLimits: [{ kind: 'five_hour', percentUsed: 96 }] });
+  await until(() => ticketFile(t, 'fix-login').status === 'delivered', 20_000);
+  expect(ticketFile(t, 'fix-login').reviewer).toBeUndefined();
+  await until(async () => (await inbox(s, 'shop-api')).some((m) => m.includes('review-fix-login') && m.includes('request_review')), 20_000);
+  await until(async () => (await agentsOf(s)).find((a) => a.slug === 'review-fix-login')?.status === 'exited', 20_000);
+  await until(async () => (await agentsOf(s)).find((a) => a.slug === 'fix-login')?.status === 'exited', 20_000);
+  expect(gitSync(author, 'rev-parse', 'HEAD')).toBe(before); // no WIP commit moved the delivered branch
+  expect(gitSync(t.repo, 'log', '--format=%s', '-1', 'agent/shop-api/fix-login')).not.toMatch(/^wip:/);
 });

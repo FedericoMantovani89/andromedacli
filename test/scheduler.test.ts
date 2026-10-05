@@ -1,6 +1,7 @@
 import { it, expect, vi } from 'vitest';
 import { AgentRegistry } from '../src/server/agents/registry';
 import { Scheduler, type SpawnRequest } from '../src/server/agents/scheduler';
+import type { QuotaStep } from '../src/server/budget/quota';
 
 const req = (slug: string): SpawnRequest => ({ slug, profile: 'backend', goal: `goal of ${slug}`, source: 'main' });
 
@@ -155,4 +156,45 @@ it('a queued request whose asynchronous start fails goes to onStartError and the
   await new Promise((r) => setTimeout(r, 20));
   expect(errors).toEqual(['bad-job']);
   expect(started).toEqual(['a-job', 'c-job']);
+});
+
+function withMultiplier(base: { global: number; perPlan: number }) {
+  const registry = new AgentRegistry();
+  const state = { step: 'none' as QuotaStep };
+  const started: string[] = [];
+  const scheduler = new Scheduler({
+    registry, limits: () => base, multiplier: () => state.step,
+    start: (r) => { registry.register({ slug: r.slug, role: 'agent', profile: r.profile, goal: r.goal }); registry.onSpawned(r.slug); started.push(r.slug); },
+  });
+  return { scheduler, state, started };
+}
+
+it('the quota step halve cuts a base of {4,3} to 2 active agents', () => {
+  const { scheduler, state, started } = withMultiplier({ global: 4, perPlan: 3 });
+  state.step = 'halve';
+  expect(scheduler.effectiveLimits()).toEqual({ global: 2, perPlan: 2 });
+  expect(scheduler.request(req('a-job'))).toEqual({ status: 'started' });
+  expect(scheduler.request(req('b-job'))).toEqual({ status: 'started' });
+  expect(scheduler.request(req('c-job'))).toEqual({ status: 'queued', position: 1 });
+  expect(started).toEqual(['a-job', 'b-job']);
+  expect(scheduler.activeCount()).toBe(2);
+});
+
+it('freeze admits nobody and the queue holds; back to none, release() starts it', () => {
+  const { scheduler, state, started } = withMultiplier({ global: 4, perPlan: 3 });
+  state.step = 'freeze';
+  expect(scheduler.request(req('a-job'))).toEqual({ status: 'queued', position: 1 });
+  expect(scheduler.request(req('b-job'))).toEqual({ status: 'queued', position: 2 });
+  scheduler.release();
+  expect(started).toEqual([]);
+  state.step = 'none';
+  expect(started).toEqual([]); // nothing looks again by itself: the caller releases
+  scheduler.release();
+  expect(started).toEqual(['a-job', 'b-job']);
+  expect(scheduler.queued()).toEqual([]);
+});
+
+it('without a multiplier the configured limits apply unchanged', () => {
+  const { scheduler } = setup(2);
+  expect(scheduler.effectiveLimits()).toEqual({ global: 2, perPlan: 2 });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -132,6 +132,24 @@ it('keeps the console folder out of git status from the start, without touching 
   expect(exclude.split(/\r?\n/)).toContain('.console/');
   expect(gitSync(t.repo, 'status', '--porcelain')).toBe('');
   expect(existsSync(join(t.repo, '.gitignore'))).toBe(false);
+});
+
+it('the budget defaults to config.budget.agentTokens, and a profile with console: budget_tokens wins over it', async () => {
+  const { s, t } = await boot({ config: { budget: { agentTokens: 7000 } } });
+  mkdirSync(join(t.repo, '.console', 'profiles'), { recursive: true });
+  // The shipped profiles carry their own budget_tokens, so the default is seen through a plan profile without one.
+  writeFileSync(join(t.repo, '.console', 'profiles', 'plain.md'), '---\nname: plain\ndescription: no budget of its own\n---\nBODY');
+  writeFileSync(join(t.repo, '.console', 'profiles', 'lean.md'), '---\nname: lean\ndescription: a lean profile\nconsole:\n  budget_tokens: 5000\n---\nBODY');
+  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'first-job', profile: 'plain', goal: 'go' })).body.status).toBe('started');
+  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'second-job', profile: 'lean', goal: 'go' })).body.status).toBe('started');
+  // The state shows no usage before the first turn (n/a); the limit itself is on the ticket.
+  const limitOf = (slug: string): number | undefined => {
+    const file = join(t.repo, '.console', 'state', 'tickets', `${slug}.json`);
+    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).budget?.limit : undefined;
+  };
+  await until(() => limitOf('first-job') !== undefined && limitOf('second-job') !== undefined);
+  expect(limitOf('first-job')).toBe(7000);
+  expect(limitOf('second-job')).toBe(5000);
 });
 
 it('the goal the main wrote is kept in the ticket (the review checks the diff against it)', async () => {

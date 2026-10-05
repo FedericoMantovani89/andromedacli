@@ -55,9 +55,10 @@ function startInboxPoll($) {
 }
 
 const TOOLS_BY_ROLE = {
-  main: ['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release'],
+  main: ['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent'],
   agent: ['list_agents', 'checklist_set', 'step_done', 'report_blocked'],
   reviewer: ['list_agents', 'review_verdict'],
+  recovery: ['list_agents', 'recovery_report'],
 };
 
 const TOOL_SPECS = {
@@ -76,7 +77,8 @@ const TOOL_SPECS = {
     },
   },
   list_agents: {
-    description: 'List the sessions of this plan: name, profile, state and goal. Use it to know who exists before asking.',
+    description: 'List the sessions of this plan: name, profile, state and goal, and the ticket status when it is not simply in progress '
+      + '(for example suspended_limit or delivered). Use it to know who exists before asking.',
     inputSchema: { type: 'object', properties: {} },
   },
   checklist_set: {
@@ -149,6 +151,35 @@ const TOOL_SPECS = {
         notes: { type: 'array', items: { type: 'object', properties: { severity: { type: 'string' }, where: { type: 'string' }, text: { type: 'string' } }, required: ['text'] } },
       },
       required: ['pass'],
+    },
+  },
+  start_recovery: {
+    description: 'After an agent was stopped (budget or loop block), start a read-only recovery agent on its WIP commit: it verifies the work, diagnoses the cause '
+      + 'and reports a remedy; the console then restarts the ticket with a new agent on the same branch. At most 2 recoveries per ticket. '
+      + 'Returns { status: "ok", recovery, attempt } or { status: "refused", code }.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'The stopped ticket (agent) name' } }, required: ['name'] },
+  },
+  recovery_report: {
+    description: 'Your one report on the stopped ticket: the closed steps you verified, the diagnosis, and exactly one remedy. Call it exactly once, then stop.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        verified_steps: { type: 'array', items: { type: 'integer' }, description: 'Numbers of the closed steps whose work you verified' },
+        diagnosis: { type: 'string', description: 'Why the work stopped, from the facts (at most 4000 characters)' },
+        remedy: { type: 'string', enum: ['split', 'exclude_paths', 'change_model', 'remove_obstacle', 'raise_budget'], description: 'One remedy; raise_budget is decided by the user' },
+        notes: { type: 'string', description: 'What the next agent must do or avoid (paths, model, obstacle)' },
+      },
+      required: ['verified_steps', 'diagnosis', 'remedy'],
+    },
+  },
+  resume_agent: {
+    description: 'After a usage limit reset, resume agents whose tickets are suspended for the limit: each one continues its own session (--resume) in its worktree. '
+      + 'The console starts them in small groups with a pause and refuses everything while the usage is still high. Resume only what the user still wants, never everything at once. '
+      + 'Returns { status: "ok", started, scheduled } or { status: "refused", code } (quota_high, not_suspended, no_session, no_worktree).',
+    inputSchema: {
+      type: 'object',
+      properties: { names: { type: 'array', items: { type: 'string' }, description: 'The suspended ticket (agent) names to resume' } },
+      required: ['names'],
     },
   },
   ask_user: {
@@ -232,6 +263,9 @@ function toolBody(name, e) {
   if (name === 'merge_ticket') return { name: e.name };
   if (name === 'send_back_ticket') return { name: e.name, note: e.note };
   if (name === 'review_verdict') return { pass: e.pass, notes: e.notes };
+  if (name === 'start_recovery') return { name: e.name };
+  if (name === 'recovery_report') return { verified_steps: e.verified_steps, diagnosis: e.diagnosis, remedy: e.remedy, notes: e.notes };
+  if (name === 'resume_agent') return { names: e.names };
   return {};
 }
 
@@ -298,7 +332,18 @@ async function onToolCheck($, e, next) {
   }
 }
 
-const RISKY_TOOLS = ['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
+/** The account's limits (SPEC 18.1) are the one thing only the engine knows: send them as they are, the console decides. */
+async function onMeasure($, e, next) {
+  try {
+    if (ctx) {
+      const usage = await $.session.usage();
+      if (usage && Array.isArray(usage.rateLimits) && usage.rateLimits.length > 0) await postEvent($, 'quota', { rateLimits: usage.rateLimits });
+    }
+  } catch (err) { /* never into the session */ }
+  return next(e);
+}
+
+const RISKY_TOOLS =['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
 
 /** Only the fields the console judges: a command or a path, never file contents. */
 function guardInput(tool, e) {
@@ -353,6 +398,14 @@ export const register = (on) => {
   on('tool.call', { tool: 'Read' }, ($, e, next) => guardCall($, 'Read', e, next));
   on('tool.call', { tool: 'Grep' }, ($, e, next) => guardCall($, 'Grep', e, next));
   on('tool.call', { tool: 'Glob' }, ($, e, next) => guardCall($, 'Glob', e, next));
+  on('tool.call', { tool: 'WebFetch' }, ($, e, next) => guardCall($, 'WebFetch', e, next));
+  on('tool.call', { tool: 'WebSearch' }, ($, e, next) => guardCall($, 'WebSearch', e, next));
+  on('tool.call', { tool: 'Agent' }, ($, e, next) => guardCall($, 'Agent', e, next));
   on('tool.call', { tool: 'AskUserQuestion' }, ($, e, next) => onNativeQuestion($, e, next));
   on('tool.check', ($, e, next) => onToolCheck($, e, next));
+  // Last: `claude plugin validate` cuts its list of hooks at a fixed length, and test/mod.test.ts checks the earlier ones by name.
+  on('tool.call', { tool: 'mcp__console-mod__start_recovery' }, ($, e) => onConsoleTool($, 'start_recovery', e));
+  on('tool.call', { tool: 'mcp__console-mod__recovery_report' }, ($, e) => onConsoleTool($, 'recovery_report', e));
+  on('session.measure', ($, e, next) => onMeasure($, e, next));
+  on('tool.call', { tool: 'mcp__console-mod__resume_agent' }, ($, e) => onConsoleTool($, 'resume_agent', e));
 };

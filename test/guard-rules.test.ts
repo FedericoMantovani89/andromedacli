@@ -392,6 +392,9 @@ describe('guard rules — misc', () => {
     const d = decide(sh('git push --force'));
     expect(d.decision === 'deny' && d.reason).toMatch(/force/i);
   });
+  it('an unrestricted agent may use WebFetch, WebSearch and Agent (no rule denies unknown tools)', () => {
+    for (const tool of ['WebFetch', 'WebSearch', 'Agent']) expect(evaluate({ role: 'agent', tool, input: {} }, ctx)).toEqual({ decision: 'allow' });
+  });
   it('custom secret patterns apply', () => {
     const custom = { ...ctx, secretPatterns: ['*.token'] };
     expect(evaluate({ role: 'agent', ...sh('cat a.token') }, custom).decision).toBe('deny');

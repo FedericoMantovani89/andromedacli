@@ -46,6 +46,17 @@ button:hover { border-color: var(--accent); }
 .panel-ticket.conflict, .panel-ticket.needs_user, .panel-ticket.changes_requested { color: var(--warn); border-color: var(--warn); }
 .panel-progress { margin-left: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .panel-progress[hidden] { display: none; }
+.panel-budget { margin-left: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.panel-budget[hidden] { display: none; }
+.panel-loop { margin-left: 6px; padding: 0 6px; border: 1px solid var(--warn); border-radius: 8px; color: var(--warn); }
+.panel-loop[hidden] { display: none; }
+.panel-loop.level3 { color: var(--bad); border-color: var(--bad); font-weight: 600; }
+.panel-budget.ok { color: var(--ok); border-color: var(--ok); }
+.panel-budget.alert { color: var(--warn); border-color: var(--warn); }
+.panel-budget.limit, .panel-budget.stopped { color: var(--bad); border-color: var(--bad); font-weight: 600; }
+.panel-ticket.suspended_budget, .panel-ticket.suspended_limit, .panel-ticket.recovering { color: var(--warn); border-color: var(--warn); }
+.panel-ticket.blocked { color: var(--bad); border-color: var(--bad); }
+.panel-state.suspended { color: var(--warn); }
 .badge { display: none; background: var(--accent); color: #fff; border-radius: 3px; padding: 0 6px; font-size: 11px; }
 .panel.active .badge { display: inline-block; }
 .panel-term { flex: 1 1 0; min-height: 0; padding: 4px; }
@@ -61,6 +72,8 @@ button:hover { border-color: var(--accent); }
 
 #statusbar { display: flex; gap: 16px; align-items: center; padding: 0 10px; background: var(--panel);
   border-top: 1px solid var(--border); color: var(--muted); }
+#statusbar span[hidden], #statusbar button[hidden] { display: none; }
+.statusbar-resume { font: inherit; padding: 0 8px; }
 #drawer, #reader { position: fixed; top: 38px; bottom: 26px; right: 0; background: var(--panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 8px; padding: 10px; overflow: hidden; z-index: 5; }
 #drawer { width: 420px; max-width: 90vw; }

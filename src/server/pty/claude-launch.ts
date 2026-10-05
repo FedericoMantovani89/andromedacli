@@ -1,5 +1,5 @@
 export interface LaunchOptions {
-  command: string[]; role: 'main' | 'agent' | 'reviewer'; slug: string; plan: string;
+  command: string[]; role: 'main' | 'agent' | 'reviewer' | 'recovery'; slug: string; plan: string;
   /** For a launched session this is its own session token (never the UI token). */
   url: string; token: string; bypass: boolean; baseEnv: NodeJS.ProcessEnv; platform?: NodeJS.Platform;
   /** The console mod to load (--plugin-dir). Omitted: no mod (fake agents in tests, or mod disabled). */
@@ -10,7 +10,15 @@ export interface LaunchOptions {
   model?: string;
   /** Tools approved without a permission prompt (the console's own tools). */
   allowedTools?: string[];
+  /** Resumes this Claude Code session (--resume <id>): it keeps its own context. Plain characters only (SESSION_ID_RE). */
+  resumeId?: string;
 }
+
+/**
+ * A Claude Code session id that may become a command-line argument: letters, digits and dashes only (no shell metacharacters), and
+ * not starting with a dash (it would read as another flag).
+ */
+export const SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 
 /** Windows paths go through cmd.exe and node-pty: forward slashes survive both. */
 const fwd = (p: string): string => p.replace(/\\/g, '/');
@@ -28,7 +36,9 @@ export function buildClaudeLaunch(o: LaunchOptions): { file: string; args: strin
   env.CONSOLE_ROLE = o.role;
   env.CONSOLE_AGENT = o.slug;
   const [cmd, ...rest] = o.command;
+  if (o.resumeId !== undefined && !SESSION_ID_RE.test(o.resumeId)) throw new Error(`invalid session id: ${JSON.stringify(o.resumeId)}`);
   const flags = [
+    ...(o.resumeId !== undefined ? ['--resume', o.resumeId] : []),
     ...(o.model ? ['--model', o.model] : []),
     ...(o.pluginDir ? ['--plugin-dir', fwd(o.pluginDir)] : []),
     ...(o.appendPromptFile ? ['--append-system-prompt-file', fwd(o.appendPromptFile)] : []),

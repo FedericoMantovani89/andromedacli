@@ -169,7 +169,8 @@ try {
     check('after the wizard closes the keyboard is back in main', await until(async () => (await snapshot('shop-api')).includes('ECHO:yyy')));
     check('queue shows the real count (nothing is waiting)', (await page.locator('#queue-btn').innerText()) === 'Queue (0)', await page.locator('#queue-btn').innerText());
     for (const slug of ['one-job', 'two-job']) await post('/api/agents', { slug, profile: 'backend' });
-    check('status bar counts agents without the main session', await until(async () => (await page.locator('#statusbar').innerText()).includes('2 agents')), await page.locator('#statusbar').innerText());
+    // "Agents active/max" since Phase 5 (SPEC 16.7): two agents are active, the main session is not counted
+    check('status bar counts agents without the main session', await until(async () => /\bAgents 2\/\d+\b/.test(await page.locator('#statusbar').innerText())), await page.locator('#statusbar').innerText());
     await page.close();
     const bad = await open(`${s.url}/?token=wrong`);
     check('a wrong token explains itself instead of a blank page', await until(async () => (await bad.locator('#overlay').innerText().catch(() => '')).includes('Not authorized.')));

@@ -7,7 +7,7 @@ import { validateChecklist, type Step } from '../src/server/tickets/checklist';
 import { TicketStore } from '../src/server/tickets/store';
 
 const LEGAL: Record<TicketStatus, TicketStatus[]> = {
-  in_progress: ['delivered', 'needs_user'],
+  in_progress: ['delivered', 'needs_user', 'suspended_budget', 'blocked', 'suspended_limit'],
   delivered: ['in_review', 'needs_user'],
   in_review: ['approved', 'changes_requested', 'needs_user', 'delivered'],
   changes_requested: ['in_progress', 'needs_user'],
@@ -16,6 +16,11 @@ const LEGAL: Record<TicketStatus, TicketStatus[]> = {
   merged: ['released'],
   needs_user: ['in_progress', 'delivered', 'approved', 'merged'],
   released: [],
+  suspended_budget: ['in_progress', 'recovering', 'needs_user'],
+  blocked: ['in_progress', 'recovering', 'needs_user'],
+  // recovering -> suspended_budget | blocked: the recovery session ended without a report, the ticket waits again
+  recovering: ['in_progress', 'needs_user', 'suspended_budget', 'blocked'],
+  suspended_limit: ['in_progress', 'needs_user'],
 };
 
 describe('ticket flow', () => {
@@ -28,6 +33,18 @@ describe('ticket flow', () => {
   it('lists the next statuses', () => {
     expect(nextStatuses('in_review')).toEqual(['approved', 'changes_requested', 'needs_user', 'delivered']);
     expect(nextStatuses('released')).toEqual([]);
+  });
+  it('lets an in-progress ticket be suspended or blocked, and only those paths lead to recovery', () => {
+    for (const to of ['suspended_budget', 'blocked', 'suspended_limit'] as const) expect(canMove('in_progress', to)).toBe(true);
+    expect(canMove('suspended_budget', 'recovering')).toBe(true);
+    expect(canMove('blocked', 'recovering')).toBe(true);
+    expect(canMove('suspended_limit', 'recovering')).toBe(false); // a limit is not a defect: no diagnosis (SPEC 18.3)
+    expect(canMove('recovering', 'in_progress')).toBe(true);
+    expect(canMove('recovering', 'suspended_budget')).toBe(true);
+    expect(canMove('recovering', 'blocked')).toBe(true);
+    expect(canMove('recovering', 'suspended_limit')).toBe(false);
+    expect(canMove('delivered', 'suspended_budget')).toBe(false);
+    expect(canMove('merged', 'suspended_limit')).toBe(false);
   });
   it('an unknown status cannot move anywhere', () => {
     expect(canMove('nonsense' as TicketStatus, 'delivered')).toBe(false);
@@ -51,6 +68,7 @@ const ticketAt = (status: TicketStatus): void => {
     in_progress: [], delivered: ['delivered'], in_review: ['delivered', 'in_review'], changes_requested: ['delivered', 'in_review', 'changes_requested'],
     approved: ['delivered', 'in_review', 'approved'], conflict: ['delivered', 'in_review', 'approved', 'conflict'],
     merged: ['delivered', 'in_review', 'approved', 'merged'], needs_user: ['delivered', 'needs_user'], released: ['delivered', 'in_review', 'approved', 'merged', 'released'],
+    suspended_budget: ['suspended_budget'], blocked: ['blocked'], recovering: ['blocked', 'recovering'], suspended_limit: ['suspended_limit'],
   };
   for (const s of path[status]!) store.move('a', s);
 };

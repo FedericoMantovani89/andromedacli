@@ -4,12 +4,12 @@
  * `studying` and `blocked` are derived by the state builder from the ticket (no checklist yet / a reported block); the
  * registry itself never holds them.
  */
-export type Activity = 'starting' | 'idle' | 'working' | 'waiting_user' | 'queued' | 'interrupted' | 'studying' | 'blocked' | 'finished';
+export type Activity = 'starting' | 'idle' | 'working' | 'waiting_user' | 'queued' | 'interrupted' | 'studying' | 'blocked' | 'finished' | 'suspended';
 
-export const ACTIVITIES: readonly Activity[] = ['starting', 'idle', 'working', 'waiting_user', 'queued', 'interrupted', 'studying', 'blocked', 'finished'];
+export const ACTIVITIES: readonly Activity[] = ['starting', 'idle', 'working', 'waiting_user', 'queued', 'interrupted', 'studying', 'blocked', 'finished', 'suspended'];
 
 export interface ModEvent {
-  type: 'session.start' | 'session.end' | 'turn.start' | 'turn.complete';
+  type: 'session.start' | 'session.end' | 'turn.start' | 'turn.complete' | 'quota';
   sessionId: string;
   data?: Record<string, unknown>;
 }

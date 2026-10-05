@@ -88,6 +88,15 @@ it('rejects unknown event types and malformed or oversized bodies', async () => 
   expect((await req(s, '/v1/events', { token: t, method: 'POST', raw: '{not json' })).status).toBe(400);
   expect((await req(s, '/v1/events', { token: t, method: 'POST', raw: JSON.stringify({ type: 'turn.start', sessionId: 'x', pad: 'a'.repeat(3 * 1024 * 1024) }) })).status).toBe(400);
 });
+it('accepts a quota event with a session token and does not move the session state', async () => {
+  const s = await boot();
+  const t = s.sessionTokenFor('shop-api')!;
+  await req(s, '/v1/events', ev(t, 'session.start'));
+  const rateLimits = [{ kind: 'five_hour', percentUsed: 10, resetsAt: '2026-10-05T15:00:00Z' }];
+  expect((await req(s, '/v1/events', ev(t, 'quota', { rateLimits }))).status).toBe(204);
+  expect((await state(s)).main.state).toBe('idle');
+  expect((await req(s, '/v1/events', ev(t, 'quotas'))).status).toBe(400);
+});
 it('delivers inbox messages until they are acknowledged, and only to their owner', async () => {
   const s = await boot();
   await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'backend' } });
@@ -136,4 +145,80 @@ it('accepts a turn.complete with a large final answer (well above the default bo
   expect(entries).toHaveLength(1);
   expect(entries[0].truncated).toBe(true);
   expect(entries[0].text.length).toBeGreaterThan(100 * 1024);
+});
+
+it('recovery_report belongs to the recovery role only; start_recovery to the main; a recovery may list agents and ask the user', async () => {
+  const { handleV1 } = await import('../src/server/v1');
+  const { SessionTokens } = await import('../src/server/security');
+  const { AgentRegistry } = await import('../src/server/agents/registry');
+  const { Inbox } = await import('../src/server/agents/inbox');
+  const { QuestionQueue } = await import('../src/server/questions/queue');
+  const tokens = new SessionTokens();
+  const registry = new AgentRegistry();
+  registry.register({ slug: 'shop-api', role: 'main', profile: 'main' });
+  registry.register({ slug: 'fix-login', role: 'agent', profile: 'backend' });
+  registry.register({ slug: 'recover-fix-login', role: 'recovery', profile: 'recovery' });
+  registry.register({ slug: 'review-fix-login', role: 'reviewer', profile: 'reviewer' });
+  const called: string[] = [];
+  const handler = (name: string) => async (slug: string) => { called.push(`${name}:${slug}`); return { status: 'ok' }; };
+  const ctx = {
+    tokens, registry, inbox: new Inbox(), questions: new QuestionQueue(), handleModEvent: () => {}, guard: () => ({ decision: 'allow' as const }),
+    tools: { recovery_report: handler('recovery_report'), start_recovery: handler('start_recovery'), list_agents: handler('list_agents'), ask_user: handler('ask_user') },
+  };
+  const server = http.createServer((rq, rs) => { void handleV1(ctx, rq, rs, new URL(rq.url ?? '/', 'http://127.0.0.1')); });
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', () => ok()));
+  const port = (server.address() as { port: number }).port;
+  const call = (slug: string, tool: string): Promise<number> => new Promise((resolve, reject) => {
+    const body = JSON.stringify({});
+    const r = http.request({ host: '127.0.0.1', port, path: `/v1/tools/${tool}`, method: 'POST', headers: { authorization: `Bearer ${tokens.issue(slug)}`, 'content-type': 'application/json' } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode ?? 0)); });
+    r.on('error', reject);
+    r.end(body);
+  });
+  try {
+    expect(await call('recover-fix-login', 'recovery_report')).toBe(200);
+    for (const slug of ['fix-login', 'shop-api', 'review-fix-login']) expect(await call(slug, 'recovery_report'), slug).toBe(403);
+    expect(await call('shop-api', 'start_recovery')).toBe(200);
+    for (const slug of ['fix-login', 'recover-fix-login', 'review-fix-login']) expect(await call(slug, 'start_recovery'), slug).toBe(403);
+    expect(await call('recover-fix-login', 'list_agents')).toBe(200);
+    expect(await call('recover-fix-login', 'ask_user')).toBe(200);
+    for (const tool of ['step_done', 'checklist_set', 'spawn_agent', 'review_verdict']) expect(await call('recover-fix-login', tool), tool).toBe(403);
+    expect(called).toEqual(['recovery_report:recover-fix-login', 'start_recovery:shop-api', 'list_agents:recover-fix-login', 'ask_user:recover-fix-login']);
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
+});
+
+it('resume_agent belongs to the main only: an agent, a reviewer or a recovery calling it gets 403', async () => {
+  const { handleV1 } = await import('../src/server/v1');
+  const { SessionTokens } = await import('../src/server/security');
+  const { AgentRegistry } = await import('../src/server/agents/registry');
+  const { Inbox } = await import('../src/server/agents/inbox');
+  const { QuestionQueue } = await import('../src/server/questions/queue');
+  const tokens = new SessionTokens();
+  const registry = new AgentRegistry();
+  registry.register({ slug: 'shop-api', role: 'main', profile: 'main' });
+  registry.register({ slug: 'fix-login', role: 'agent', profile: 'backend' });
+  registry.register({ slug: 'recover-fix-login', role: 'recovery', profile: 'recovery' });
+  registry.register({ slug: 'review-fix-login', role: 'reviewer', profile: 'reviewer' });
+  const called: unknown[] = [];
+  const ctx = {
+    tokens, registry, inbox: new Inbox(), questions: new QuestionQueue(), handleModEvent: () => {}, guard: () => ({ decision: 'allow' as const }),
+    tools: { resume_agent: async (slug: string, body: unknown) => { called.push({ slug, body }); return { status: 'ok', started: [], scheduled: [] }; } },
+  };
+  const server = http.createServer((rq, rs) => { void handleV1(ctx, rq, rs, new URL(rq.url ?? '/', 'http://127.0.0.1')); });
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', () => ok()));
+  const port = (server.address() as { port: number }).port;
+  const call = (slug: string): Promise<number> => new Promise((resolve, reject) => {
+    const r = http.request({ host: '127.0.0.1', port, path: '/v1/tools/resume_agent', method: 'POST', headers: { authorization: `Bearer ${tokens.issue(slug)}`, 'content-type': 'application/json' } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode ?? 0)); });
+    r.on('error', reject);
+    r.end(JSON.stringify({ names: ['fix-login'] }));
+  });
+  try {
+    for (const slug of ['fix-login', 'recover-fix-login', 'review-fix-login']) expect(await call(slug), slug).toBe(403);
+    expect(called).toEqual([]);
+    expect(await call('shop-api')).toBe(200);
+    expect(called).toEqual([{ slug: 'shop-api', body: { names: ['fix-login'] } }]);
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
 });

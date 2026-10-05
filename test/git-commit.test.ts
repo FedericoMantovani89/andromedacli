@@ -1,12 +1,15 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createAgentWorktree } from '../src/server/git/worktree';
 import { installPushHook } from '../src/server/git/hooks';
-import { commitStep } from '../src/server/git/commit';
+import { commitStep, commitWip } from '../src/server/git/commit';
 import { pushBranch } from '../src/server/git/push';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
 import { makeRepo, gitSync, branchesOf } from './git-helpers';
+
+// Real git: slow on a busy machine, so these tests get a longer budget.
+vi.setConfig({ testTimeout: 60_000 });
 
 async function setup(o: { remote?: boolean; identity?: boolean } = {}) {
   const t = makeRepo({ remote: o.remote ?? true, identity: o.identity });
@@ -60,6 +63,59 @@ it('works when the repository has no configured identity', async () => {
   writeFileSync(join(wt.path, 'a.txt'), 'x');
   const r = await step(2, 6, 'Tests');
   expect(r.ok, JSON.stringify(r)).toBe(true);
+});
+const wip = (path: string, reason = 'budget alert') =>
+  commitWip({ worktree: path, slug: 'fix-login', plan: 'shop-api', reason, secretPatterns: DEFAULT_SECRET_PATTERNS });
+
+it('a WIP with changes commits them with the wip subject and the trailers', async () => {
+  const { wt } = await setup();
+  writeFileSync(join(wt.path, 'half.txt'), 'x');
+  const r = await wip(wt.path);
+  expect(r.ok, JSON.stringify(r)).toBe(true);
+  expect(gitSync(wt.path, 'log', '-1', '--format=%B')).toBe('wip: budget alert\n\nAgent: fix-login\nTicket: fix-login\nPiano: shop-api');
+  expect(gitSync(wt.path, 'show', '--name-only', '--format=', 'HEAD')).toBe('half.txt');
+  if (r.ok) expect(r.sha).toBe(gitSync(wt.path, 'rev-parse', 'HEAD'));
+});
+it('a WIP without changes makes no commit and returns the current HEAD', async () => {
+  const { wt } = await setup();
+  const head = gitSync(wt.path, 'rev-parse', 'HEAD');
+  expect(await wip(wt.path)).toEqual({ ok: true, sha: head });
+  expect(gitSync(wt.path, 'rev-parse', 'HEAD')).toBe(head);
+});
+it('a WIP never commits a secret: it unstages everything and names the files', async () => {
+  const { wt } = await setup();
+  writeFileSync(join(wt.path, 'ok.txt'), 'fine');
+  writeFileSync(join(wt.path, '.env'), 'TOKEN=abc');
+  const head = gitSync(wt.path, 'rev-parse', 'HEAD');
+  expect(await wip(wt.path, 'budget stop')).toEqual({ ok: false, code: 'secrets', files: ['.env'] });
+  expect(gitSync(wt.path, 'rev-parse', 'HEAD')).toBe(head);
+  expect(gitSync(wt.path, 'diff', '--cached', '--name-only')).toBe('');
+});
+it('a WIP reports index.lock and works without a configured identity', async () => {
+  const { wt } = await setup({ identity: false });
+  writeFileSync(join(wt.path, 'a.txt'), 'x');
+  expect((await wip(wt.path)).ok).toBe(true);
+  const lock = gitSync(wt.path, 'rev-parse', '--path-format=absolute', '--git-path', 'index.lock');
+  writeFileSync(lock, '');
+  expect(await wip(wt.path)).toMatchObject({ ok: false, code: 'index_locked' });
+});
+it('a WIP during a merge refuses with code merging and stages nothing', async () => {
+  const { repo, wt } = await setup();
+  // a conflicting change on another branch, merged into the agent's worktree
+  gitSync(repo, 'checkout', '-q', '-b', 'other');
+  writeFileSync(join(repo, 'README.md'), 'theirs\n');
+  gitSync(repo, 'commit', '-q', '-am', 'theirs');
+  writeFileSync(join(wt.path, 'README.md'), 'mine\n');
+  gitSync(wt.path, 'commit', '-q', '-am', 'mine');
+  try { gitSync(wt.path, 'merge', '-q', 'other'); } catch { /* the conflict is the point */ }
+  expect(gitSync(wt.path, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).not.toBe('');
+  writeFileSync(join(wt.path, 'new.txt'), 'x');
+  const head = gitSync(wt.path, 'rev-parse', 'HEAD');
+  const r = await wip(wt.path);
+  expect(r).toMatchObject({ ok: false, code: 'merging' });
+  expect(gitSync(wt.path, 'rev-parse', 'HEAD')).toBe(head);
+  expect(gitSync(wt.path, 'diff', '--cached', '--name-only').split('\n')).not.toContain('new.txt');
+  expect(gitSync(wt.path, 'status', '--porcelain')).toContain('?? new.txt');
 });
 it('push: only the agent branch goes out, with the hook installed', async () => {
   const { repo, wt, remote, step } = await setup();

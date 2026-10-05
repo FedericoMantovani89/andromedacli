@@ -14,7 +14,7 @@ it.skipIf(!hasClaude)('claude plugin validate accepts the mod and lists the expe
     'tool.call{tool=mcp__console-mod__spawn_agent}', 'tool.call{tool=mcp__console-mod__list_agents}', 'tool.call{tool=mcp__console-mod__ask_user}']) {
     expect(out, hook).toContain(hook);
   }
-  for (const call of ['$.http.fetch', '$.tool.register', '$.prompt.submit', '$.clock.every', '$.session.id']) {
+  for (const call of ['$.http.fetch', '$.tool.register', '$.prompt.submit', '$.clock.every', '$.session.id', '$.session.usage']) {
     expect(out, call).toContain(call);
   }
 });
@@ -31,4 +31,12 @@ it('the module has no setTimeout and no dynamic env names (not available or refu
 it('the manifest names the plugin console-mod (tool names are mcp__console-mod__<tool>)', () => {
   const manifest = JSON.parse(readFileSync(join(modDir, '.claude-plugin', 'plugin.json'), 'utf8'));
   expect(manifest.name).toBe('console-mod');
+});
+// `claude plugin validate` cuts its hook list ("... [+N chars]") before the hooks added last, so the Phase 5 hooks are checked by
+// name in the module itself; their call ($.session.usage) is in the validator's calls line above.
+it('the Phase 5 hooks are registered by name in the module', () => {
+  const src = readFileSync(join(modDir, 'hooks', 'register.js'), 'utf8');
+  expect(src).toContain("on('session.measure'");
+  for (const tool of ['start_recovery', 'recovery_report', 'resume_agent']) expect(src, tool).toContain(`{ tool: 'mcp__console-mod__${tool}' }`);
+  expect(src).toContain('$.session.usage()');
 });

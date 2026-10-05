@@ -1,37 +1,108 @@
 import type { StateMessage } from '../shared/protocol';
 import { runningAgents } from '../shared/stats';
-import { bindText, k } from './i18n-client';
+import { api } from './api';
+import { bindText, k, t } from './i18n-client';
 
-function item(label: string, valueEl: HTMLElement): HTMLElement {
-  const wrap = document.createElement('span');
-  const l = document.createElement('span');
-  bindText(l, label);
-  const sep = document.createElement('span');
-  sep.textContent = ' ';
-  wrap.append(l, sep, valueEl);
-  return wrap;
+interface Bar {
+  budget: HTMLElement;
+  quota: HTMLElement;
+  sleep: HTMLElement;
+  resume: HTMLButtonElement;
+  agents: HTMLElement;
+  suspended: HTMLElement;
+  /** The countdown refreshes by itself between state pushes; only while the console sleeps. */
+  timer?: ReturnType<typeof setInterval>;
+  sleepState?: NonNullable<StateMessage['sleep']>;
 }
 
-const na = (): HTMLElement => {
-  const v = document.createElement('span');
-  bindText(v, 'common.notAvailable'); // no data source yet: "n/a", never a zero (P7)
-  return v;
-};
+// The nodes of a bar are made once and only updated afterwards: replacing them on every push would drop a focused button.
+const bars = new WeakMap<HTMLElement, Bar>();
 
-/** Bottom bar (SPEC 5.7). Budget and quotas have no source in Phase 1, so they show n/a. */
+const span = (): HTMLElement => document.createElement('span');
+const gap = (): HTMLElement => { const s = span(); s.textContent = ' '; return s; };
+
+function build(el: HTMLElement): Bar {
+  const label = (key: string): HTMLElement => { const l = span(); bindText(l, key); return l; };
+  const na = (): HTMLElement => label('common.notAvailable'); // no data source: "n/a", never a zero (P7)
+  const budget = span();
+  budget.append(label(k('statusbar.budget')), gap(), na());
+  const quota = span();
+  const sleep = span();
+  sleep.hidden = true;
+  // Always visible (SPEC 18.4), usable only while the console sleeps; clicking it never takes the keyboard from where it is.
+  const resume = document.createElement('button');
+  resume.type = 'button';
+  resume.className = 'statusbar-resume';
+  resume.disabled = true;
+  bindText(resume, 'statusbar.resumeNow');
+  resume.addEventListener('mousedown', (ev) => ev.preventDefault());
+  resume.addEventListener('click', () => { void api('/api/sleep/resume', { method: 'POST' }).catch(() => undefined); });
+  const agents = span();
+  const suspended = span();
+  const bar: Bar = { budget, quota, sleep, resume, agents, suspended };
+  el.replaceChildren(budget, quota, sleep, resume, agents, suspended);
+  return bar;
+}
+
+/** H:MM:SS left until `until`, or null when the time is unknown or past. Digits only, so it needs no translation. */
+function remaining(until: string | undefined, now: number): string | null {
+  const at = until === undefined ? Number.NaN : Date.parse(until);
+  if (!Number.isFinite(at)) return null;
+  const s = Math.max(0, Math.round((at - now) / 1000));
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${Math.floor(s / 3600)}:${two(Math.floor((s % 3600) / 60))}:${two(s % 60)}`;
+}
+
+/** The reset time: the hour for one within a day, the date and the hour for a later one (a weekly reset). Never a made-up value. */
+export function formatWhen(until: string | undefined, now: number): string | null {
+  const at = until === undefined ? Number.NaN : Date.parse(until);
+  if (!Number.isFinite(at)) return null;
+  const d = new Date(at);
+  return at - now > 24 * 60 * 60_000
+    ? d.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function paintSleep(bar: Bar): void {
+  const s = bar.sleepState;
+  bar.sleep.hidden = s === undefined;
+  bar.resume.disabled = s === undefined || s.phase === 'probing';
+  if (!s) {
+    // Hidden and empty: a stale key would be retranslated for nothing.
+    delete bar.sleep.dataset.i18n;
+    delete bar.sleep.dataset.i18nParams;
+    bar.sleep.textContent = '';
+    return;
+  }
+  const now = Date.now();
+  const time = formatWhen(s.until, now) ?? t('common.notAvailable');
+  const left = remaining(s.until, now) ?? t('common.notAvailable');
+  if (s.phase === 'probing') bindText(bar.sleep, 'statusbar.sleepProbing');
+  else if (s.weekly) bindText(bar.sleep, 'statusbar.sleepWeekly', { time });
+  else bindText(bar.sleep, 'statusbar.sleep', { time, remaining: left });
+}
+
+/** Bottom bar (SPEC 5.7): plan budget (no source yet: n/a), subscription quota, the sleep for a usage limit, agents. */
 export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
-  el.replaceChildren();
-  const running = runningAgents(state.main, state.agents);
-  const agents = document.createElement('span');
-  bindText(agents, 'statusbar.agents', { count: running });
-  const suspended = document.createElement('span');
-  // Nothing can be suspended in Phase 1, so 0 is real data here, not a missing value.
-  bindText(suspended, 'statusbar.suspended', { count: 0 });
-  el.append(
-    item(k('statusbar.budget'), na()),
-    item(k('statusbar.quota5h'), na()),
-    item(k('statusbar.quotaWeek'), na()),
-    agents,
-    suspended,
-  );
+  const bar = bars.get(el) ?? build(el);
+  bars.set(el, bar);
+  // The quota percent is absent when unknown: n/a, never zero.
+  bar.quota.replaceChildren();
+  if (state.quota && Number.isFinite(state.quota.percent)) {
+    const q = span();
+    bindText(q, 'statusbar.quota', { percent: Math.round(state.quota.percent) });
+    bar.quota.append(q, gap());
+  } else {
+    const l = span(); bindText(l, 'statusbar.quotaLabel');
+    const v = span(); bindText(v, 'common.notAvailable');
+    bar.quota.append(l, gap(), v, gap());
+  }
+  bar.sleepState = state.sleep && state.sleep.phase !== 'awake' ? state.sleep : undefined;
+  paintSleep(bar);
+  if (bar.sleepState && bar.timer === undefined) bar.timer = setInterval(() => paintSleep(bar), 1000);
+  else if (!bar.sleepState && bar.timer !== undefined) { clearInterval(bar.timer); bar.timer = undefined; }
+  // The counter uses the limit in force now (the quota may have cut it); without it the plain count is shown.
+  if (state.limits) bindText(bar.agents, 'statusbar.agentsOf', { active: state.limits.active, max: state.limits.max });
+  else bindText(bar.agents, 'statusbar.agents', { count: runningAgents(state.main, state.agents) });
+  bindText(bar.suspended, 'statusbar.suspended', { count: state.agents.filter((a) => a.state === 'suspended').length });
 }

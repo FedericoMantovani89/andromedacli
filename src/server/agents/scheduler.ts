@@ -1,4 +1,5 @@
 import type { AgentRegistry } from './registry';
+import { effectiveLimits, type QuotaStep } from '../budget/quota';
 
 export interface SpawnRequest {
   slug: string;
@@ -8,6 +9,17 @@ export interface SpawnRequest {
   source: 'main' | 'user';
   /** A reviewer of a delivered ticket: its folder is a detached checkout of that commit, read-only (SPEC 15.3). */
   review?: { ticket: string; sha: string };
+  /** A recovery of a stopped ticket: a detached checkout of its WIP commit, read-only (SPEC 16.5). */
+  recovery?: { ticket: string; sha: string };
+  /** A replacement agent: its worktree checks out this EXISTING branch (the stopped agent's) instead of a new one (SPEC 16.5). */
+  resumeBranch?: string;
+  /**
+   * A suspended agent resumed after a usage limit (SPEC 18.4): `claude --resume <sessionId>` in its EXISTING worktree, same slug,
+   * no goal message (the session keeps its context). It waits for a slot like any other request and counts as active once started.
+   */
+  resume?: { sessionId: string };
+  /** Token budget of this ticket; absent means the profile's `budget_tokens`, then `budget.agentTokens` (SPEC 16.2). */
+  budget?: number;
 }
 
 /** `ready` is present when the start is asynchronous (it creates a worktree first): it rejects if the start fails. */
@@ -22,6 +34,8 @@ export interface SchedulerOptions {
    * synchronous part of the call (the registry state), so the next decision sees the slot as taken.
    */
   start: (r: SpawnRequest) => void | Promise<void>;
+  /** The subscription quota's step, read on every decision: halve cuts the limits, freeze admits nobody (SPEC 18.2). */
+  multiplier?: () => QuotaStep;
   /** A queued request whose start failed (it is dropped; the queue goes on). */
   onStartError?: (r: SpawnRequest, error: unknown) => void;
 }
@@ -33,6 +47,7 @@ export interface SchedulerOptions {
 export class Scheduler {
   private readonly waiting: SpawnRequest[] = [];
   private closed = false;
+  private releasing = false;
 
   constructor(private readonly o: SchedulerOptions) {
     // Every state change may free a slot (an agent went idle, waits for the user, or its process died).
@@ -57,14 +72,22 @@ export class Scheduler {
 
   /** Starts as many queued requests, oldest first, as there is room for. Safe to call at any time and repeatedly. */
   release(): void {
-    while (!this.closed && this.waiting.length > 0 && this.hasRoom()) {
-      const next = this.waiting.shift()!;
-      try {
-        const started = this.o.start(next);
-        if (started instanceof Promise) started.catch((error: unknown) => this.o.onStartError?.(next, error));
-      } catch (error) {
-        this.o.onStartError?.(next, error);
+    // A start changes the registry, whose listener calls release() again: that nested call must not start the next request before
+    // this one has finished starting (oldest first). The outer loop goes on by itself.
+    if (this.releasing) return;
+    this.releasing = true;
+    try {
+      while (!this.closed && this.waiting.length > 0 && this.hasRoom()) {
+        const next = this.waiting.shift()!;
+        try {
+          const started = this.o.start(next);
+          if (started instanceof Promise) started.catch((error: unknown) => this.o.onStartError?.(next, error));
+        } catch (error) {
+          this.o.onStartError?.(next, error);
+        }
       }
+    } finally {
+      this.releasing = false;
     }
   }
 
@@ -80,8 +103,18 @@ export class Scheduler {
     if (i >= 0) this.waiting.splice(i, 1);
   }
 
+  /** The limits in force now: the configured ones under the subscription quota's step (SPEC 18.2). */
+  effectiveLimits(): { global: number; perPlan: number } {
+    return effectiveLimits(this.o.limits(), this.o.multiplier?.() ?? 'none');
+  }
+
+  /** Agents counting against the limit right now. */
+  activeCount(): number {
+    return this.o.registry.list().filter((a) => this.o.registry.isActive(a.slug)).length;
+  }
+
   private hasRoom(): boolean {
-    const { global, perPlan } = this.o.limits();
+    const { global, perPlan } = this.effectiveLimits();
     const active = this.o.registry.list().filter((a) => this.o.registry.isActive(a.slug)).length;
     return active < Math.min(global, perPlan);
   }

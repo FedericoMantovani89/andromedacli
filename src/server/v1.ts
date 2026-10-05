@@ -21,15 +21,17 @@ export interface V1Context {
   afterTool?(name: string): void;
   /** The guard's verdict for a tool call of this session (SPEC 14): rules, mode (enforce/shadow) and log live behind it. */
   guard(slug: string, tool: string, input: Record<string, unknown>): GuardAnswer;
+  /** A sign of life of the session that is not an event (a guard question, a console tool call): it ends a silence. */
+  activity?(slug: string): void;
 }
 
-const EVENT_TYPES: ModEvent['type'][] = ['session.start', 'session.end', 'turn.start', 'turn.complete'];
+const EVENT_TYPES: ModEvent['type'][] = ['session.start', 'session.end', 'turn.start', 'turn.complete', 'quota'];
 
 /** Which role may call which console tool (SPEC 13.4). An agent's native AskUserQuestion reaches ask_user through the mod. */
 const TOOL_ROLES: Record<string, Role[]> = {
   spawn_agent: ['main'],
-  list_agents: ['main', 'agent', 'reviewer'],
-  ask_user: ['main', 'agent', 'reviewer'],
+  list_agents: ['main', 'agent', 'reviewer', 'recovery'],
+  ask_user: ['main', 'agent', 'reviewer', 'recovery'],
   // The ticket flow belongs to agents: the console commits, validates and pushes on their behalf (SPEC 8.4).
   checklist_set: ['agent'],
   step_done: ['agent'],
@@ -41,6 +43,11 @@ const TOOL_ROLES: Record<string, Role[]> = {
   merge_ticket: ['main'],
   propose_release: ['main'],
   review_verdict: ['reviewer'],
+  // Recovery after a stop (SPEC 16.5): the main asks, the recovery reports once, the console restarts the ticket.
+  start_recovery: ['main'],
+  recovery_report: ['recovery'],
+  // After a usage limit only the main decides what to resume (SPEC 18.4); the console staggers it and checks the quota.
+  resume_agent: ['main'],
 };
 
 /**
@@ -73,6 +80,7 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
     try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
     const b = (typeof body === 'object' && body !== null ? body : {}) as { tool?: unknown; input?: unknown };
     if (typeof b.tool !== 'string' || typeof b.input !== 'object' || b.input === null || Array.isArray(b.input)) return fail(res, 400, 'bad_request');
+    try { ctx.activity?.(slug); } catch { /* bookkeeping must not change the verdict */ }
     try {
       return send(res, 200, ctx.guard(slug, b.tool, b.input as Record<string, unknown>));
     } catch {
@@ -108,6 +116,7 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
     if (!handler) return fail(res, 404, 'not_found');
     let body: unknown;
     try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+    try { ctx.activity?.(slug); } catch { /* bookkeeping must not change the answer */ }
     try {
       const result = await handler(slug, body);
       ctx.afterTool?.(name);

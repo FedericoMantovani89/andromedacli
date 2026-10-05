@@ -109,8 +109,33 @@ export async function removeWorktree(repo: string, path: string): Promise<void> 
  * agent/<plan>/<slug> from the plan branch, in <repo>.worktrees/<slug> (SPEC 9.2). Refuses an existing folder or branch;
  * anything it created is removed again if a later step fails.
  */
-export function createAgentWorktree(o: { repo: string; plan: string; slug: string }): Promise<{ path: string; branch: string }> {
-  return withRepoLock(o.repo, () => createAgentWorktreeUnlocked(o));
+export function createAgentWorktree(o: { repo: string; plan: string; slug: string; /** an existing branch to check out instead of a new one */ branch?: string }): Promise<{ path: string; branch: string }> {
+  return withRepoLock(o.repo, () => (o.branch === undefined ? createAgentWorktreeUnlocked(o) : resumeBranchWorktreeUnlocked({ ...o, branch: o.branch })));
+}
+
+/**
+ * A replacement agent continues a stopped one (SPEC 16.5): its own folder, the EXISTING branch of the stopped agent. Git refuses a
+ * branch that another worktree has checked out, so the old worktree must be gone first. A failure removes the folder, never the branch.
+ */
+async function resumeBranchWorktreeUnlocked(o: { repo: string; plan: string; slug: string; branch: string }): Promise<{ path: string; branch: string }> {
+  if (!SLUG.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
+  if (!/^[A-Za-z0-9._/-]+$/.test(o.branch) || o.branch.startsWith('-')) throw new GitError('git.badName', `invalid branch ${o.branch}`);
+  const path = worktreePathFor(o.repo, o.slug);
+  if (existsSync(path)) throw new GitError('git.worktreeExists', `folder ${path} already exists`);
+  if ((await git(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${o.branch}`])).code !== 0) throw new GitError('git.failed', `branch ${o.branch} does not exist`);
+  mkdirSync(dirname(path), { recursive: true });
+  const added = await git(o.repo, ['worktree', 'add', '-q', fwd(path), o.branch]);
+  if (added.code !== 0) {
+    await removeWorktree(o.repo, path);
+    throw new GitError('git.failed', added.stderr.trim());
+  }
+  try {
+    await excludeConsoleFolder(o.repo);
+  } catch (e) {
+    await removeWorktree(o.repo, path);
+    throw new GitError('git.failed', e instanceof Error ? e.message : String(e));
+  }
+  return { path, branch: o.branch };
 }
 
 async function createAgentWorktreeUnlocked(o: { repo: string; plan: string; slug: string }): Promise<{ path: string; branch: string }> {

@@ -39,3 +39,18 @@ it('does not wrap an absolute .exe path in cmd.exe (spaces in "Program Files" br
   expect(l.file).toBe('C:/Program Files/nodejs/node.exe');
   expect(l.args).toEqual(['fake.cjs']);
 });
+
+it('resumeId adds --resume and the session id (also through cmd.exe on Windows)', () => {
+  const l = buildClaudeLaunch({ ...base, resumeId: '3f2a9c1e-7b4d-4e2a-9f00-1234abcd5678', platform: 'linux' });
+  const i = l.args.indexOf('--resume');
+  expect(i).toBeGreaterThanOrEqual(0);
+  expect(l.args[i + 1]).toBe('3f2a9c1e-7b4d-4e2a-9f00-1234abcd5678');
+  const w = buildClaudeLaunch({ ...base, resumeId: 'abc-123', platform: 'win32' });
+  expect(w.args.slice(w.args.indexOf('--resume'), w.args.indexOf('--resume') + 2)).toEqual(['--resume', 'abc-123']);
+  expect(buildClaudeLaunch(base).args).not.toContain('--resume');
+});
+it('a session id with spaces, quotes or shell characters is rejected (it becomes a command-line argument)', () => {
+  for (const bad of ['abc 123', 'abc"123', "abc'123", 'abc&calc', 'abc;rm', '', '--model', 'a/b']) {
+    expect(() => buildClaudeLaunch({ ...base, resumeId: bad, platform: 'linux' }), bad).toThrow(/invalid session id/);
+  }
+});

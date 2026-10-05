@@ -2,15 +2,23 @@ import type { QueueItem } from '../shared/protocol';
 import { api } from './api';
 import { reconcile } from './dom';
 import { bindText, k, setPlaceholder } from './i18n-client';
-import { createConfirmEntry, createDecisionEntry, type Entry } from './console-items';
+import { createBudgetEntry, createConfirmEntry, createDecisionEntry, createWeeklyEntry, type Entry } from './console-items';
 
 /** Buttons that must not take the keyboard from where it is (answering from the queue never moves the focus). */
 function keepFocus(button: HTMLElement): void {
   button.addEventListener('mousedown', (ev) => ev.preventDefault());
 }
 
+/** The console's own decision kinds that have an entry of their own (`payload.kind`). */
+function payloadKind(item: QueueItem): unknown {
+  const p = item.payload;
+  return typeof p === 'object' && p !== null ? (p as Record<string, unknown>).kind : undefined;
+}
+
 function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
   if (item.kind === 'confirm') return createConfirmEntry(item, send);
+  if (item.kind === 'decision' && payloadKind(item) === 'budget_stop') return createBudgetEntry(item, send);
+  if (item.kind === 'decision' && payloadKind(item) === 'weekly_limit') return createWeeklyEntry(item, send);
   if (item.kind === 'decision') return createDecisionEntry(item, send);
   const el = document.createElement('div');
   el.className = 'queue-item';

@@ -47,6 +47,31 @@ it('refuses an existing folder or branch and leaves nothing behind', async () =>
   // the branch of the removed worktree still exists (the work is the branch), so the same name is refused
   await expect(createAgentWorktree({ repo, plan: 'p-one', slug: 'other-job' })).rejects.toBeInstanceOf(GitError);
 });
+it('createAgentWorktree with an existing branch checks it out (a replacement agent continues the same work)', async () => {
+  const { repo } = makeRepo();
+  const first = await createAgentWorktree({ repo, plan: 'p-one', slug: 'fix-x' });
+  writeFileSync(join(first.path, 'wip.txt'), 'half\n');
+  gitSync(first.path, 'add', '-A');
+  gitSync(first.path, '-c', 'user.name=T', '-c', 'user.email=t@e.x', 'commit', '-q', '-m', 'wip');
+  const wip = gitSync(first.path, 'rev-parse', 'HEAD');
+  // git refuses a second worktree on a branch that is checked out: the old one goes first
+  await expect(createAgentWorktree({ repo, plan: 'p-one', slug: 'fix-x-r2', branch: first.branch })).rejects.toBeInstanceOf(GitError);
+  expect(existsSync(join(dirname(repo), `${basename(repo)}.worktrees`, 'fix-x-r2'))).toBe(false);
+  expect(gitSync(repo, 'rev-parse', first.branch)).toBe(wip); // the failed attempt did not touch the branch
+  await removeWorktree(repo, first.path);
+  const next = await createAgentWorktree({ repo, plan: 'p-one', slug: 'fix-x-r2', branch: first.branch });
+  expect(next).toEqual({ path: join(dirname(repo), `${basename(repo)}.worktrees`, 'fix-x-r2'), branch: 'agent/p-one/fix-x' });
+  expect(gitSync(next.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('agent/p-one/fix-x');
+  expect(gitSync(next.path, 'rev-parse', 'HEAD')).toBe(wip);
+  expect(readFileSync(join(next.path, 'wip.txt'), 'utf8')).toBe('half\n');
+  expect(gitSync(repo, 'branch', '--list', 'agent/p-one/fix-x-r2')).toBe(''); // no branch of its own
+});
+it('createAgentWorktree with a branch that does not exist refuses and creates nothing', async () => {
+  const { repo } = makeRepo();
+  await expect(createAgentWorktree({ repo, plan: 'p-one', slug: 'ghost-job', branch: 'agent/p-one/nobody' })).rejects.toMatchObject({ code: 'git.failed' });
+  expect(existsSync(join(dirname(repo), `${basename(repo)}.worktrees`, 'ghost-job'))).toBe(false);
+  expect(gitSync(repo, 'branch', '--list', 'agent/p-one/*')).toBe('');
+});
 it('removeWorktree takes the folder away and keeps the branch', async () => {
   const { repo } = makeRepo();
   const wt = await createAgentWorktree({ repo, plan: 'p-one', slug: 'gone-job' });

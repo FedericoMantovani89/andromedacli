@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect, describe } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -64,4 +64,31 @@ it('invalid git and guard entries fall back one by one and are reported', () => 
   expect(errors.map((e) => e.path).sort()).toEqual(['git.secretPatterns', 'git.testTimeoutMinutes', 'git.worktrees', 'guard.mode']);
   writeFileSync(p, JSON.stringify({ git: 5, guard: 'x' }));
   expect(loadConfig(p).errors.map((e) => e.path).sort()).toEqual(['git', 'guard.mode']);
+});
+
+describe('budget section', () => {
+  it('has the SPEC defaults', () => {
+    const { config } = loadConfig(join(dir(), 'none.json'));
+    expect(config.budget).toMatchObject({ agentTokens: 400000, alertPercent: 80, limitPercent: 100, stopPercent: 110, graceMinutes: 5 });
+    expect(config.budget.loop).toEqual({ sameCall: 5, sameError: 3, compactions: 2, stepMinutes: 30, silenceMinutes: 5 });
+    expect(config.budget.quota).toMatchObject({ halvePercent: 70, freezePercent: 85, stopPercent: 95 });
+  });
+
+  it('keeps the default and names the path of an invalid entry', () => {
+    const f = join(dir(), 'config.json');
+    writeFileSync(f, JSON.stringify({ schema: 1, budget: { agentTokens: -1, alertPercent: 90, limitPercent: 80, loop: { sameCall: 0 } } }));
+    const { config, errors } = loadConfig(f);
+    expect(config.budget.agentTokens).toBe(400000);
+    expect(config.budget.alertPercent).toBe(80); // alert must stay below limit
+    expect(config.budget.loop.sameCall).toBe(5);
+    expect(errors.map((e) => e.path).sort()).toEqual(['budget.agentTokens', 'budget.alertPercent', 'budget.limitPercent', 'budget.loop.sameCall'].sort());
+  });
+
+  it('accepts a valid override', () => {
+    const f = join(dir(), 'config.json');
+    writeFileSync(f, JSON.stringify({ schema: 1, budget: { agentTokens: 50000, alertPercent: 50, graceMinutes: 0 } }));
+    const { config, errors } = loadConfig(f);
+    expect(errors).toEqual([]);
+    expect(config.budget).toMatchObject({ agentTokens: 50000, alertPercent: 50, graceMinutes: 0 });
+  });
 });

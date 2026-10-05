@@ -10,6 +10,8 @@ export interface Profile {
   body: string;
   /** `console: read_only: true`: the session may not change anything (a reviewer); enforced by the guard. */
   readOnly: boolean;
+  /** `console: budget_tokens: N`: the token budget of this profile's sessions (SPEC 16); absent means the configured default. */
+  budgetTokens?: number;
   source: 'plan' | 'user' | 'shipped';
 }
 
@@ -42,7 +44,9 @@ function readProfile(file: string, name: string, source: Profile['source']): Pro
   if (!existsSync(file)) return undefined;
   const { meta, consoleKeys, body } = parseFrontmatter(readFileSync(file, 'utf8'));
   const model = meta.model && meta.model !== 'default' && /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/.test(meta.model) ? meta.model : undefined;
-  return { name, description: meta.description ?? '', model, body, readOnly: consoleKeys.read_only === 'true', source };
+  const bt = Number(consoleKeys.budget_tokens);
+  const budgetTokens = Number.isInteger(bt) && bt >= 1000 ? bt : undefined;
+  return { name, description: meta.description ?? '', model, body, readOnly: consoleKeys.read_only === 'true', budgetTokens, source };
 }
 
 /** SPEC 11.4: the plan's profiles override the user's, which override the shipped ones. */
@@ -76,9 +80,9 @@ export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir
 }
 
 /** An agent's system-prompt addition: its profile plus who it is and what the console offers it. */
-export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean }): string {
+export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean }): string {
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
-  const rulesFile = o.review ? 'reviewer-git.md' : 'agent-git.md';
+  const rulesFile = o.review ? 'reviewer-git.md' : o.recovery ? 'recovery-git.md' : 'agent-git.md';
   const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, plan: o.plan }) : '';
   const text = fill(template, { slug: o.slug, plan: o.plan, profile: o.profile.body, git: gitRules });
   return writePrompt(o.outDir, `agent-${o.slug}.md`, text.replace(/\n{3,}/g, '\n\n'));

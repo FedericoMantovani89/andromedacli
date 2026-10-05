@@ -328,3 +328,26 @@ describe('after delivery (Phase 4 statuses)', () => {
     }
   });
 });
+
+describe('stepClosed (the loop handling learns whether the step was progress)', () => {
+  it('says skipped for a skipped step and empty for a commit that changed no file', async () => {
+    const closed: { slug: string; skipped: boolean; empty: boolean }[] = [];
+    svc = new StepService({
+      tickets, plan: 'p',
+      worktreeOf: (slug) => (slug === 'a' ? { worktree: wt, branch } : undefined),
+      testCommand: () => command, testTimeoutMs: () => timeoutMs, secretPatterns: () => DEFAULT_SECRET_PATTERNS,
+      notifyMain: () => {}, changed: () => {},
+      stepClosed: (slug, o) => { closed.push({ slug, ...o }); },
+    });
+    await svc.checklistSet('a', ITEMS);
+    writeFileSync(join(wt, 'study.md'), 'notes\n');
+    expect((await done(1, { note: 'a decent note for this step' })).status).toBe('closed');
+    expect((await done(2, { note: 'nothing to write here, a real reason', skip: true })).status).toBe('closed');
+    expect((await done(3, { note: 'a decent note for this step' })).status).toBe('closed');
+    expect(closed).toEqual([
+      { slug: 'a', skipped: false, empty: false },
+      { slug: 'a', skipped: true, empty: true },
+      { slug: 'a', skipped: false, empty: true },
+    ]);
+  });
+});

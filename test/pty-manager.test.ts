@@ -72,3 +72,19 @@ it('killAll terminates the whole process tree, not just the direct child', async
   await until(() => !alive(), 5000);
   expect(alive()).toBe(false);
 });
+
+it('a late exit of a discarded process does not report the new session started under the same id', async () => {
+  const m = new PtyManager();
+  const exits: string[] = [];
+  m.onExit((id) => exits.push(id));
+  spawnFake(m, 'gamma-job');
+  await until(() => m.snapshot('gamma-job').toString().includes('READY gamma-job'));
+  await m.discard('gamma-job'); // the old process is being killed; its exit arrives later
+  spawnFake(m, 'gamma-job');
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(exits).toEqual([]);
+  expect(m.status('gamma-job')).toBe('running');
+  await m.killTree('gamma-job');
+  await until(() => exits.length === 1);
+  expect(exits).toEqual(['gamma-job']);
+});

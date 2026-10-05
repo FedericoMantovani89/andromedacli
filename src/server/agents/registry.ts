@@ -1,6 +1,6 @@
 import type { Activity, ModEvent } from '../../shared/activity';
 
-export type Role = 'main' | 'agent' | 'reviewer';
+export type Role = 'main' | 'agent' | 'reviewer' | 'recovery';
 
 export interface AgentRuntime {
   slug: string;
@@ -18,10 +18,14 @@ export interface AgentRuntime {
   readOnly?: boolean;
   /** The agent's own worktree and branch (Phase 3); absent for the main and when `git.worktrees` is off. */
   git?: { worktree: string; branch: string };
+  /** The folder the session runs in (from `session.start` or set by the console). */
+  cwd?: string;
 }
 
 export interface RegisterInput {
   slug: string; role: Role; profile: string; goal?: string; queued?: boolean; readOnly?: boolean;
+  /** The session to resume later, kept from an earlier registration (the main started again at a wake-up). */
+  sessionId?: string;
 }
 
 /** State machine for every session, fed by mod events and process lifecycle. Illegal transitions are ignored. */
@@ -35,6 +39,7 @@ export class AgentRegistry {
     this.agents.set(a.slug, {
       slug: a.slug, role: a.role, profile: a.profile, goal: a.goal, readOnly: a.readOnly,
       state: a.queued ? 'queued' : 'starting', pendingGoal: Boolean(a.goal) && !a.queued,
+      ...(a.sessionId !== undefined ? { sessionId: a.sessionId } : {}),
     });
     this.notify(a.slug);
   }
@@ -56,9 +61,26 @@ export class AgentRegistry {
     this.set(a, 'starting');
   }
 
+  /**
+   * A suspended session is resumed (`--resume`): same slug, worktree, session id and goal; it waits for a slot like a new launch.
+   * The session id is kept so a resume that fails before the session reports in can be tried again.
+   */
+  revive(slug: string): void {
+    const a = this.agents.get(slug);
+    if (!a) return;
+    a.finishing = false;
+    a.pendingGoal = false;
+    this.set(a, 'queued');
+  }
+
   setGit(slug: string, git: { worktree: string; branch: string } | undefined): void {
     const a = this.agents.get(slug);
     if (a) a.git = git;
+  }
+
+  setCwd(slug: string, cwd: string): void {
+    const a = this.agents.get(slug);
+    if (a) a.cwd = cwd;
   }
 
   /** The session is about to be ended on purpose (a merged ticket, a finished review). */
@@ -79,6 +101,7 @@ export class AgentRegistry {
     switch (e.type) {
       case 'session.start':
         a.sessionId = e.sessionId;
+        if (typeof e.data?.cwd === 'string') a.cwd = e.data.cwd;
         if (a.state === 'starting') this.set(a, 'idle');
         break;
       case 'turn.start':

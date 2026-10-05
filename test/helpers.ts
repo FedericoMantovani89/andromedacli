@@ -6,6 +6,31 @@ import { join } from 'node:path';
 import { afterEach } from 'vitest';
 import { startServer } from '../src/server/index';
 import type { Runner } from '../src/server/prereq/checks';
+import type { SleepClock } from '../src/server/budget/sleep';
+
+/** A sleep clock that records its timers and moves only when told; `advance` fires what is due. */
+export function fakeSleepClock(start = Date.parse('2026-10-05T10:00:00Z')) {
+  let t = start;
+  let nextId = 1;
+  const timers = new Map<number, { at: number; fn: () => void; ms: number }>();
+  const clock: SleepClock = {
+    now: () => t,
+    setTimeout: (fn, ms) => { const id = nextId++; timers.set(id, { at: t + ms, fn, ms }); return id; },
+    clearTimeout: (h) => { timers.delete(h as number); },
+  };
+  const advance = (ms: number): void => {
+    const target = t + ms;
+    for (;;) {
+      const due = [...timers.entries()].filter(([, x]) => x.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      timers.delete(due[0]);
+      t = Math.max(t, due[1].at);
+      due[1].fn();
+    }
+    t = target;
+  };
+  return { clock, advance, timers, now: () => t };
+}
 
 export type Running = Awaited<ReturnType<typeof startServer>>;
 
@@ -29,12 +54,14 @@ export function autoClose(): void {
  * A real server with the fake agent. Agents share the plan folder (`git.worktrees: false`, the Phase 2 behaviour) unless the
  * test passes a repository as `planRoot` and `config: { git: { worktrees: true } }`.
  */
-export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number } = {}): Promise<Running> {
+export async function bootServer(o: { planName?: string; language?: string; planRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock } = {}): Promise<Running> {
   const configDir = mkdtempSync(join(tmpdir(), 'h-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en', git: { worktrees: false }, ...o.config }));
   const s = await startServer({
     port: 0, planRoot: o.planRoot ?? mkdtempSync(join(tmpdir(), 'h-plan-')), configDir, planName: o.planName ?? 'shop-api',
     claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner, modDir: null, afterWorktreeCreated: o.afterWorktreeCreated, launchCheckMs: o.launchCheckMs,
+    // Transcripts: a folder of the test's own (or one nobody writes to), never the user's ~/.claude/projects.
+    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, sleepClock: o.sleepClock,
   });
   running.push(s);
   configFiles.set(s, join(configDir, 'config.json'));
