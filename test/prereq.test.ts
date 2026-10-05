@@ -17,10 +17,10 @@ it('compares dotted versions numerically', () => {
 it('reports ok with versions parsed from each tool', async () => {
   const r = await runChecks(fake({
     node: { code: 0, stdout: 'v24.15.0' }, git: { code: 0, stdout: 'git version 2.53.0.windows.3' },
-    claude: { code: 0, stdout: '2.1.289 (Claude Code)' },
+    claude: { code: 0, stdout: '2.1.289 (Claude Code)' }, gh: { code: 0, stdout: 'gh version 2.40.0 (2023-12-13)' },
   }));
-  expect(r.map((c) => [c.id, c.status, c.version])).toEqual([['node', 'ok', '24.15.0'], ['git', 'ok', '2.53.0'], ['claude', 'ok', '2.1.289']]);
-  expect(r.every((c) => c.required)).toBe(true);
+  expect(r.map((c) => [c.id, c.status, c.version])).toEqual([['node', 'ok', '24.15.0'], ['git', 'ok', '2.53.0'], ['claude', 'ok', '2.1.289'], ['gh', 'ok', '2.40.0']]);
+  expect(r.filter((c) => c.required).map((c) => c.id)).toEqual(['node', 'git', 'claude']);
 });
 it('flags Claude Code below 2.1.287 and Node below 22 as outdated', async () => {
   const r = await runChecks(fake({

@@ -47,6 +47,7 @@ import { LoopService } from './budget/loop-service';
 import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
+import { InstallService, type InstallEntry } from './prereq/install';
 
 export interface StartOptions {
   port: number;
@@ -74,6 +75,10 @@ export interface StartOptions {
   tickMs?: number;
   /** A test seam: the clock of the sleep timer (the real one is used by default). */
   sleepClock?: SleepClock;
+  /** A test seam: replaces the shipped table of installable tools (Phase 6F), so a test runs a trivial command instead of winget. */
+  installTable?: readonly InstallEntry[];
+  /** A test seam: the runner that probes for winget/npm before an install is offered. */
+  installRunner?: Runner;
 }
 export interface RunningServer {
   port: number;
@@ -474,8 +479,18 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   // Nobody pushes main from this checkout except the console, after the user approves a release (SPEC 9.1, 15.5).
   if (planIsRepo) await installReleaseHook(o.planRoot).catch(() => 'skipped_existing');
 
+  // Terminals that are not agent sessions (assisted installs); the install runs from the console's own folder and records in the config dir.
+  const utilityPtys = new PtyManager();
+  const installer = new InstallService({
+    ...(o.installTable ? { table: o.installTable } : {}),
+    ptys: utilityPtys, cwd: resolve(import.meta.dirname, '..', '..'), logPath: join(o.configDir, 'install.log'),
+    prereq: () => ctx.ensurePrereq(), refresh: () => refreshPrereq(), changed: () => broadcast(),
+    ...(o.installRunner ?? o.prereqRunner ? { run: (o.installRunner ?? o.prereqRunner)! } : {}),
+  });
+
   const ctx: Context = {
     getPort: () => port,
+    utilityPtys, installer,
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep,
@@ -742,6 +757,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       endTimers.clear();
       scheduler.close(); // before killing: exiting processes would otherwise free slots and start queued agents
       await ptys.killAll();
+      await utilityPtys.killAll();
       ws.closeAll();
       await new Promise<void>((done) => server.close(() => done()));
     },

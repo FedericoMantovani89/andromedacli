@@ -9,6 +9,7 @@ export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
   'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
+  'install.busy', 'install.unavailable',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -35,7 +36,7 @@ export interface SessionInfo {
 }
 
 export interface PrereqResult {
-  id: 'node' | 'git' | 'claude';
+  id: 'node' | 'git' | 'claude' | 'gh';
   required: boolean;
   status: 'ok' | 'outdated' | 'missing' | 'error' | 'not_required';
   version?: string;
@@ -83,6 +84,8 @@ export interface StateMessage {
   quota?: { percent: number; kind: string };
   /** Agents counting against the active-agent limit, and that limit as it is now (the quota step may have cut it). */
   limits?: { active: number; max: number };
+  /** The last assisted install that ended (Phase 6F); absent until one did since the console started. */
+  install?: { id: string; result: 'needs_admin' | 'failed' | 'done'; exitCode: number };
 }
 
 export interface ApiError {

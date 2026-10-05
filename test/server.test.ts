@@ -197,7 +197,7 @@ it('includes the prerequisite results in the state once the startup checks finis
   const s = await boot();
   await until(async () => (await request(s, '/api/state')).body.prereq !== null);
   const st = (await request(s, '/api/state')).body;
-  expect(st.prereq.map((c: any) => [c.id, c.status])).toEqual([['node', 'ok'], ['git', 'ok'], ['claude', 'ok']]);
+  expect(st.prereq.map((c: any) => [c.id, c.status])).toEqual([['node', 'ok'], ['git', 'ok'], ['claude', 'ok'], ['gh', 'ok']]);
 });
 it('blocks agent creation when a required tool is missing, with a code and the tool name', async () => {
   const missingGit: Runner = async (cmd, a, t) => {

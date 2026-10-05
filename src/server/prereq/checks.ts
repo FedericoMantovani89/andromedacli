@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 
 export type CheckStatus = 'ok' | 'outdated' | 'missing' | 'error' | 'not_required';
 export interface CheckResult {
-  id: 'node' | 'git' | 'claude';
+  id: 'node' | 'git' | 'claude' | 'gh';
   required: boolean;
   status: CheckStatus;
   version?: string;
@@ -50,9 +50,9 @@ export const defaultRunner: Runner = async (cmd, args, timeoutMs) => {
 };
 
 async function check(
-  run: Runner, id: CheckResult['id'], cmd: string, args: string[], minimum?: string,
+  run: Runner, id: CheckResult['id'], cmd: string, args: string[], minimum?: string, required = true,
 ): Promise<CheckResult> {
-  const base = { id, required: true } as const;
+  const base = { id, required } as const;
   try {
     const r = await run(cmd, args, CHECK_TIMEOUT_MS);
     if (r.code !== 0) return { ...base, status: 'error', message: `exit code ${r.code}` };
@@ -77,5 +77,7 @@ export function runChecks(run: Runner = defaultRunner, o: { claudeCommand?: stri
     check(run, 'node', 'node', ['--version'], MINIMUM.node),
     check(run, 'git', 'git', ['--version']),
     check(run, 'claude', claudeCmd!, [...claudeArgs, '--version'], MINIMUM.claude),
+    // Optional (the GitHub CLI is only for pull requests): missing never blocks anything.
+    check(run, 'gh', 'gh', ['--version'], undefined, false),
   ]);
 }
