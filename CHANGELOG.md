@@ -7,30 +7,28 @@ introduces the behaviour.
 
 ## [Unreleased]
 
-### Phase 6C: multiple plans
+Next: Phase 7 (external providers, optional); ask before starting.
+
+## Phase 6: multiple plans, full resume, notifications, templates, options (2026-10-05)
+
+### 6C: Multiple plans and tabs
 - One console now hosts several plans (one per project folder), each with its own main session, agents, tickets, queue and `.console/` folder, shown as tabs with a dot while its queue waits; `+ plan` opens a plan, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
 - `POST /api/plans`, `DELETE /api/plans/<name>`, `?plan=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first plan); `StateMessage.plans`; the open plans are remembered in `<configDir>/plans.json`.
 - The active-agent global limit counts agents of all plans; a freed slot in one plan starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all plans.
-### Phase 6B: notifications
 
+### 6A: Full resume
+- After a restart the main resumes its own session and the other agents come back dormant (no process, no quota spent); an agent whose turn was lost in a crash, or whose worktree is gone, is interrupted. The main gets one message with the lists.
+- Dormant agents wake when the user clicks them (Wake up), when work arrives for them, or when the main calls resume_agent (which now also accepts dormant and interrupted agents).
+- The console keeps agent sessions, undelivered inbox messages, the main session and a clean-stop flag across restarts; a saved usage-limit sleep is re-armed.
+- Stale worktrees (git.staleWorktreeDays, git.staleCheck) are flagged and reported once to the main; new main tool worktree_cleanup saves, pushes and removes a worktree, never a branch.
+
+### 6B: Notifications
 - The server raises a native Windows toast (node-notifier) for questions, permissions, the release confirmation, tickets that need a decision, budget decisions, the weekly limit, other decisions and interrupted agents, also with the browser tab closed.
 - Nothing is announced while the console is in front (focused, queue open or the asking panel active, from a UI heartbeat); events within a few seconds become one toast; quiet hours (local time, may cross midnight), per-type switches and sound are settings.
 - A click on a toast opens the console on that queue item (#queue=<id>); the tab title shows the number of waiting items.
 - When no toast can be shown the state says so and an optional browser notification takes over; the Notifications section of Settings has a test toast button; the doctor checks that the toast module loads.
 
-Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
-
-### Phase 6F: assisted install
-- The prerequisites table (Options and the first-start wizard) has an Install/Update button for a missing, outdated or unreadable tool: a dialog shows the exact command and where it comes from, the console runs it itself in a read-only terminal after the click, then checks again.
-- Installs come from a shipped table of fixed commands (winget for Node.js, Git and the GitHub CLI; the scoped npm package for Claude Code); the console never elevates, runs one install at a time, and records each in `install.log` in the config folder.
-- A failed install that looks like a permission problem says it needs administrator rights; the dialog says the commands are not verified on this machine yet.
-- New optional prerequisite: the GitHub CLI (`gh`); missing never blocks anything.
-### Phase 6A: resume
-- After a restart the main resumes its own session and the other agents come back dormant (no process, no quota spent); an agent whose turn was lost in a crash, or whose worktree is gone, is interrupted. The main gets one message with the lists.
-- Dormant agents wake when the user clicks them (Wake up), when work arrives for them, or when the main calls resume_agent (which now also accepts dormant and interrupted agents).
-- The console keeps agent sessions, undelivered inbox messages, the main session and a clean-stop flag across restarts; a saved usage-limit sleep is re-armed.
-- Stale worktrees (git.staleWorktreeDays, git.staleCheck) are flagged and reported once to the main; new main tool worktree_cleanup saves, pushes and removes a worktree, never a branch.
-### Phase 6D: templates
+### 6D: Templates and the new-plan flow
 - Plan templates: a folder with `template.json`, `main.md`, `rules.md` and `profiles/*.md`; shipped ones live in `templates/` (`backend-java`, `frontend-web`, `generic`), the user's in `<config dir>/templates/` (the user's wins on the same id); an invalid template is listed as unavailable with the reason. `GET /api/templates` lists them.
 - New plan from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.console/profiles/`, writes `.console/main.md` and `.console/rules.md` and the plan fields; what the user typed beats the detected commands, which beat the template's.
 - `GET /api/plans/detect?root=` proposes build, test and lint commands from `pom.xml`, Gradle or `package.json` (bounded reads, no process is run).
@@ -39,13 +37,26 @@ Next: Phase 6 (multiple plans, full resume, notifications, templates, options); 
 - The main's prompt gets `.console/main.md` and every session's prompt gets `.console/rules.md`; an agent is told which documents to update at the last step (`docs`).
 - New-plan dialog (template, folder, name; commands prefilled from the folder) and a "save as template" dialog; the first-start wizard offers to create a plan from a template.
 - SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.console/rules.md`, appended to every session's system prompt.
-### Phase 6E: options and catalogs
+
+### 6E: Options, remote model list, plugin catalog
 - The gear opens a tabbed Options dialog (models, profiles, budget and limits, names, plan, git, guard, mod, notifications, language, prerequisites, plugins, server); each editable field saves on change and goes back when the server refuses it.
 - `PUT /api/config` accepts any subset of the configuration: it is deep-merged into the user's file (unknown entries kept), validated, refused with `config.invalid {path}` when a touched entry is invalid, and applied at once to the limits, budget thresholds, git options and catalogs; `GET /api/options` returns the effective configuration and the read-only facts.
 - New config entries `models` (`agent`, `catalogUrl`, `cacheHours`) and `plugins` (`catalogUrl`, `cacheHours`); the saved agent model is used for launches after the ticket, profile and plan levels.
 - Model list from a remote `models.json` with a cache (6 hours by default), a shipped fallback in `catalog/models.json`, a refresh button and a warning when the saved model left the list.
 - Plugin catalog as a read-only list (`catalog/plugins-catalog.json`, `GET /api/plugins`): tiers, trust, requirements, conflicts, "not tested with this version", and the exact install command to copy; nothing is installed or enabled.
 - SPEC delta: the model and plugin catalog URLs are empty by default (repository address still open), so the shipped lists are the source until one is set.
+
+### 6F: Assisted install of prerequisites
+- The prerequisites table (Options and the first-start wizard) has an Install/Update button for a missing, outdated or unreadable tool: a dialog shows the exact command and where it comes from, the console runs it itself in a read-only terminal after the click, then checks again.
+- Installs come from a shipped table of fixed commands (winget for Node.js, Git and the GitHub CLI; the scoped npm package for Claude Code); the console never elevates, runs one install at a time, and records each in `install.log` in the config folder.
+- A failed install that looks like a permission problem says it needs administrator rights; the dialog says the commands are not verified on this machine yet.
+- New optional prerequisite: the GitHub CLI (`gh`); missing never blocks anything.
+
+### Fixed (found when the six parts were put together)
+- `/api/plans/detect` and `/api/plans/save-template` are no longer taken for plan routes (they answered 404).
+- The generic configuration patch accepts the `notifications` section.
+- A leftover agent record with no ticket, no session and no worktree is history, not a dormant agent.
+- The first-start wizard has a third button on its last step (create a plan from a template); the acceptance spec clicks Skip explicitly.
 
 ## Phase 5: budget, blocks, limits (2026-10-05)
 

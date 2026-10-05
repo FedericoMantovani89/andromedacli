@@ -163,7 +163,7 @@ try {
     await page.keyboard.press('Enter');
     await sleep(500);
     check('keys typed behind the first-start wizard do not reach main', !(await snapshot('shop-api')).includes('ECHO:zzz'));
-    for (let i = 0; i < 3; i++) await page.click('.dialog .form-actions button:last-child');
+    for (let i = 0; i < 3; i++) await page.click('.dialog .form-actions button:nth-child(2)');
     await until(async () => await page.locator('#overlay').isHidden());
     await page.keyboard.type('yyy');
     await page.keyboard.press('Enter');
@@ -184,7 +184,7 @@ try {
     const { s } = await boot({ configured: false });
     const page = await open(`${s.url}/?token=${s.token}`);
     check('wizard appears on first start', await until(async () => (await page.locator('.dialog h2').first().innerText().catch(() => '')) === 'First start'));
-    for (let i = 0; i < 3; i++) await page.click('.dialog .form-actions button:last-child');
+    for (let i = 0; i < 3; i++) await page.click('.dialog .form-actions button:nth-child(2)');
     check('wizard closes after skipping every step', await until(async () => await page.locator('#overlay').isHidden()));
     await page.reload();
     await sleep(1200);
