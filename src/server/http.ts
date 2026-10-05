@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { buildClaudeLaunch } from './pty/claude-launch';
 import { PtyManager } from './pty/pty-manager';
 import { PlanStore } from './plan-store';
@@ -20,7 +20,10 @@ import type { ReviewService } from './tickets/review';
 import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
-import { isValidTestCommand } from './plan-store';
+import { isValidPlanField, isValidTestCommand, PLAN_FIELDS } from './plan-store';
+import { loadTemplates } from './templates/load';
+import { detectProject } from './templates/detect';
+import { saveTemplate } from './templates/save';
 import { MAX_REWORK_ROUNDS } from './tickets/review';
 import type { Config } from './config';
 import type { BudgetService } from './budget/service';
@@ -136,7 +139,8 @@ export function buildState(ctx: Context): StateMessage {
     .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let squash: boolean | undefined;
-  try { ({ testCommand, squash } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
+  let offeredProfiles: string[] | undefined;
+  try { ({ testCommand, squash, profiles: offeredProfiles } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
   return {
@@ -144,7 +148,7 @@ export function buildState(ctx: Context): StateMessage {
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One plan per console today: the stricter of the global and the per-plan limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perPlan }) => Math.min(global, perPlan))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
+    type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? PROFILES,
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
   };
@@ -259,15 +263,48 @@ export function createRequestHandler(ctx: Context) {
       const b = body as Record<string, unknown>;
       const hasCommand = 'testCommand' in b;
       const hasSquash = 'squash' in b;
-      if (!hasCommand && !hasSquash) return fail(res, 400, 'bad_request');
+      const planFields = PLAN_FIELDS.filter((f) => f in b); // Phase 6D: build/lint commands, profiles, model, budget, limit, docs, secrets
+      if (!hasCommand && !hasSquash && planFields.length === 0) return fail(res, 400, 'bad_request');
       // Everything is checked before anything is written: a bad entry changes nothing.
       if (hasSquash && typeof b.squash !== 'boolean') return fail(res, 422, 'plan.squashInvalid');
       if (hasCommand && !isValidTestCommand(b.testCommand)) return fail(res, 422, 'plan.testCommandInvalid');
+      for (const f of planFields) {
+        const v = typeof b[f] === 'string' ? (b[f] as string).trim() : b[f];
+        const clears = v === null || v === '' || (Array.isArray(v) && v.length === 0);
+        if (!clears && !isValidPlanField(f, v, PROFILES)) return fail(res, 422, 'plan.fieldInvalid', { field: f });
+      }
       if (hasCommand) ctx.store.setTestCommand(b.testCommand as string);
       if (hasSquash) ctx.store.setSquash(b.squash as boolean);
+      if (planFields.length > 0) ctx.store.setFields(Object.fromEntries(planFields.map((f) => [f, b[f]])), PROFILES);
       ctx.broadcastState();
       const saved = ctx.store.plan;
-      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}) });
+      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...Object.fromEntries(planFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
+    }
+
+    // Phase 6D: plan templates. The list is plan-independent; saving copies the plan named by ?plan= (this context's plan).
+    if (req.method === 'GET' && path === '/api/templates') {
+      return send(res, 200, loadTemplates({ configDir: dirname(ctx.configPath) }).map((t) => ({
+        id: t.id, name: t.name, description: t.description, source: t.source, valid: t.valid, ...(t.reason ? { reason: t.reason } : {}),
+      })));
+    }
+    // What the project in a folder suggests (SPEC 21): read-only, no process is run.
+    if (req.method === 'GET' && path === '/api/plans/detect') {
+      const root = url.searchParams.get('root') ?? '';
+      let isDir = false;
+      try { isDir = isAbsolute(root) && statSync(root).isDirectory(); } catch { /* not there */ }
+      if (!isDir) return fail(res, 422, 'plan.badRoot');
+      return send(res, 200, detectProject(resolve(root)));
+    }
+    if (req.method === 'POST' && path === '/api/plans/save-template') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
+      const b = body as { id?: unknown; name?: unknown; overwrite?: unknown };
+      let plan;
+      try { plan = ctx.store.plan; } catch { return fail(res, 422, 'template.invalid'); }
+      const saved = saveTemplate({ planRoot: ctx.planRoot, plan, configDir: dirname(ctx.configPath), id: String(b.id ?? ''), name: b.name, overwrite: b.overwrite === true });
+      if (!saved.ok) return fail(res, saved.code === 'template.exists' ? 409 : 422, saved.code);
+      return send(res, 201, { id: String(b.id) });
     }
 
     return fail(res, 404, 'not_found');

@@ -9,6 +9,16 @@ introduces the behaviour.
 
 Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
 
+### Phase 6D: templates
+- Plan templates: a folder with `template.json`, `main.md`, `rules.md` and `profiles/*.md`; shipped ones live in `templates/` (`backend-java`, `frontend-web`, `generic`), the user's in `<config dir>/templates/` (the user's wins on the same id); an invalid template is listed as unavailable with the reason. `GET /api/templates` lists them.
+- New plan from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.console/profiles/`, writes `.console/main.md` and `.console/rules.md` and the plan fields; what the user typed beats the detected commands, which beat the template's.
+- `GET /api/plans/detect?root=` proposes build, test and lint commands from `pom.xml`, Gradle or `package.json` (bounded reads, no process is run).
+- `POST /api/plans/save-template` saves the current plan as a user template (a copy: later plan changes never touch it; an existing id is refused unless `overwrite`).
+- New optional plan fields (`plan.json`, `PUT /api/plan`): `buildCommand`, `lintCommand`, `profiles`, `model`, `agentTokens`, `maxActive`, `docs`, `secretPatterns`; the plan's profiles limit the new-agent picker and `spawn_agent`, its model, token budget, active-agent limit and secret patterns sit behind the request's and the profile's own values.
+- The main's prompt gets `.console/main.md` and every session's prompt gets `.console/rules.md`; an agent is told which documents to update at the last step (`docs`).
+- New-plan dialog (template, folder, name; commands prefilled from the folder) and a "save as template" dialog; the first-start wizard offers to create a plan from a template.
+- SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.console/rules.md`, appended to every session's system prompt.
+
 ## Phase 5: budget, blocks, limits (2026-10-05)
 
 ### Added

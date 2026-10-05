@@ -9,6 +9,7 @@ export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
   'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
+  'plan.fieldInvalid', 'plan.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */

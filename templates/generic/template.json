@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "generic",
+  "name": { "en": "Generic", "it": "Generico" },
+  "description": {
+    "en": "Any project: the shipped profiles, commands read from the project when it has a known build tool.",
+    "it": "Qualsiasi progetto: i profili forniti, comandi letti dal progetto quando ha uno strumento di build noto."
+  },
+  "commands": {},
+  "git": {},
+  "docs": [],
+  "defaults": {},
+  "detect": true
+}
