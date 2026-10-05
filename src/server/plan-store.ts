@@ -9,6 +9,9 @@ export interface PlanInfo {
   testCommand?: string;
   /** One commit per ticket when merged (default); false keeps the step commits behind a merge commit (SPEC 9.7). */
   squash?: boolean;
+  /** Commands the user gave when the plan was created (Phase 6C); only stored here, `testCommand` is the one the console runs. */
+  buildCommand?: string;
+  lintCommand?: string;
 }
 export interface AgentRecord { slug: string; profile: string; createdAt: string }
 
@@ -45,6 +48,14 @@ export class PlanStore {
   setSquash(squash: boolean): void {
     if (typeof squash !== 'boolean') throw new Error('plan.squashInvalid');
     writeJsonAtomic(this.planFile, { ...this.plan, squash });
+  }
+
+  /** Stores the build and lint commands given at creation (empty or absent: left out). */
+  setCommands(c: { build?: string; lint?: string }): void {
+    const next: PlanInfo = { ...this.plan };
+    if (c.build?.trim()) next.buildCommand = c.build.trim();
+    if (c.lint?.trim()) next.lintCommand = c.lint.trim();
+    writeJsonAtomic(this.planFile, next);
   }
 
   listAgents(): AgentRecord[] {

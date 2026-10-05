@@ -19,8 +19,11 @@ button:hover { border-color: var(--accent); }
 #actions { display: flex; gap: 8px; }
 
 /* Main is always the left half; agents never resize it (SPEC 5.1). */
-#workspace { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; min-height: 0; }
-#main-col, #agents-col { display: flex; flex-direction: column; gap: 6px; min-height: 0; min-width: 0; }
+#workspace { display: flex; padding: 6px; min-height: 0; }
+.plan-ws { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: 1 1 0; min-height: 0; min-width: 0; }
+.plan-ws[hidden] { display: none; }
+.plan-main, .plan-agents { display: flex; flex-direction: column; gap: 6px; min-height: 0; min-width: 0; }
+#tabs .tab-close { padding: 0 5px; margin-left: -4px; font-size: 11px; border-radius: 0 4px 0 0; }
 
 .panel { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; border: 1px solid var(--border);
   border-radius: 4px; background: var(--panel); opacity: .72; }

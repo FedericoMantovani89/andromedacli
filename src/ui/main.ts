@@ -1,5 +1,7 @@
 import type { StateMessage } from '../shared/protocol';
-import { api, wsUrl } from './api';
+import { api, getSelectedPlan, setSelectedPlan, wsUrl } from './api';
+import { openNewPlanDialog } from './new-plan';
+import { neighbourPlan, openClosePlanDialog, renderPlanTabs, titleWithWaiting } from './plan-tabs';
 import { bindText, initI18n, initI18nAnonymous, resolveLanguage } from './i18n-client';
 import { createNewAgentControl } from './new-agent';
 import { createQueueDrawer } from './queue';
@@ -13,7 +15,13 @@ import { runSplash } from './splash';
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 let state: StateMessage | undefined;
+/** The workspace of the plan on screen; every plan has its own (made on first view), the other ones stay hidden. */
 let workspace: Workspace | undefined;
+const workspaces = new Map<string, { ws: Workspace; el: HTMLElement }>();
+/** A tab was just selected (a user action): its workspace is shown and takes the keyboard once its state arrives. */
+let pendingShow = false;
+let stateSocket: WebSocket | undefined;
+const baseTitle = document.title;
 let wizardShown = false;
 const queueDrawer = createQueueDrawer($('drawer'));
 const reader = createReader($('reader'));
@@ -26,33 +34,76 @@ export function onState(cb: (s: StateMessage) => void): void {
 }
 
 function renderChrome(s: StateMessage): void {
-  const tabs = $('tabs');
-  tabs.replaceChildren();
-  const tab = document.createElement('button');
-  tab.className = s.queue.length > 0 ? 'tab current attention' : 'tab current'; // a dot while something waits for the user
-  tab.textContent = s.plan.name; // plan name is data, not UI text
-  const add = document.createElement('button');
-  add.className = 'tab';
-  add.disabled = true; // multiple plans arrive in Phase 6
-  bindText(add, 'tabs.newPlan');
-  tabs.append(tab, add);
+  // An older server sends no list: this plan alone, with its own queue.
+  const plans = s.plans ?? [{ name: s.plan.name, root: s.planRoot, waiting: s.queue.length, mainStatus: s.main.status }];
+  renderPlanTabs($('tabs'), plans, s.plan.name, {
+    select: (name) => selectPlan(name),
+    close: (name) => openClosePlanDialog(name),
+    add: () => openNewPlanDialog(() => state),
+  });
+  document.title = titleWithWaiting(baseTitle, plans);
   bindText($('queue-btn'), 'header.queue', { count: s.queue.length });
   bindText($('settings-btn'), 'header.settings');
   renderStatusBar($('statusbar'), s);
 }
 
+/** Makes the workspace of a plan the first time it is shown: its own pair of columns inside `#workspace`, hidden until selected. */
+function createPlanWorkspace(s: StateMessage): { ws: Workspace; el: HTMLElement } {
+  const el = document.createElement('div');
+  el.className = 'plan-ws';
+  el.hidden = true;
+  const mainCol = document.createElement('section');
+  mainCol.className = 'plan-main';
+  const agentsCol = document.createElement('section');
+  agentsCol.className = 'plan-agents';
+  el.append(mainCol, agentsCol);
+  $('workspace').append(el);
+  const ws = new Workspace(mainCol, agentsCol, s.main.slug, s.plan.name);
+  ws.setNewAgentControl(createNewAgentControl(() => state?.profiles ?? [], () => ws.activate(ws.active)));
+  return { ws, el };
+}
+
+/** A tab was chosen (a click or Alt+arrow, so a user action): show that plan, re-fit its terminals, give it the keyboard. */
+function selectPlan(name: string): void {
+  if (getSelectedPlan() === name) { workspace?.show(); return; }
+  setSelectedPlan(name);
+  const known = workspaces.get(name);
+  if (known) {
+    for (const [n, e] of workspaces) e.el.hidden = n !== name;
+    workspace = known.ws;
+    known.ws.show();
+  } else {
+    pendingShow = true; // its workspace is made when the first state of the plan arrives
+  }
+  connectState(); // the state socket follows the plan on screen
+}
+
 function apply(s: StateMessage): void {
-  const first = !workspace;
+  const selected = getSelectedPlan();
+  if (selected !== undefined && selected !== s.plan.name) return; // a late push of the plan that was just left
+  if (selected === undefined) setSelectedPlan(s.plan.name);
+  const first = workspaces.size === 0;
   state = s;
   renderChrome(s);
-  if (!workspace) {
-    workspace = new Workspace($('main-col'), $('agents-col'), s.main.slug);
-    workspace.setNewAgentControl(
-      createNewAgentControl(() => state?.profiles ?? [], () => workspace?.activate(workspace.active)),
-    );
+  // A plan closed (here or in another tab of the browser): its workspace and terminals go.
+  const open = new Set((s.plans ?? [{ name: s.plan.name }]).map((p) => p.name));
+  for (const [name, e] of workspaces) {
+    if (open.has(name)) continue;
+    e.ws.dispose();
+    e.el.remove();
+    workspaces.delete(name);
   }
+  let entry = workspaces.get(s.plan.name);
+  if (!entry) {
+    entry = createPlanWorkspace(s);
+    workspaces.set(s.plan.name, entry);
+  }
+  for (const [name, e] of workspaces) e.el.hidden = name !== s.plan.name;
+  workspace = entry.ws;
   workspace.update(s.main, s.agents);
   queueDrawer.update(s.queue);
+  // A tab chosen by the user takes the keyboard once its workspace is on screen.
+  if (pendingShow) { pendingShow = false; workspace.show(); }
   // Opening the console is the user's action, so main starts as the active input. Not while the first-start wizard is
   // on top: keys typed behind a dialog must not reach a hidden terminal; the focus returns when the dialog closes.
   if (first && !s.needsSetup) workspace.focusMainOnOpen();
@@ -76,17 +127,26 @@ async function showUnauthorized(): Promise<void> {
   overlay.hidden = false;
 }
 
+/** Opens the state socket of the plan on screen (a socket still open for another plan is closed first). */
 function connectState(): void {
+  const previous = stateSocket;
+  if (previous) { stateSocket = undefined; previous.close(); }
   const ws = new WebSocket(wsUrl('/ws/ui'));
+  stateSocket = ws;
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data)) as { type: string };
     if (msg.type === 'state') apply(msg as StateMessage);
     else window.dispatchEvent(new CustomEvent('console-message', { detail: msg })); // reading entries etc.
   };
   ws.onclose = () => {
-    // Reconnect, unless the server now refuses our token (it restarted with a new one).
+    if (stateSocket !== ws) return; // replaced on purpose (another tab was chosen)
+    // Reconnect, unless the server now refuses our token (it restarted with a new one) or our plan is gone (it was closed).
     void api('/api/state').then(
-      (r) => { if (r.status === 401) void showUnauthorized(); else setTimeout(connectState, 1000); },
+      (r) => {
+        if (r.status === 401) void showUnauthorized();
+        else if (r.status === 404) { setSelectedPlan(undefined); connectState(); }
+        else setTimeout(connectState, 1000);
+      },
       () => setTimeout(connectState, 1000),
     );
   };
@@ -105,6 +165,13 @@ window.addEventListener('keydown', (ev) => {
   const key = ev.key.toLowerCase();
   if (key === 'q') { ev.preventDefault(); queueDrawer.toggle(); return; }
   if (key === 'l') { ev.preventDefault(); if (workspace) void reader.toggle(workspace.active); return; }
+  // Alt+Left / Alt+Right switch plans (Alt+Left is also the browser's "back": taken here).
+  if (key === 'arrowleft' || key === 'arrowright') {
+    ev.preventDefault();
+    const next = neighbourPlan(state?.plans ?? [], state?.plan.name ?? '', key === 'arrowright' ? 1 : -1);
+    if (next) selectPlan(next);
+    return;
+  }
   const n = Number(ev.key);
   if (Number.isInteger(n) && n >= 1 && n <= 9) {
     ev.preventDefault();
@@ -112,11 +179,18 @@ window.addEventListener('keydown', (ev) => {
   }
 }, true); // capture phase: xterm.js handles keys inside the terminal before they could bubble to window
 
+// The "new plan" dialog announces the plan it made: opening it is a user action, so its tab is chosen.
+window.addEventListener('console-select-plan', (ev) => { selectPlan((ev as CustomEvent<string>).detail); });
+
 $('settings-btn').addEventListener('click', () => openSettings(() => state));
 $('queue-btn').addEventListener('click', () => queueDrawer.toggle());
 
 async function boot(): Promise<void> {
-  const res = await api<StateMessage>('/api/state');
+  let res = await api<StateMessage>('/api/state');
+  if (res.status === 404 && getSelectedPlan() !== undefined) { // the plan remembered by this tab is not open any more
+    setSelectedPlan(undefined);
+    res = await api<StateMessage>('/api/state');
+  }
   if (res.status === 401) return showUnauthorized();
   if (res.status !== 200) return;
   await initI18n(resolveLanguage(res.body.language, res.body.languages));

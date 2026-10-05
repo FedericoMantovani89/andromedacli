@@ -29,6 +29,10 @@ import type { LoopService } from './budget/loop-service';
 import type { Ledger } from './budget/ledger';
 import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
+import { handlePlansRoute, type PlansApi } from './plans-api';
+
+/** Finds the plan a request or socket asked for with `?plan=<name>`; no name means the first plan; undefined when it is not open. */
+export type PlanResolver = (name?: string) => Context | undefined;
 
 export interface Context extends V1Context {
   getPort(): number;
@@ -90,6 +94,8 @@ export interface Context extends V1Context {
   noteLaunch(slug: string): { bypass: boolean };
   needsSetup(): boolean;
   broadcastState(): void;
+  /** The console's open plans (Phase 6C); set by the host, shared by every plan's Context. */
+  plans?: PlansApi;
 }
 
 const STATIC: Record<string, { file: string; type: string }> = {
@@ -147,11 +153,17 @@ export function buildState(ctx: Context): StateMessage {
     type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: PROFILES,
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
+    ...(ctx.plans ? { plans: ctx.plans.list() } : {}),
   };
 }
 
-export function createRequestHandler(ctx: Context) {
+export function createRequestHandler(source: Context | PlanResolver) {
+  const resolve: PlanResolver = typeof source === 'function' ? source : () => source;
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // Until the token is checked only console-wide things are used, so the first plan answers for them; then `ctx` becomes the asked plan.
+    const first = resolve();
+    if (!first) return fail(res, 503, 'internal');
+    let ctx: Context = first;
     if (!isAllowedHost(req.headers.host, ctx.getPort())) return fail(res, 403, 'forbidden');
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${ctx.getPort()}`);
     const path = url.pathname;
@@ -174,10 +186,24 @@ export function createRequestHandler(ctx: Context) {
     }
 
     // The mod channel has its own authentication (per-session tokens); the UI token is not valid there.
-    if (path.startsWith('/v1/')) return handleV1(ctx, req, res, url);
+    if (path.startsWith('/v1/')) {
+      // The plan that issued the session token is the one that answers (tokens are random, no plan can use another's).
+      const t = extractToken(req.headers, url);
+      const owner = t ? (ctx.plans?.contexts() ?? [ctx]).find((c) => c.tokens.slugFor(t) !== undefined) : undefined;
+      return handleV1(owner ?? ctx, req, res, url);
+    }
 
     const token = extractToken(req.headers, url);
     if (!token || !tokensEqual(token, ctx.token)) return fail(res, 401, 'unauthorized');
+
+    // Opening and closing plans are not about one plan; every other route below is, and takes it from `?plan=` (absent: the first).
+    if (path === '/api/plans' || path.startsWith('/api/plans/')) return handlePlansRoute(ctx, req, res, path);
+    const asked = url.searchParams.get('plan');
+    if (asked !== null) {
+      const planCtx = resolve(asked);
+      if (!planCtx) return fail(res, 404, 'not_found');
+      ctx = planCtx;
+    }
 
     if (req.method === 'GET' && path === '/api/state') return send(res, 200, buildState(ctx));
 

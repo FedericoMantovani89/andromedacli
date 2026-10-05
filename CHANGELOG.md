@@ -7,6 +7,11 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Phase 6C: multiple plans
+- One console now hosts several plans (one per project folder), each with its own main session, agents, tickets, queue and `.console/` folder, shown as tabs with a dot while its queue waits; `+ plan` opens a plan, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
+- `POST /api/plans`, `DELETE /api/plans/<name>`, `?plan=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first plan); `StateMessage.plans`; the open plans are remembered in `<configDir>/plans.json`.
+- The active-agent global limit counts agents of all plans; a freed slot in one plan starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all plans.
+
 Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
 
 ## Phase 5: budget, blocks, limits (2026-10-05)
