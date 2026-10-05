@@ -55,7 +55,7 @@ function startInboxPoll($) {
 }
 
 const TOOLS_BY_ROLE = {
-  main: ['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent'],
+  main: ['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup'],
   agent: ['list_agents', 'checklist_set', 'step_done', 'report_blocked'],
   reviewer: ['list_agents', 'review_verdict'],
   recovery: ['list_agents', 'recovery_report'],
@@ -173,13 +173,26 @@ const TOOL_SPECS = {
     },
   },
   resume_agent: {
-    description: 'After a usage limit reset, resume agents whose tickets are suspended for the limit: each one continues its own session (--resume) in its worktree. '
+    description: 'After a usage limit reset, resume agents whose tickets are suspended for the limit; after a console restart, wake dormant or interrupted agents: each one continues its own session (--resume) in its worktree. '
       + 'The console starts them in small groups with a pause and refuses everything while the usage is still high. Resume only what the user still wants, never everything at once. '
       + 'Returns { status: "ok", started, scheduled } or { status: "refused", code } (quota_high, not_suspended, no_session, no_worktree).',
     inputSchema: {
       type: 'object',
       properties: { names: { type: 'array', items: { type: 'string' }, description: 'The suspended ticket (agent) names to resume' } },
       required: ['names'],
+    },
+  },
+  worktree_cleanup: {
+    description: 'Remove the worktree folder of a stale or finished agent to free disk space. The console runs the safety checks itself: uncommitted changes are committed as WIP, '
+      + 'the branch is pushed if its commits are not on the remote, and the folder is removed only when the branch is on the remote. The branch, the ticket and the agent record stay; a branch is never deleted. '
+      + 'Returns { status: "ok", removed, branch } or { status: "refused", code } (not_saved, push_failed, no_remote, still_active, unknown).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The agent (ticket) name whose worktree to remove' },
+        action: { type: 'string', enum: ['remove'], description: 'Only "remove" exists' },
+      },
+      required: ['name', 'action'],
     },
   },
   ask_user: {
@@ -266,6 +279,7 @@ function toolBody(name, e) {
   if (name === 'start_recovery') return { name: e.name };
   if (name === 'recovery_report') return { verified_steps: e.verified_steps, diagnosis: e.diagnosis, remedy: e.remedy, notes: e.notes };
   if (name === 'resume_agent') return { names: e.names };
+  if (name === 'worktree_cleanup') return { name: e.name, action: e.action };
   return {};
 }
 
@@ -408,4 +422,5 @@ export const register = (on) => {
   on('tool.call', { tool: 'mcp__console-mod__recovery_report' }, ($, e) => onConsoleTool($, 'recovery_report', e));
   on('session.measure', ($, e, next) => onMeasure($, e, next));
   on('tool.call', { tool: 'mcp__console-mod__resume_agent' }, ($, e) => onConsoleTool($, 'resume_agent', e));
+  on('tool.call', { tool: 'mcp__console-mod__worktree_cleanup' }, ($, e) => onConsoleTool($, 'worktree_cleanup', e));
 };

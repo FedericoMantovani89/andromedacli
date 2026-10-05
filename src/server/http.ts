@@ -29,6 +29,7 @@ import type { LoopService } from './budget/loop-service';
 import type { Ledger } from './budget/ledger';
 import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
+import type { WakeService } from './agents/wake';
 
 export interface Context extends V1Context {
   getPort(): number;
@@ -72,6 +73,8 @@ export interface Context extends V1Context {
   quotaState: QuotaState;
   /** Sleep until a usage limit lifts (SPEC 18.4). */
   sleep: SleepTimer;
+  /** Wakes a dormant agent (Phase 6A). */
+  wake: WakeService;
   /** Read at each use: a change made in the Settings dialog applies to the sessions launched afterwards. */
   readonly git: Config['git'];
   /** The budget thresholds and the default token limit, read at each launch. */
@@ -133,7 +136,7 @@ export function buildState(ctx: Context): StateMessage {
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
-    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let squash: boolean | undefined;
   try { ({ testCommand, squash } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
@@ -218,6 +221,13 @@ export function createRequestHandler(ctx: Context) {
       res.writeHead(204);
       res.end();
       return;
+    }
+
+    // Wakes a dormant agent: the dormant panel's button, an explicit action of the user.
+    const wake = /^\/api\/agents\/([a-z0-9]+(?:-[a-z0-9]+)*)\/wake$/.exec(path);
+    if (req.method === 'POST' && wake) {
+      const out = await ctx.wake.wake(wake[1]!, 'user');
+      return out.ok ? send(res, 200, { status: out.status }) : fail(res, 409, out.code);
     }
 
     if (req.method === 'POST' && path === '/api/prereq/recheck') return send(res, 200, await ctx.refreshPrereq());

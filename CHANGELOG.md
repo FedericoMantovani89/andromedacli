@@ -9,6 +9,12 @@ introduces the behaviour.
 
 Next: Phase 6 (multiple plans, full resume, notifications, templates, options); ask before starting.
 
+### Phase 6A: resume
+- After a restart the main resumes its own session and the other agents come back dormant (no process, no quota spent); an agent whose turn was lost in a crash, or whose worktree is gone, is interrupted. The main gets one message with the lists.
+- Dormant agents wake when the user clicks them (Wake up), when work arrives for them, or when the main calls resume_agent (which now also accepts dormant and interrupted agents).
+- The console keeps agent sessions, undelivered inbox messages, the main session and a clean-stop flag across restarts; a saved usage-limit sleep is re-armed.
+- Stale worktrees (git.staleWorktreeDays, git.staleCheck) are flagged and reported once to the main; new main tool worktree_cleanup saves, pushes and removes a worktree, never a branch.
+
 ## Phase 5: budget, blocks, limits (2026-10-05)
 
 ### Added

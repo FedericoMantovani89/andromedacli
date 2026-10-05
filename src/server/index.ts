@@ -47,6 +47,11 @@ import { LoopService } from './budget/loop-service';
 import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
+import { AgentPersister } from './agents/persist';
+import { renderRestartNotice, restoreAgents } from './agents/restore';
+import { WakeService } from './agents/wake';
+import { StaleChecker, latestCommitMs } from './git/stale';
+import { cleanupWorktree } from './git/cleanup';
 
 export interface StartOptions {
   port: number;
@@ -105,14 +110,22 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const { config } = loadConfig(configPath);
   const store = new PlanStore(o.planRoot);
   store.init(o.planName);
+  // Phase 6A: did the last run end through close()? A crash leaves `false`. This run is "not clean" until its own close() says so.
+  const previousRunWasClean = store.readCleanStop();
+  store.writeCleanStop(false);
   // The plan keeps the name it was created with, even if its folder is renamed later (it is also the main session id).
   const planName = store.plan.name;
   const ptys = new PtyManager();
   const token = createToken();
   const tokens = new SessionTokens();
-  const inbox = new Inbox();
+  // What was not delivered before a stop is delivered after the restart (messages for dormant agents wait for their wake-up).
+  const inbox = new Inbox(join(o.planRoot, '.console', 'state', 'inbox.json'));
+  inbox.load();
   const registry = new AgentRegistry();
-  registry.register({ slug: planName, role: 'main', profile: 'main' });
+  // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
+  const savedMainSession = store.readMainSession();
+  const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) ? savedMainSession : undefined;
+  registry.register({ slug: planName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
   const questions = new QuestionQueue();
   const reading = new ReadingStore(join(o.planRoot, '.console', 'state', 'reading'));
   const limits = { global: config.agents.maxActiveGlobal, perPlan: config.agents.maxActivePerPlan };
@@ -355,15 +368,15 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       questions.ask({ from: CONSOLE_FROM, text: 'The weekly usage limit is almost used up or reached: nothing restarts by itself.', kind: 'decision', options: ['ok'], payload: { kind: 'weekly_limit', ...(resetsAt ? { resetsAt } : {}) } });
     },
   });
-  // A state saved by an earlier run is only shown: nothing resumes by itself (a declared limit, Phase 6).
+  // A sleep saved by an earlier run is re-armed once the main is running again (Phase 6A, below): a time still ahead gets its timer,
+  // a time that has passed gets one probe at once.
+  let savedSleep: SleepState | undefined;
   try {
     const saved = JSON.parse(readFileSync(sleepFile, 'utf8')) as Partial<SleepState>;
-    // Only a sleep still running is shown: a past or unknown time with no timer behind it would show "sleeping" for ever.
-    const until = typeof saved?.until === 'string' ? Date.parse(saved.until) : Number.NaN;
-    if (saved && (saved.phase === 'sleeping' || saved.phase === 'probing') && typeof saved.attempt === 'number' && Number.isFinite(until) && until > sleepClock.now()) {
-      sleep.load({ until: typeof saved.until === 'string' ? saved.until : undefined, ...(saved.kind ? { kind: saved.kind } : {}), attempt: saved.attempt, phase: saved.phase });
+    if (saved && (saved.phase === 'sleeping' || saved.phase === 'probing') && typeof saved.attempt === 'number') {
+      savedSleep = { until: typeof saved.until === 'string' ? saved.until : undefined, ...(saved.kind ? { kind: saved.kind } : {}), attempt: saved.attempt, phase: saved.phase };
     }
-  } catch { /* no saved state, or unreadable: nothing to show */ }
+  } catch { /* no saved state, or unreadable: nothing to restore */ }
   const ticketStatusOf = (slug: string) => { try { return tickets.get(slug)?.status; } catch { return undefined; } };
   const quota = new QuotaService({
     state: quotaState, config: () => config.budget.quota,
@@ -371,7 +384,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     tellAgent: (slug, text) => { inbox.push(slug, text); },
     // Priority = creation order of the registry (a Map keeps registration order): the oldest session has the highest number and is stopped last.
     agents: () => {
-      const live = registry.list().filter((a) => a.state !== 'finished' && a.state !== 'interrupted' && a.state !== 'queued');
+      const live = registry.list().filter((a) => a.state !== 'finished' && a.state !== 'interrupted' && a.state !== 'queued' && a.state !== 'dormant');
       return live.map((a, i) => ({ slug: a.slug, role: a.role, priority: live.length - i }));
     },
     wipCommit: async (slug, reason) => {
@@ -410,6 +423,35 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     suspendedTickets: () => tickets.list().filter((t) => t.status === 'suspended_limit').map((t) => t.slug),
     // With worktrees off the agents share the plan folder: there is always somewhere to resume in.
     hasWorktree: (slug) => { if (!runtime.git.worktrees) return true; const w = registry.get(slug)?.git?.worktree; return w !== undefined && existsSync(w); },
+    // Phase 6A: the main also wakes dormant and interrupted agents with resume_agent.
+    wakeable: (slug) => { const s = registry.get(slug); return s?.role === 'agent' && (s.state === 'dormant' || s.state === 'interrupted'); },
+    wake: async (slug, sessionId) => { const r = await launchResume(ctx, slug, sessionId, 'main'); return r; },
+    tellMain: (text) => { inbox.push(planName, text); },
+    changed: () => broadcast(),
+  });
+  // Waking a dormant agent (Phase 6A): the user opens it, work arrives for it, or the main asks (resume_agent, above).
+  const waker = new WakeService({
+    registry,
+    launch: (slug, sessionId, reason) => launchResume(ctx, slug, sessionId, reason),
+    hasWorktree: (slug) => { if (!runtime.git.worktrees) return true; const w = registry.get(slug)?.git?.worktree; return w !== undefined && existsSync(w); },
+    quotaHigh: () => { const w = quotaState.worst(); return w !== undefined && w.percent >= config.budget.quota.freezePercent; },
+    changed: () => broadcast(),
+  });
+  inbox.onPush((slug) => waker.onWork(slug));
+  // Messages and state kept for the next start (Phase 6A).
+  const persister = new AgentPersister({ registry, updateAgent: (slug, patch) => store.updateAgent(slug, patch), writeMainSession: (id) => store.writeMainSession(id), mainSlug: planName });
+  const staleChecker = new StaleChecker({
+    enabled: () => planIsRepo && runtime.git.worktrees && runtime.git.staleCheck,
+    days: () => runtime.git.staleWorktreeDays,
+    now: () => Date.now(),
+    candidates: () => {
+      const records = new Map(store.listAgents().map((a) => [a.slug, a]));
+      return registry.list()
+        .filter((a) => a.role === 'agent' && a.git !== undefined && ptys.status(a.slug) !== 'running' && a.state !== 'queued' && ticketStatusOf(a.slug) !== 'merged' && ticketStatusOf(a.slug) !== 'released')
+        .map((a) => ({ slug: a.slug, worktree: a.git!.worktree, ...(records.get(a.slug)?.lastActiveAt ? { lastActiveAt: records.get(a.slug)!.lastActiveAt } : {}), ...(records.get(a.slug)?.stale ? { stale: true } : {}) }));
+    },
+    latestCommitMs,
+    setStale: (slug, stale) => { store.updateAgent(slug, { stale: stale ? true : undefined }); },
     tellMain: (text) => { inbox.push(planName, text); },
     changed: () => broadcast(),
   });
@@ -446,7 +488,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       command: ctx.claudeCommand, role: 'main', slug: planName, plan: planName,
       url: `http://127.0.0.1:${port}`, token: tokens.issue(planName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir,
-      allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent'] : undefined,
+      allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
       appendPromptFile: renderMainPrompt({ plan: planName, workLanguage: languageName(config.language), outDir: ctx.promptsDir }),
       ...(resumeId !== undefined ? { resumeId } : {}),
     });
@@ -478,7 +520,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     getPort: () => port,
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
-    budget, restrictions, loop, ledger, quotaState, sleep,
+    budget, restrictions, loop, ledger, quotaState, sleep, wake: waker,
     afterWorktreeCreated: o.afterWorktreeCreated,
     get git() { return runtime.git; },
     get budgetConfig() { return config.budget; },
@@ -551,6 +593,18 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
           return { status: 'error', code: 'bad_request' };
         }
         return resumer.resume(names);
+      },
+      // Phase 6A, SPEC 9.9: the console saves the work, pushes the branch and only then removes the folder; never a branch.
+      worktree_cleanup: async (_slug, body) => {
+        const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; action?: unknown };
+        if (typeof b.name !== 'string' || b.name === '' || b.action !== 'remove') return { status: 'error', code: 'bad_request' };
+        return cleanupWorktree({
+          repo: resolve(o.planRoot), plan: planName, secretPatterns: runtime.git.secretPatterns,
+          agentGit: (s) => (registry.get(s)?.role === 'agent' ? registry.get(s)?.git : undefined),
+          // A running agent, one waiting for a slot, or one under review (its branch must not move) is never touched.
+          isActive: (s) => ptys.status(s) === 'running' || registry.get(s)?.state === 'queued' || ticketStatusOf(s) === 'in_review',
+          removed: (s) => { registry.setGit(s, undefined); store.updateAgent(s, { worktree: undefined, stale: undefined }); broadcast(); },
+        }, b.name);
       },
       ask_user: async (slug, body) => {
         const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
@@ -689,6 +743,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const url = `http://127.0.0.1:${port}`;
 
   registry.on(() => broadcast());
+  registry.on((slug) => persister.onChange(slug));
   // A session waits for the user exactly while it has an open question.
   questions.onChange(() => {
     for (const a of registry.list()) registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
@@ -720,7 +775,26 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   }, o.tickMs ?? 30_000);
   budgetTick.unref?.();
   startupChecks = refreshPrereq(); // background; unknown is null in the state and agent creation waits for it
-  launchMain(undefined);
+  // Phase 6A, SPEC 19: the agents of the earlier run come back dormant (no process, no quota spent), or interrupted when their turn
+  // was lost; the main resumes its own session at once and is told which is which.
+  const restored = restoreAgents({
+    records: store.listAgents(), registry, tickets, worktrees: runtime.git.worktrees, cleanStop: previousRunWasClean,
+    worktreeExists: (path) => existsSync(path), abandonReview: (reviewer) => review.abandonReview(reviewer),
+  });
+  // What an earlier run never delivered stays only for agents that can still read it.
+  for (const slug of inbox.slugs()) {
+    const state = registry.get(slug)?.state;
+    if (slug !== planName && state !== 'dormant' && state !== 'interrupted') inbox.clear(slug);
+  }
+  launchMain(mainResumeId);
+  try {
+    const notice = renderRestartNotice(restored);
+    if (notice) inbox.push(planName, notice);
+  } catch { /* the notice is a courtesy: list_agents tells the same */ }
+  if (savedSleep) sleep.restore(savedSleep);
+  const staleTimer = setInterval(() => { void staleChecker.check(); }, 24 * 60 * 60_000);
+  staleTimer.unref?.();
+  void staleChecker.check();
 
   return {
     port, address: addr.address, token, url,
@@ -732,6 +806,11 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     lastLaunchArgs: (slug) => launchLog.get(slug),
     close: async () => {
       clearInterval(budgetTick);
+      clearInterval(staleTimer);
+      // What a restart needs is on disk as it is now: the processes dying below must not rewrite it (their exits would empty the inbox
+      // and mark every agent interrupted).
+      persister.close();
+      inbox.freeze();
       sleep.close();
       resumer.close();
       for (const h of wakeTimers) sleepClock.clearTimeout(h);
@@ -744,6 +823,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       await ptys.killAll();
       ws.closeAll();
       await new Promise<void>((done) => server.close(() => done()));
+      store.writeCleanStop(true); // the very end: a crash before this line leaves `false`
     },
   };
 }

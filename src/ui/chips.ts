@@ -13,6 +13,7 @@ export const STATE_KEYS: Record<Activity, string> = {
   blocked: k('state.blocked'),
   finished: k('state.finished'),
   suspended: k('state.suspended'),
+  dormant: k('status.dormant'),
 };
 
 /**

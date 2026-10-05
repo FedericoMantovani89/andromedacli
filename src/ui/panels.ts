@@ -3,8 +3,9 @@ import { FitAddon } from '@xterm/addon-fit';
 import type { Activity } from '../shared/activity';
 import type { SessionInfo } from '../shared/protocol';
 import { computeAgentLayout } from '../shared/layout';
-import { wsUrl } from './api';
+import { api, wsUrl } from './api';
 import { reconcile } from './dom';
+import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyTicket } from './chips';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
@@ -14,6 +15,14 @@ function applyStalled(el: HTMLElement, stalled: boolean | undefined): void {
   el.hidden = !stalled;
   if (stalled) bindText(el, k('panel.launchStalled'));
   else el.textContent = '';
+}
+
+/** The stale chip: the worktree has not been touched for many days. */
+function applyStale(el: HTMLElement, stale: boolean | undefined): void {
+  el.className = 'panel-stale';
+  el.hidden = !stale;
+  if (stale) bindText(el, k('panel.stale'));
+  else { el.textContent = ''; delete el.dataset.i18n; }
 }
 
 interface Panel extends PanelHandle {
@@ -138,7 +147,7 @@ export class Workspace {
   private lastAgents: SessionInfo[] = [];
   private newAgentControl: HTMLElement | undefined;
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
-  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; budget: HTMLElement; loop: HTMLElement; pending: boolean }>();
+  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; budget: HTMLElement; loop: HTMLElement; pending: boolean; dormant: boolean; stale: HTMLElement }>();
 
   constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string) {
     this.mainId = mainId;
@@ -230,7 +239,9 @@ export class Workspace {
   private bar(info: SessionInfo): HTMLElement {
     const cached = this.bars.get(info.slug);
     const pending = info.status === 'pending';
-    if (cached && cached.pending === pending) {
+    const dormant = info.state === 'dormant';
+    if (cached && cached.pending === pending && cached.dormant === dormant) {
+      applyStale(cached.stale, info.stale);
       bindText(cached.state, STATE_KEYS[info.state]);
       cached.state.className = `panel-state ${info.state}`;
       applyProgress(cached.progress, info.progress);
@@ -263,14 +274,49 @@ export class Workspace {
     applyBudget(budget, info);
     const loop = document.createElement('span');
     applyLoop(loop, info.loop);
-    el.append(title, meta, state, stalled, ticket, budget, loop, progress);
+    const stale = document.createElement('span');
+    applyStale(stale, info.stale);
+    el.append(title, meta, state, stalled, ticket, budget, loop, stale, progress);
+    if (dormant) this.dormantControls(el, info.slug);
     if (!pending) { // a queued agent has no terminal to expand yet
       const expand = document.createElement('button');
       bindText(expand, 'panel.expand');
       expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
       el.append(expand);
     }
-    this.bars.set(info.slug, { el, state, progress, stalled, ticket, budget, loop, pending });
+    this.bars.set(info.slug, { el, state, progress, stalled, ticket, budget, loop, pending, dormant, stale });
     return el;
+  }
+
+  /** A dormant agent has no terminal: its last summary (from the read panel, n/a when none) and a Wake up button (a user action). */
+  private dormantControls(el: HTMLElement, slug: string): void {
+    const summary = document.createElement('span');
+    summary.className = 'panel-summary';
+    bindText(summary, 'common.notAvailable');
+    void api<{ entries?: { text?: string }[] }>(`/api/reading/${slug}`).then((r) => {
+      const last = r.status === 200 ? r.body?.entries?.at(-1)?.text : undefined;
+      if (typeof last !== 'string' || last.trim() === '') return;
+      delete summary.dataset.i18n;
+      delete summary.dataset.i18nParams;
+      summary.textContent = last.slice(0, 200); // the agent's own words: data, not interface text
+      el.title = last.slice(0, 200);
+    }).catch(() => undefined);
+    const wake = document.createElement('button');
+    wake.className = 'panel-wake';
+    bindText(wake, 'panel.wake');
+    const error = document.createElement('span');
+    error.className = 'form-error';
+    const doWake = (): void => {
+      wake.disabled = true;
+      error.textContent = '';
+      void api<{ code?: string }>(`/api/agents/${slug}/wake`, { method: 'POST' }).then((r) => {
+        if (r.status === 200) return; // the next state push shows it starting or queued
+        wake.disabled = false;
+        error.textContent = errorText({ code: r.body?.code ?? 'generic' });
+      }).catch(() => { wake.disabled = false; });
+    };
+    wake.addEventListener('click', (e) => { e.stopPropagation(); doWake(); });
+    el.addEventListener('click', () => { if (!wake.disabled) doWake(); }); // the bar itself is also a way to open it
+    el.append(summary, error, wake);
   }
 }

@@ -123,3 +123,7 @@ button:hover { border-color: var(--accent); }
 .prereq-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; }
 .prereq-ok { color: var(--ok); } .prereq-outdated { color: var(--warn); }
 .prereq-missing, .prereq-error { color: var(--bad); }
+.panel-stale { color: var(--warn); border: 1px solid var(--warn); border-radius: 8px; padding: 0 6px; font-size: 11px; }
+.panel-stale[hidden] { display: none; }
+.panel-summary { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+.panel-state.dormant { color: var(--muted); font-style: italic; }

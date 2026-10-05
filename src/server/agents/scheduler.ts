@@ -17,7 +17,7 @@ export interface SpawnRequest {
    * A suspended agent resumed after a usage limit (SPEC 18.4): `claude --resume <sessionId>` in its EXISTING worktree, same slug,
    * no goal message (the session keeps its context). It waits for a slot like any other request and counts as active once started.
    */
-  resume?: { sessionId: string };
+  resume?: { sessionId: string; /** Why: `limit` (the default) after a usage limit; the others wake a dormant agent after a console restart (Phase 6A). */ reason?: 'limit' | 'user' | 'work' | 'main' };
   /** Token budget of this ticket; absent means the profile's `budget_tokens`, then `budget.agentTokens` (SPEC 16.2). */
   budget?: number;
 }

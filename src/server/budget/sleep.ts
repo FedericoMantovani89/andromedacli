@@ -55,6 +55,27 @@ export class SleepTimer {
     this.current = { ...saved, phase: saved.phase === 'awake' ? 'awake' : 'sleeping' };
   }
 
+  /**
+   * Re-arms a sleep saved by an earlier run (Phase 6A). A five-hour sleep whose time is still ahead waits for that time with the saved
+   * attempt; one whose time has passed (or is unknown) probes at once. A weekly sleep sets no timer: it is only shown, as before.
+   * Call it after the main was started: the probe wakes the main.
+   */
+  restore(saved: SleepState): void {
+    if (this.closed || this.pending || this.probing) return;
+    if (saved.phase === 'awake') return;
+    if (saved.kind === 'seven_day') { this.load(saved); return; }
+    const until = saved.until === undefined ? Number.NaN : Date.parse(saved.until);
+    const now = this.d.clock.now();
+    const attempt = Number.isFinite(saved.attempt) && saved.attempt > 0 ? Math.floor(saved.attempt) : 0;
+    this.current = { until: saved.until, ...(saved.kind ? { kind: saved.kind } : {}), attempt, phase: 'sleeping' };
+    if (Number.isFinite(until) && until > now && until - now <= MAX_DELAY_MS) {
+      this.arm(until - now);
+      this.set({ ...this.current });
+    } else {
+      this.fire();
+    }
+  }
+
   private isWeekly(): boolean { return this.current.phase !== 'awake' && this.current.kind === 'seven_day'; }
 
   sleepUntil(resetsAt: string | undefined, kind: SleepState['kind']): void {
