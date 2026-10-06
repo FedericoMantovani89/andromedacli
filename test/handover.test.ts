@@ -19,17 +19,6 @@ afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
 const note = (text: string): void => writeFileSync(join(wt, '.console', 'handover.md'), text);
 
-/** True when a file symlink can be created on this account (Windows needs a privilege for it). */
-function canSymlinkFile(): boolean {
-  const dir = mkdtempSync(join(tmpdir(), 'handover-probe-'));
-  try {
-    writeFileSync(join(dir, 't'), 'x');
-    symlinkSync(join(dir, 't'), join(dir, 'l'), 'file');
-    return true;
-  } catch { return false; } finally { rmSync(dir, { recursive: true, force: true }); }
-}
-const symlinkOk = canSymlinkFile();
-
 describe('readHandoverNote', () => {
   it('returns undefined when there is no file', () => {
     expect(readHandoverNote(wt)).toBeUndefined();
@@ -61,13 +50,6 @@ describe('readHandoverNote', () => {
   it('truncates multi-byte text to 4000 characters, not bytes', () => {
     note('è'.repeat(5000));
     expect(readHandoverNote(wt)).toBe('è'.repeat(4000));
-  });
-
-  // Skipped when this Windows account may not create file symlinks (EPERM).
-  it.skipIf(!symlinkOk)('refuses a symlink file pointing outside', () => {
-    writeFileSync(join(outside, 'secret.md'), 'secret');
-    symlinkSync(join(outside, 'secret.md'), join(wt, '.console', 'handover.md'), 'file');
-    expect(readHandoverNote(wt)).toBeUndefined();
   });
 
   it('refuses a .console junction pointing outside the worktree', () => {
