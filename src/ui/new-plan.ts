@@ -72,6 +72,7 @@ function showDialog(...children: HTMLElement[]): void {
   const overlay = document.getElementById('overlay')!;
   const dialog = document.createElement('div');
   dialog.className = 'dialog';
+  dialog.dataset.escape = '';
   dialog.append(...children);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;

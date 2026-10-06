@@ -539,6 +539,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   const overlay = document.getElementById('overlay')!;
   const loaded = await api<OptionsPayload>('/api/options').catch(() => ({ status: 0, body: null }));
   const dialog = el('div', 'dialog options-dialog');
+  dialog.dataset.escape = '';
   const title = el('h2');
   bindText(title, 'settings.title');
   const error = el('div', 'form-error');

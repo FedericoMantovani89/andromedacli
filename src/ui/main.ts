@@ -10,7 +10,7 @@ import { startPresence } from './presence';
 import type { NotifyMessage } from '../shared/notify';
 import { createReader, type ReadingEntry } from './reader';
 import { Workspace } from './panels';
-import { openSettings } from './settings';
+import { closeOverlay, openSettings } from './settings';
 import { renderStatusBar } from './statusbar';
 import { openWizard } from './wizard';
 import { runSplash } from './splash';
@@ -164,6 +164,15 @@ window.addEventListener('console-message', (ev) => {
   const msg = (ev as CustomEvent<{ type: string; slug?: string; entry?: ReadingEntry }>).detail;
   if (msg.type === 'reading' && msg.slug && msg.entry) reader.onEntry(msg.slug, msg.entry);
 });
+
+/** Escape closes a dialog that opted in with data-escape (options, new plan, close plan); the first-start wizard and installs do not. */
+window.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape' || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+  const overlay = $('overlay');
+  if (overlay.hidden || !overlay.querySelector('.dialog[data-escape]')) return;
+  ev.preventDefault();
+  closeOverlay();
+}, true);
 
 /** Alt+1 main, Alt+2..9 agents, Alt+Q the queue, Alt+L the read panel (SPEC 5.4). Ctrl+digit is reserved by browsers. */
 window.addEventListener('keydown', (ev) => {

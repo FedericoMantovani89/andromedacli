@@ -57,6 +57,7 @@ export function openClosePlanDialog(name: string): void {
   const overlay = document.getElementById('overlay')!;
   const dialog = document.createElement('div');
   dialog.className = 'dialog';
+  dialog.dataset.escape = '';
   const message = document.createElement('div');
   bindText(message, 'plans.close.confirm', { name });
   const error = document.createElement('div');

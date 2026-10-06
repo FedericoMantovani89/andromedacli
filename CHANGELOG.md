@@ -7,7 +7,12 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Changed
+- Visual redesign of the whole UI: dark graphite surface with hairline seams instead of dimmed panels, one accent for focus, state dots with colour only for state, tab-style plan and options navigation, themed terminals, a brand mark in the top bar and a narrow-window layout.
+- Options dialog navigation is a vertical menu on the left (a row on narrow windows); Escape closes the Options, new-plan and close-plan dialogs.
+
 ### Fixed
+- Opening a plan whose saved main session had no transcript (it never received a prompt) failed with "No conversation found with session ID"; the main now resumes only a session that has a transcript and otherwise starts a new one.
 - The native folder window opened by Browse could appear behind the browser; its owner window is now shown (invisible, off-screen, topmost, brought to the foreground) so the dialog comes to the front.
 - The new-plan dialog on the welcome screen listed no templates and detected no commands (those routes needed an open plan); they now answer with no plan open.
 - The start-up picture now covers the whole window (cropped instead of letterboxed), and dialog forms (new plan, save as template) have stacked labels, styled fields, a three-column commands row and a primary action button.

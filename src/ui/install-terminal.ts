@@ -1,4 +1,5 @@
 import { Terminal } from '@xterm/xterm';
+import { TERM_OPTIONS } from './term-theme';
 import { FitAddon } from '@xterm/addon-fit';
 import type { StateMessage } from '../shared/protocol';
 import { api, wsUrl } from './api';
@@ -38,7 +39,7 @@ export function openInstallTerminal(terminalId: string, onClose: () => void = cl
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
 
-  const term = new Terminal({ scrollback: 5000, cursorBlink: false, fontSize: 13, convertEol: false, disableStdin: true });
+  const term = new Terminal({ ...TERM_OPTIONS, scrollback: 5000, cursorBlink: false, convertEol: false, disableStdin: true });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);

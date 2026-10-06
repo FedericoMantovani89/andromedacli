@@ -8,6 +8,7 @@ import { reconcile } from './dom';
 import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyTicket } from './chips';
+import { TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
 
 /** "Not started yet" next to the state when the launch check found the agent stalled. */
@@ -77,7 +78,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, plan
   host.className = 'panel-term';
   root.append(header, host);
 
-  const term = new Terminal({ scrollback: 20000, cursorBlink: false, fontSize: 13, convertEol: false });
+  const term = new Terminal({ ...TERM_OPTIONS, scrollback: 20000, cursorBlink: false, convertEol: false });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);
