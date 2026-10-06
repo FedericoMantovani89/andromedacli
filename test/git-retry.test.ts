@@ -40,3 +40,10 @@ it('never retries a real git failure (a number exit code) or a missing git (ENOE
   expect((await git('.', ['status'])).code).not.toBe(0);
   expect(calls).toHaveLength(1);
 });
+it('retries a process that died in the Windows loader (exit 0xC0000142) before git ran', async () => {
+  const { git } = await import('../src/server/git/git');
+  calls.length = 0;
+  script = (n) => (n < 2 ? { err: failing(3221225794) } : { stdout: 'fine' });
+  expect(await git('.', ['commit'])).toEqual({ code: 0, stdout: 'fine', stderr: '' });
+  expect(calls).toHaveLength(2);
+});

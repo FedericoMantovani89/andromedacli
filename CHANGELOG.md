@@ -14,6 +14,7 @@ introduces the behaviour.
 - Options dialog navigation is a vertical menu on the left (a row on narrow windows); Escape closes the Options, new-plan and close-plan dialogs.
 
 ### Fixed
+- git is retried when Windows kills it at start-up on a starved machine (exit 0xC0000142, before git runs anything); this made a step commit fail now and then under a heavy test run.
 - Opening a plan whose saved main session had no transcript (it never received a prompt) failed with "No conversation found with session ID"; the main now resumes only a session that has a transcript and otherwise starts a new one.
 - The native folder window opened by Browse could appear behind the browser; its owner window is now shown (invisible, off-screen, topmost, brought to the foreground) so the dialog comes to the front.
 - The new-plan dialog on the welcome screen listed no templates and detected no commands (those routes needed an open plan); they now answer with no plan open.

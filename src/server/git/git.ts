@@ -4,7 +4,9 @@ export interface GitResult { code: number; stdout: string; stderr: string }
 
 const MAX_SPAWN_ATTEMPTS = 4;
 // Spawn failures that come from a busy machine (processes, handles, antivirus), not from git itself.
-const TRANSIENT = new Set(['EAGAIN', 'EPERM', 'EBUSY', 'EMFILE', 'ENFILE', 'UNKNOWN', 'ENOMEM']);
+const TRANSIENT = new Set(['EAGAIN', 'EPERM', 'EBUSY', 'EMFILE', 'ENFILE', 'UNKNOWN', 'ENOMEM', 'DLL_INIT_FAILED']);
+// Windows exit 0xC0000142 (STATUS_DLL_INIT_FAILED): the process died in the loader on a starved machine, before git ran anything, so a retry is safe.
+const DLL_INIT_FAILED = 3221225794;
 
 function run(cwd: string, args: string[], timeoutMs: number, extraEnv: Record<string, string>): Promise<GitResult & { spawnError?: string }> {
   return new Promise((resolve) => {
@@ -15,7 +17,7 @@ function run(cwd: string, args: string[], timeoutMs: number, extraEnv: Record<st
       if (!err) return resolve({ code: 0, stdout: String(stdout), stderr: String(stderr) });
       const e = err as NodeJS.ErrnoException & { killed?: boolean };
       if (e.killed) return resolve({ code: -1, stdout: String(stdout), stderr: `${stderr}\ntimed out` });
-      const spawnError = typeof e.code === 'string' ? e.code : undefined;
+      const spawnError = typeof e.code === 'string' ? e.code : e.code === DLL_INIT_FAILED ? 'DLL_INIT_FAILED' : undefined;
       resolve({ code: typeof e.code === 'number' ? e.code : 1, stdout: String(stdout), stderr: String(stderr || e.message), spawnError });
     });
   });
