@@ -361,6 +361,7 @@ const RISKY_TOOLS =['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
 
 /** Only the fields the console judges: a command or a path, never file contents. */
 function guardInput(tool, e) {
+  if (tool === 'Agent' || tool === 'Task') return typeof e.subagent_type === 'string' ? { subagent_type: e.subagent_type } : {};
   const key = tool === 'Bash' || tool === 'PowerShell' ? 'command' : tool === 'NotebookEdit' ? 'notebook_path' : tool === 'Grep' || tool === 'Glob' ? 'path' : 'file_path';
   return typeof e[key] === 'string' ? { [key]: e[key] } : {};
 }
@@ -423,4 +424,5 @@ export const register = (on) => {
   on('session.measure', ($, e, next) => onMeasure($, e, next));
   on('tool.call', { tool: 'mcp__console-mod__resume_agent' }, ($, e) => onConsoleTool($, 'resume_agent', e));
   on('tool.call', { tool: 'mcp__console-mod__worktree_cleanup' }, ($, e) => onConsoleTool($, 'worktree_cleanup', e));
+  on('tool.call', { tool: 'Task' }, ($, e, next) => guardCall($, 'Task', e, next)); // the older name of the Agent tool
 };

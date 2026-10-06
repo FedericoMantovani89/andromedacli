@@ -20,7 +20,10 @@ const ALLOW: GuardDecision = { decision: 'allow' };
 const deny = (rule: string, reason: string): GuardDecision => ({ decision: 'deny', rule, reason });
 
 /** Rules that also bind the main session (SPEC 14.2). Everything else is for agents only. */
-const MAIN_RULES = new Set(['git.force', 'git.delete-ref', 'git.tag', 'secret.file', 'rm.wide', 'net.download-exec', 'git.protected-ref', 'git.no-verify', 'git.hooks-tamper']);
+const MAIN_RULES = new Set(['git.force', 'git.delete-ref', 'git.tag', 'secret.file', 'rm.wide', 'net.download-exec', 'git.protected-ref', 'git.no-verify', 'git.hooks-tamper', 'agent.builtin-subagent']);
+
+/** Claude Code's built-in subagent types that only look things up. Any other (general-purpose, or none given) can change files. */
+const READONLY_SUBAGENTS = new Set(['explore', 'plan', 'claude-code-guide']);
 
 const PROTECTED_REF = /^(main|master|develop|trunk|release\/.+)$/;
 const TEMPLATE_SUFFIX = /\.(example|sample|template|dist)$/i;
@@ -330,6 +333,14 @@ export function evaluate(call: GuardCall, baseCtx: GuardContext): GuardDecision 
   switch (call.tool) {
     case 'Bash': case 'PowerShell': d = evaluateShell(call, ctx); break;
     case 'Write': case 'Edit': case 'Read': case 'NotebookEdit': case 'Grep': case 'Glob': d = evaluateFileTool(call, ctx); break;
+    case 'Agent': case 'Task': {
+      // The main does file-changing work through console agents (spawn_agent): a built-in subagent has no worktree, ticket or budget.
+      const type = typeof call.input.subagent_type === 'string' ? call.input.subagent_type.toLowerCase() : '';
+      if (call.role === 'main' && !READONLY_SUBAGENTS.has(type)) {
+        return deny('agent.builtin-subagent', 'built-in subagents are not visible to the console (no worktree, ticket or budget): start a console agent with mcp__console-mod__spawn_agent for this job (load it with ToolSearch). Only Explore/Plan look-ups are allowed here.');
+      }
+      return ALLOW;
+    }
     default: return ALLOW;
   }
   if (d.decision === 'deny' && call.role === 'main' && !MAIN_RULES.has(d.rule)) return ALLOW;

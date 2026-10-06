@@ -8,6 +8,8 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- The guard refuses the main any Claude Code built-in subagent other than the read-only Explore, Plan and claude-code-guide types (rule `agent.builtin-subagent`), pointing it to `spawn_agent`; the mod now sends the subagent type and also guards the older `Task` tool name.
+- The main's prompt tells it to do every file-changing job through console agents (`spawn_agent`), not Claude Code's built-in subagents, which are invisible to the console (no worktree, ticket or budget).
 - Visual redesign of the whole UI: dark graphite surface with hairline seams instead of dimmed panels, one accent for focus, state dots with colour only for state, tab-style plan and options navigation, themed terminals, a brand mark in the top bar and a narrow-window layout.
 - Options dialog navigation is a vertical menu on the left (a row on narrow windows); Escape closes the Options, new-plan and close-plan dialogs.
 

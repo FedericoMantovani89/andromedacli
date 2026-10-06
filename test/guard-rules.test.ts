@@ -384,6 +384,22 @@ describe('guard rules — main role has fewer rules', () => {
   });
 });
 
+describe('guard rules — built-in subagents', () => {
+  const sub = (role: 'main' | 'agent', input: Record<string, unknown>, tool = 'Agent') => evaluate({ role, tool, input }, ctx);
+  it('denies the main a general-purpose or untyped subagent', () => {
+    expect(sub('main', { subagent_type: 'general-purpose' })).toMatchObject({ decision: 'deny', rule: 'agent.builtin-subagent' });
+    expect(sub('main', {})).toMatchObject({ decision: 'deny', rule: 'agent.builtin-subagent' });
+    expect(sub('main', { subagent_type: 'general-purpose' }, 'Task')).toMatchObject({ decision: 'deny' });
+  });
+  it('lets the main use the read-only look-up types', () => {
+    expect(sub('main', { subagent_type: 'Explore' }).decision).toBe('allow');
+    expect(sub('main', { subagent_type: 'Plan' }).decision).toBe('allow');
+  });
+  it('does not touch the agents', () => {
+    expect(sub('agent', { subagent_type: 'general-purpose' }).decision).toBe('allow');
+  });
+});
+
 describe('guard rules — misc', () => {
   it('has at least 120 labelled cases', () => {
     expect(DENY_AGENT.length + ALLOW_AGENT.length).toBeGreaterThanOrEqual(120);
