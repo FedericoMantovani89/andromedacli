@@ -964,7 +964,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   // What the request handler needs from the console itself: it answers even when no plan is open.
   const host: HostContext = {
-    getPort: () => port, token, uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
+    getPort: () => port, token, uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'), configDir: o.configDir,
     version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
     get bundles() { return shared.bundles; },
     get plans() { return shared.plansApi; },

@@ -180,8 +180,10 @@ export function openNewPlanDialog(_getState: () => StateMessage | undefined, onC
   const folderRow = document.createElement('div');
   folderRow.className = 'folder-row';
   folderRow.append(field(k('plans.new.folder'), folder), browse);
-  form.append(title, field(k('plans.new.template'), template), description, folderRow, browseNote, create.row, field(k('plans.new.name'), name),
-    field(k('plans.new.build'), build), field(k('plans.new.test'), test), field(k('plans.new.lint'), lint), note, error, box);
+  const commands = document.createElement('div');
+  commands.className = 'commands';
+  commands.append(field(k('plans.new.build'), build), field(k('plans.new.test'), test), field(k('plans.new.lint'), lint));
+  form.append(title, field(k('plans.new.template'), template), description, folderRow, browseNote, create.row, field(k('plans.new.name'), name), commands, note, error, box);
   showDialog(form);
   focusElementFromUser(folder, 'user'); // the user just clicked "new plan": the cursor may go into the first field
 }

@@ -198,6 +198,8 @@ export interface HostContext {
   getPort(): number;
   token: string;
   uiDist: string;
+  /** The user's config folder (templates live under it). */
+  configDir: string;
   version: string;
   bundles: Bundles;
   plans: PlansApi;
@@ -249,6 +251,20 @@ export function createRequestHandler(source: Context | PlanResolver, host: HostC
     if (req.method === 'POST' && path === '/api/pick-folder') {
       const picked = await host.pickFolder();
       return picked.status === 'busy' ? fail(res, 409, 'folder.pickBusy') : send(res, 200, picked);
+    }
+    // Plan templates and project detection are plan-independent (the welcome screen needs them with no plan open); saving a template is not.
+    if (req.method === 'GET' && path === '/api/templates') {
+      return send(res, 200, loadTemplates({ configDir: host.configDir }).map((t) => ({
+        id: t.id, name: t.name, description: t.description, source: t.source, valid: t.valid, ...(t.reason ? { reason: t.reason } : {}),
+      })));
+    }
+    // What the project in a folder suggests (SPEC 21): read-only, no process is run.
+    if (req.method === 'GET' && path === '/api/plans/detect') {
+      const root = url.searchParams.get('root') ?? '';
+      let isDir = false;
+      try { isDir = isAbsolute(root) && statSync(root).isDirectory(); } catch { /* not there */ }
+      if (!isDir) return fail(res, 422, 'plan.badRoot');
+      return send(res, 200, detectProject(resolvePath(root)));
     }
     const asked = url.searchParams.get('plan');
     const planCtx = asked !== null ? resolve(asked) : resolve();
@@ -395,20 +411,6 @@ export function createRequestHandler(source: Context | PlanResolver, host: HostC
       return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...Object.fromEntries(planFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
     }
 
-    // Phase 6D: plan templates. The list is plan-independent; saving copies the plan named by ?plan= (this context's plan).
-    if (req.method === 'GET' && path === '/api/templates') {
-      return send(res, 200, loadTemplates({ configDir: dirname(ctx.configPath) }).map((t) => ({
-        id: t.id, name: t.name, description: t.description, source: t.source, valid: t.valid, ...(t.reason ? { reason: t.reason } : {}),
-      })));
-    }
-    // What the project in a folder suggests (SPEC 21): read-only, no process is run.
-    if (req.method === 'GET' && path === '/api/plans/detect') {
-      const root = url.searchParams.get('root') ?? '';
-      let isDir = false;
-      try { isDir = isAbsolute(root) && statSync(root).isDirectory(); } catch { /* not there */ }
-      if (!isDir) return fail(res, 422, 'plan.badRoot');
-      return send(res, 200, detectProject(resolvePath(root)));
-    }
     if (req.method === 'POST' && path === '/api/plans/save-template') {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }

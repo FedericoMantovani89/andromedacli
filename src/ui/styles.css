@@ -106,9 +106,9 @@ button:hover { border-color: var(--accent); }
 .dialog { min-width: 420px; max-width: 80vw; background: var(--panel); border: 1px solid var(--border);
   border-radius: 6px; padding: 14px; display: grid; gap: 10px; }
 #splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #00111a; pointer-events: none; opacity: 1; transition: opacity .5s ease; }
-#splash .splash-frame { position: relative; line-height: 0; }
-#splash img { display: block; max-width: 100vw; max-height: 100vh; object-fit: contain; }
-#splash-version { position: absolute; right: 4%; bottom: 5%; line-height: 1; color: #8fe9f5; font: 600 clamp(14px, 2vw, 26px) Consolas, 'Courier New', monospace; letter-spacing: .1em; text-shadow: 0 0 10px rgba(127, 227, 240, .7); }
+#splash .splash-frame { position: absolute; inset: 0; line-height: 0; }
+#splash img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 30% 50%; }
+#splash-version { position: fixed; right: 4%; bottom: 5%; line-height: 1; color: #8fe9f5; font: 600 clamp(14px, 2vw, 26px) Consolas, 'Courier New', monospace; letter-spacing: .1em; text-shadow: 0 0 10px rgba(127, 227, 240, .7); }
 #splash.fade { opacity: 0; }
 #splash[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { #splash { transition: none; } }
@@ -157,3 +157,24 @@ button:hover { border-color: var(--accent); }
 #welcome p { margin: 0; max-width: 56ch; color: var(--muted); }
 .folder-row { display: flex; gap: 8px; align-items: end; }
 .folder-row label { flex: 1; }
+
+/* Dialog forms: stacked labels, styled fields, a primary action */
+.dialog { width: min(560px, 92vw); padding: 20px 22px; gap: 14px; border-radius: 10px; box-shadow: 0 18px 50px rgba(0, 0, 0, .55); }
+.dialog h2 { font-size: 17px; font-weight: 600; }
+.dialog form { display: grid; gap: 14px; }
+.dialog label:not(.settings-switch) { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+.dialog input:not([type="checkbox"]), .dialog select, .dialog textarea { font: inherit; font-size: 13px; width: 100%; padding: 7px 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; }
+.dialog input:not([type="checkbox"]):focus-visible, .dialog select:focus-visible, .dialog textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91, 157, 255, .25); }
+.dialog input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.dialog .settings-switch { color: var(--text); }
+.dialog button { padding: 6px 14px; border-radius: 6px; }
+.new-plan-form .browse-folder { height: 33px; }
+.new-plan-form .folder-row { align-items: end; }
+.new-plan-form .commands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; flex-direction: row-reverse; margin-top: 4px; }
+.form-actions button[type="submit"] { background: var(--accent); border-color: var(--accent); color: #07101f; font-weight: 600; }
+.form-actions button[type="submit"]:hover { filter: brightness(1.1); }
+.form-actions button[disabled] { opacity: .5; cursor: default; }
+.form-error { color: var(--bad); font-size: 12px; }
+.form-error:empty, .settings-note:empty { display: none; }

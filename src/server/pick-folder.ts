@@ -20,6 +20,20 @@ export const PICK_SCRIPT = [
   '[System.Windows.Forms.Application]::EnableVisualStyles()',
   '$owner = New-Object System.Windows.Forms.Form',
   '$owner.TopMost = $true',
+  // An owner that was never shown does not lift the dialog above the browser: show it invisible, off-screen and out of the taskbar.
+  '$owner.ShowInTaskbar = $false',
+  '$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None',
+  '$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual',
+  '$owner.Location = New-Object System.Drawing.Point(-32000, -32000)',
+  '$owner.Size = New-Object System.Drawing.Size(1, 1)',
+  '$owner.Show()',
+  // Windows does not let a background process take the foreground: a synthetic Alt key press lifts that lock for this call.
+  "Add-Type -Name Fg -Namespace Console -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport(\"user32.dll\")] public static extern void keybd_event(byte k, byte s, uint f, System.UIntPtr e); [DllImport(\"user32.dll\")] public static extern bool SetWindowPos(System.IntPtr h, System.IntPtr after, int x, int y, int w, int c, uint f);'",
+  '[Console.Fg]::keybd_event(0x12, 0, 0, [System.UIntPtr]::Zero)',
+  '[Console.Fg]::keybd_event(0x12, 0, 2, [System.UIntPtr]::Zero)',
+  '[void][Console.Fg]::SetWindowPos($owner.Handle, [System.IntPtr]::new(-1), 0, 0, 0, 0, 0x13)', // HWND_TOPMOST: the dialog it owns follows
+  '[void][Console.Fg]::SetForegroundWindow($owner.Handle)',
+  '$owner.Activate()',
   '$dialog = New-Object System.Windows.Forms.FolderBrowserDialog',
   '$dialog.Description = $env:CONSOLE_PICK_TITLE',
   '$dialog.ShowNewFolderButton = $true',

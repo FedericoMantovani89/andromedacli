@@ -7,6 +7,11 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Fixed
+- The native folder window opened by Browse could appear behind the browser; its owner window is now shown (invisible, off-screen, topmost, brought to the foreground) so the dialog comes to the front.
+- The new-plan dialog on the welcome screen listed no templates and detected no commands (those routes needed an open plan); they now answer with no plan open.
+- The start-up picture now covers the whole window (cropped instead of letterboxed), and dialog forms (new plan, save as template) have stacked labels, styled fields, a three-column commands row and a primary action button.
+
 ### Added
 - With no plan open (nothing remembered and no `--plan-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-plan dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
 - `GET /api/host` tells the page what the console knows without a plan (plans, language, languages); plan routes with no plan answer `404 plan.notFound`.
