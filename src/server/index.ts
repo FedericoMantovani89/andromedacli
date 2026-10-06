@@ -40,7 +40,7 @@ import { languageName, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
 import type { PlanTab, PrereqResult } from '../shared/protocol';
 import { Ledger } from './budget/ledger';
-import { defaultProjectsDir, pickTranscript, TranscriptReader } from './budget/transcript';
+import { defaultProjectsDir, pickTranscript, TranscriptReader, transcriptPath } from './budget/transcript';
 import { BudgetService } from './budget/service';
 import { readHandoverNote } from './tickets/handover';
 import { Restrictions } from './budget/restrictions';
@@ -206,7 +206,9 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   const registry = new AgentRegistry();
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
   const savedMainSession = store.readMainSession();
-  const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) ? savedMainSession : undefined;
+  // Claude Code keeps no transcript for a session that never got a prompt: resuming that id fails with "No conversation found", so such an id starts fresh.
+  const hasMainTranscript = (id: string): boolean => existsSync(transcriptPath(o.projectsDir ?? defaultProjectsDir(), o.planRoot, id));
+  const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) && hasMainTranscript(savedMainSession) ? savedMainSession : undefined;
   registry.register({ slug: planName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
   const questions = new QuestionQueue();
   const reading = new ReadingStore(join(o.planRoot, '.console', 'state', 'reading'));

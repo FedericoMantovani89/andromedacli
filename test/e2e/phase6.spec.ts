@@ -5,12 +5,13 @@
 // Run with: npx tsx test/e2e/phase6.spec.ts (after `npm run build`).
 import { chromium } from 'playwright-core';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 process.env.CONSOLE_TEST = '1';
 const { startServer } = await import('../../src/server/index');
+const { transcriptPath } = await import('../../src/server/budget/transcript');
 
 const root = resolve(import.meta.dirname, '..', '..');
 const fixture = join(root, 'test', 'fixtures', 'fake-agent.cjs').replace(/\\/g, '/');
@@ -51,10 +52,10 @@ function api(s: Server) {
   return { ui, asMod, event, state, agent };
 }
 
-async function boot(o: { planRoot?: string; configDir: string; notifier?: { available(): Promise<boolean>; notify(n: Toast): Promise<void> } }): Promise<Server> {
+async function boot(o: { planRoot?: string; configDir: string; projectsDir?: string; notifier?: { available(): Promise<boolean>; notify(n: Toast): Promise<void> } }): Promise<Server> {
   const s = await startServer({
     port: 0, ...(o.planRoot ? { planRoot: o.planRoot, planName: 'shop-api' } : {}), configDir: o.configDir, claudeCommand: [process.execPath, fixture], modDir: null,
-    projectsDir: tmp('e2e6-proj-'), ...(o.notifier ? { notifier: o.notifier } : {}),
+    projectsDir: o.projectsDir ?? tmp('e2e6-proj-'), ...(o.notifier ? { notifier: o.notifier } : {}),
   } as Parameters<typeof startServer>[0]);
   servers.push(s);
   s.setLimits({ global: 20, perPlan: 20 });
@@ -69,9 +70,14 @@ try {
     const configDir = tmp('e2e6-cfg-');
     writeConfig(configDir);
     const planRoot = tmp('e2e6-plan-');
-    const a = await boot({ planRoot, configDir });
+    const projectsDir = tmp('e2e6-proj-');
+    const a = await boot({ planRoot, configDir, projectsDir });
     const A = api(a);
     const mainSid = randomUUID();
+    // Claude Code writes a transcript once the session has had a prompt; the console resumes only a session that has one.
+    const transcript = transcriptPath(projectsDir, planRoot, mainSid);
+    mkdirSync(dirname(transcript), { recursive: true });
+    writeFileSync(transcript, '');
     await A.event('shop-api', 'session.start', mainSid);
     const sids = new Map<string, string>();
     for (const name of ['one-job', 'two-job', 'three-job']) {
@@ -87,7 +93,7 @@ try {
     await sleep(1500); // the agent records are written at most once a second
     await a.close();
 
-    const b = await boot({ planRoot, configDir });
+    const b = await boot({ planRoot, configDir, projectsDir });
     const B = api(b);
     check('after the restart the main is running at once', await until(async () => (await B.state()).main.status === 'running'));
     const mainArgs = b.lastLaunchArgs('shop-api') ?? [];
