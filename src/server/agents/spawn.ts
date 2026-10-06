@@ -5,6 +5,7 @@ import { loadProfile, renderAgentPrompt, type Profile } from '../profiles';
 import { validateSlug } from '../../shared/slug';
 import { checkSpawnable, createAgentWorktree, createReviewWorktree, discardAgentWorktree, GitError, removeWorktree } from '../git/worktree';
 import { installPushHook } from '../git/hooks';
+import { repoPathOf, resolveRepo } from '../git/repos';
 import type { SpawnRequest } from './scheduler';
 
 export type SpawnOutcome =
@@ -56,8 +57,16 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   // A recovery exists only for a stopped ticket: start_recovery (or the user's answer to a stop) starts it, on the WIP commit.
   if (r.profile === 'recovery' && !r.recovery) return refuse(422, 'recovery.useRecoveryTool');
   if (ctx.git.worktrees) {
-    // Found now, before the name is reserved, so the user sees the real reason (SPEC 9.2); the worktree itself is made at start.
-    const problem = await checkSpawnable({ repo: ctx.planRoot, plan: ctx.planName, slug: v.slug, review: Boolean(detachedOf(r)) });
+    // Which repository: the plan folder when it is one, else the sub-folder named in the request. Found now, before the name is
+    // reserved, so the user sees the real reason (SPEC 9.2); the worktree itself is made at start.
+    const repo = resolveRepo(ctx.planRoot, r.repo);
+    if (!repo.ok) {
+      return refuse(422, repo.code, repo.code === 'git.repoRequired' ? { repos: repo.repos.join(', ') }
+        : repo.code === 'git.unknownRepo' ? { repo: r.repo ?? '', repos: repo.repos.join(', ') } : undefined);
+    }
+    request.repo = repo.rel;
+    await ctx.prepareRepo(repo.path);
+    const problem = await checkSpawnable({ repo: repo.path, plan: ctx.planName, slug: v.slug, review: Boolean(detachedOf(r)) });
     if (problem) return refuse(422, problem);
   }
   try {
@@ -69,6 +78,8 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   // The review and the report check the work against it. A replacement keeps the objective of the ticket it takes over (its goal
   // here is the handover), and a reviewer or a recovery has no ticket of its own.
   if (r.goal && roleOf(r) === 'agent' && !r.resumeBranch) ctx.tickets.setGoal(v.slug, r.goal);
+  // The review, the merge and the release find the repository again from the ticket.
+  if (ctx.git.worktrees && request.repo !== undefined && roleOf(r) === 'agent' && !r.resumeBranch) ctx.tickets.setRepo(v.slug, request.repo);
   try {
     const result = ctx.scheduler.request(request);
     ctx.broadcastState();
@@ -107,23 +118,24 @@ export function launchAgent(ctx: Context, r: SpawnRequest): void | Promise<void>
 
 async function startInWorktree(ctx: Context, r: SpawnRequest, profile: Profile, bypass: boolean): Promise<void> {
   let made: { path: string; branch: string } | undefined;
+  const repo = repoPathOf(ctx.planRoot, r.repo);
   try {
     // A reviewer reads a detached checkout of the delivered commit, a recovery one of the WIP commit; their nominal branch exists
     // nowhere, so the push hook refuses everything. A replacement agent checks out the stopped agent's branch.
     const detached = detachedOf(r);
     made = detached
-      ? { path: (await createReviewWorktree({ repo: ctx.planRoot, slug: r.slug, sha: detached.sha })).path, branch: `${detached.prefix}/${r.slug}` }
-      : await createAgentWorktree({ repo: ctx.planRoot, plan: ctx.planName, slug: r.slug, ...(r.resumeBranch ? { branch: r.resumeBranch } : {}) });
-    await installPushHook({ repo: ctx.planRoot, worktree: made.path, branch: made.branch, slug: r.slug });
+      ? { path: (await createReviewWorktree({ repo, slug: r.slug, sha: detached.sha })).path, branch: `${detached.prefix}/${r.slug}` }
+      : await createAgentWorktree({ repo, plan: ctx.planName, slug: r.slug, ...(r.resumeBranch ? { branch: r.resumeBranch } : {}) });
+    await installPushHook({ repo, worktree: made.path, branch: made.branch, slug: r.slug });
     await ctx.afterWorktreeCreated?.(r.slug);
-    ctx.registry.setGit(r.slug, { worktree: made.path, branch: made.branch });
+    ctx.registry.setGit(r.slug, { worktree: made.path, branch: made.branch, repo });
     startProcess(ctx, r, profile, made.path, { worktree: made.path, branch: made.branch }, bypass);
   } catch (e) {
     ctx.registry.setGit(r.slug, undefined);
     ctx.tokens.revoke(r.slug);
     // Never delete a branch the console did not just create: a replacement's branch holds the stopped agent's work.
-    if (made && (detachedOf(r) || r.resumeBranch)) await removeWorktree(ctx.planRoot, made.path);
-    else if (made) await discardAgentWorktree({ repo: ctx.planRoot, slug: r.slug, branch: made.branch, path: made.path });
+    if (made && (detachedOf(r) || r.resumeBranch)) await removeWorktree(repo, made.path);
+    else if (made) await discardAgentWorktree({ repo, slug: r.slug, branch: made.branch, path: made.path });
     throw e;
   }
 }

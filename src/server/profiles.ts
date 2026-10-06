@@ -89,10 +89,14 @@ function planText(planRoot: string | undefined, file: 'main.md' | 'rules.md'): s
 }
 
 /** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `planRoot`, the plan's main.md and rules.md follow. */
-export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir: string; planRoot?: string }): string {
+export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir: string; planRoot?: string; repos?: string[] }): string {
   const template = readFileSync(join(promptsDir(), 'main.md'), 'utf8');
   const base = fill(template, { plan: o.plan, workLanguage: o.workLanguage });
-  const extra = [planText(o.planRoot, 'main.md'), planText(o.planRoot, 'rules.md')].filter((x): x is string => x !== undefined);
+  // A plan folder that holds several repositories: every agent works in exactly one, which the main must name.
+  const repoText = o.repos && o.repos.length > 1
+    ? `This plan folder holds several git repositories: ${o.repos.join(', ')}. Every agent works in exactly one of them: pass its name as "repo" to spawn_agent. Work that touches two repositories needs one agent for each.`
+    : undefined;
+  const extra = [repoText, planText(o.planRoot, 'main.md'), planText(o.planRoot, 'rules.md')].filter((x): x is string => x !== undefined);
   return writePrompt(o.outDir, `main-${o.plan}.md`, extra.length > 0 ? `${base.trimEnd()}\n\n${extra.join('\n\n')}\n` : base);
 }
 

@@ -33,6 +33,8 @@ export interface Ticket {
   recoveries: number;
   stopCause?: 'budget' | 'loop' | 'limit';
   handover?: string;
+  /** The repository the agent works in, relative to the plan folder; absent means the plan folder itself. */
+  repo?: string;
 }
 export interface TicketProgress { done: number; total: number; blocked: boolean; status: TicketStatus }
 
@@ -98,6 +100,10 @@ export class TicketStore {
 
   setGoal(slug: string, goal: string): Ticket {
     return this.save({ ...this.ensure(slug), goal: goal.trim().slice(0, MAX_GOAL) });
+  }
+
+  setRepo(slug: string, repo: string): Ticket {
+    return this.save({ ...this.ensure(slug), repo });
   }
 
   setTests(slug: string, tests: TestResult): Ticket {

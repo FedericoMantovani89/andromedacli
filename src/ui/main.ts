@@ -64,7 +64,7 @@ function createPlanWorkspace(s: StateMessage): { ws: Workspace; el: HTMLElement 
   el.append(mainCol, agentsCol);
   $('workspace').append(el);
   const ws = new Workspace(mainCol, agentsCol, s.main.slug, s.plan.name);
-  ws.setNewAgentControl(createNewAgentControl(() => state?.profiles ?? [], () => ws.activate(ws.active)));
+  ws.setNewAgentControl(createNewAgentControl(() => state?.profiles ?? [], () => ws.activate(ws.active), () => state?.repos ?? []));
   return { ws, el };
 }
 

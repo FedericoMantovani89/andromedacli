@@ -72,6 +72,7 @@ const TOOL_SPECS = {
         profile: { type: 'string', description: 'backend, dba, frontend, reviewer or recovery' },
         goal: { type: 'string', description: 'What the agent must achieve: result, constraints, references. Not the steps.' },
         model: { type: 'string', description: 'Optional model alias or id' },
+        repo: { type: 'string', description: 'Only when the plan folder holds several git repositories: the one the agent works in (its folder name, for example abc-fe). The console answers git.repoRequired and lists them if you leave it out.' },
       },
       required: ['name', 'profile', 'goal'],
     },
@@ -267,7 +268,7 @@ async function askConsole($, question, options, multiSelect, extra) {
 
 /** What each console tool sends: only the fields the console knows, never the whole event. */
 function toolBody(name, e) {
-  if (name === 'spawn_agent') return { name: e.name, profile: e.profile, goal: e.goal, model: e.model };
+  if (name === 'spawn_agent') return { name: e.name, profile: e.profile, goal: e.goal, model: e.model, repo: e.repo };
   if (name === 'checklist_set') return { items: e.items };
   if (name === 'step_done') return { n: typeof e.n === 'string' ? Number(e.n) : e.n, note: e.note, skip: e.skip };
   if (name === 'report_blocked') return { reason: e.reason };

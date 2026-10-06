@@ -56,3 +56,33 @@ export function removeDir(path: string): void {
     rmSync(path, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 });
   } catch { /* the operating system's temp cleaner gets it later */ }
 }
+
+export interface MultiRepo { base: string; root: string; repos: Record<string, { repo: string; remote: string }> }
+
+/** A plan folder that is NOT a repository, holding one repo (one commit on `main`, optionally a bare origin) per name. */
+export function makeMultiRepo(names: string[], o: { remote?: boolean } = {}): MultiRepo {
+  const base = mkdtempSync(join(tmpdir(), 'multi-'));
+  const root = join(base, 'abc website');
+  mkdirSync(root);
+  const repos: MultiRepo['repos'] = {};
+  for (const name of names) {
+    const repo = join(root, name);
+    const remote = join(base, `${name}-remote.git`);
+    mkdirSync(repo);
+    gitSync(repo, 'init', '-q', '-b', 'main');
+    gitSync(repo, 'config', 'core.autocrlf', 'false');
+    gitSync(repo, 'config', 'user.name', 'Tester');
+    gitSync(repo, 'config', 'user.email', 't@example.com');
+    writeFileSync(join(repo, 'README.md'), `${name}\n`);
+    gitSync(repo, 'add', '-A');
+    gitSync(repo, 'commit', '-q', '-m', 'init');
+    if (o.remote) {
+      mkdirSync(remote);
+      gitSync(remote, 'init', '-q', '--bare');
+      gitSync(repo, 'remote', 'add', 'origin', remote);
+      gitSync(repo, 'push', '-q', 'origin', 'main');
+    }
+    repos[name] = { repo, remote };
+  }
+  return { base, root, repos };
+}

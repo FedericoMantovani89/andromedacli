@@ -20,6 +20,8 @@ export interface SpawnRequest {
   resume?: { sessionId: string; /** Why: `limit` (the default) after a usage limit; the others wake a dormant agent after a console restart (Phase 6A). */ reason?: 'limit' | 'user' | 'work' | 'main' };
   /** Token budget of this ticket; absent means the profile's `budget_tokens`, then `budget.agentTokens` (SPEC 16.2). */
   budget?: number;
+  /** The git repository the agent works in, relative to the plan folder (`''`: the plan folder itself). `spawnAgent` fills it in. */
+  repo?: string;
 }
 
 /** `ready` is present when the start is asynchronous (it creates a worktree first): it rejects if the start fails. */

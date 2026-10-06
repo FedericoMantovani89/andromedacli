@@ -32,6 +32,8 @@ export interface AgentRecord {
   sessionId?: string;
   worktree?: string;
   branch?: string;
+  /** Absolute path of the repository of the worktree (a plan folder that holds several repos); absent: the plan root. */
+  repo?: string;
   model?: string;
   cwd?: string;
   /** The registry state when last seen (a crash leaves it behind: `working`/`starting` means a turn was lost). */

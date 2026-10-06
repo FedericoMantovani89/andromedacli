@@ -21,6 +21,7 @@ introduces the behaviour.
 - The start-up picture now covers the whole window (cropped instead of letterboxed), and dialog forms (new plan, save as template) have stacked labels, styled fields, a three-column commands row and a primary action button.
 
 ### Added
+- A plan folder that is not a git repository but holds several (for example `abc-website` with `abc-fe` and `abc-be`) now works: `spawn_agent` and the new-agent form take a `repo`, each agent gets its worktree and branches in that repo, and review, merge and a single release confirmation run per repo (`git.repoRequired`, `git.unknownRepo`); the main's prompt lists the repos.
 - With no plan open (nothing remembered and no `--plan-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-plan dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
 - `GET /api/host` tells the page what the console knows without a plan (plans, language, languages); plan routes with no plan answer `404 plan.notFound`.
 

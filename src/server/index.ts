@@ -1,6 +1,5 @@
 import http from 'node:http';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createRequestHandler, type Context, type HostContext } from './http';
@@ -35,6 +34,7 @@ import { LaunchWatch } from './agents/launch-watch';
 import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
 import { excludeConsoleFolder } from './git/worktree';
+import { discoverRepos, repoPathOf } from './git/repos';
 import { GuardLog } from './guard/log';
 import { languageName, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
@@ -226,13 +226,16 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
    */
   const endReadOnlySession = (slug: string): void => {
     const git = registry.get(slug)?.git;
+    const repo = git?.repo ?? o.planRoot;
     const timer = setTimeout(() => {
       endTimers.delete(timer);
-      void finishAgent(slug).then(() => (git ? removeWorktree(o.planRoot, git.worktree) : undefined)).then(async () => { rmSync(join(await commonDir(o.planRoot), 'console-hooks', slug), { recursive: true, force: true }); }).catch(() => undefined);
+      void finishAgent(slug).then(() => (git ? removeWorktree(repo, git.worktree) : undefined)).then(async () => { rmSync(join(await commonDir(repo), 'console-hooks', slug), { recursive: true, force: true }); }).catch(() => undefined);
     }, 3000);
     timer.unref?.();
     endTimers.add(timer);
   };
+  /** The repository a ticket belongs to, as a spawn request field (nothing for a plan folder that is itself the repository). */
+  const repoOfTicket = (slug: string): { repo?: string } => { const repo = tickets.get(slug)?.repo; return repo === undefined ? {} : { repo }; };
   const reportLanguage = () => {
     const language = shared.language();
     const lang = language !== 'auto' && bundles.has(language) ? language : 'en';
@@ -246,7 +249,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
     language: reportLanguage,
     spawnReviewer: async (r) => {
-      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'reviewer', goal: r.goal, model: r.model, source: 'main', review: { ticket: r.ticket, sha: r.sha } });
+      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'reviewer', goal: r.goal, model: r.model, source: 'main', review: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
       return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
     },
     existingSlugs: () => [planName, ...store.listAgents().map((a) => a.slug)],
@@ -335,7 +338,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     testCommand: () => store.plan.testCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     spawnRecovery: async (r) => {
-      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha } });
+      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
       return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
     },
     spawnReplacement: async (r) => {
@@ -350,13 +353,14 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
         // Whatever is still uncommitted is kept on the branch before the folder goes (git refuses a branch checked out twice).
         const wip = await commitWip({ worktree: old.worktree, slug: r.from, plan: planName, reason: 'handover', secretPatterns: secretPatterns() });
         if (!wip.ok) return { ok: false, code: 'wip_failed', detail: `${wip.code}${wip.files ? `: ${wip.files.join(', ')}` : wip.detail ? `: ${wip.detail}` : ''}` };
-        await removeWorktree(o.planRoot, old.worktree);
-        rmSync(join(await commonDir(o.planRoot), 'console-hooks', r.from), { recursive: true, force: true });
+        const oldRepo = old.repo ?? o.planRoot;
+        await removeWorktree(oldRepo, old.worktree);
+        rmSync(join(await commonDir(oldRepo), 'console-hooks', r.from), { recursive: true, force: true });
         registry.setGit(r.from, undefined);
       }
       const out = await spawnAgent(ctx, {
         slug: r.slug, profile: r.profile, goal: r.goal, model: r.model, source: 'main',
-        ...(r.budget !== undefined ? { budget: r.budget } : {}), ...(old ? { resumeBranch: old.branch } : {}),
+        ...(r.budget !== undefined ? { budget: r.budget } : {}), ...(old ? { resumeBranch: old.branch } : {}), ...repoOfTicket(r.slug),
       });
       return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
     },
@@ -503,8 +507,24 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   inbox.onPush((slug) => waker.onWork(slug));
   // Messages and state kept for the next start (Phase 6A).
   const persister = new AgentPersister({ registry, updateAgent: (slug, patch) => store.updateAgent(slug, patch), writeMainSession: (id) => store.writeMainSession(id), mainSlug: planName });
+  // The state is rebuilt on every push to the UI and discovery spawns git: a few seconds of memory is plenty (a repo made later shows up soon).
+  let repoCache: { at: number; list: string[] } | undefined;
+  const repos = (): string[] => {
+    const now = Date.now();
+    if (!repoCache || now - repoCache.at > 5000) repoCache = { at: now, list: discoverRepos(o.planRoot) };
+    return repoCache.list;
+  };
+  const preparedRepos = new Set<string>();
+  const prepareRepo = async (path: string): Promise<void> => {
+    const key = path.replace(/\\/g, '/').toLowerCase();
+    if (preparedRepos.has(key)) return;
+    preparedRepos.add(key);
+    // The console's own folder never shows in git status; nobody pushes main from here except the console, after the user approves a release (SPEC 9.1, 15.5).
+    await excludeConsoleFolder(path).catch(() => { /* cosmetic: the first worktree tries again */ });
+    await installReleaseHook(path).catch(() => 'skipped_existing');
+  };
   const staleChecker = new StaleChecker({
-    enabled: () => planIsRepo && runtime.git.worktrees && runtime.git.staleCheck,
+    enabled: () => repos().length > 0 && runtime.git.worktrees && runtime.git.staleCheck,
     days: () => runtime.git.staleWorktreeDays,
     now: () => Date.now(),
     candidates: () => {
@@ -554,7 +574,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
       url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(planName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir,
       allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
-      appendPromptFile: renderMainPrompt({ plan: planName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, planRoot: o.planRoot }),
+      appendPromptFile: renderMainPrompt({ plan: planName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, planRoot: o.planRoot, repos: repos() }),
       ...(resumeId !== undefined ? { resumeId } : {}),
     });
     ptys.spawn({ id: planName, ...launch, cwd: resolve(o.planRoot), cols: 120, rows: 30 });
@@ -562,15 +582,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
   }
   // The port, the prerequisite checks and the language are console-wide (see `shared`); any change pushes to every UI socket.
   const broadcast = (): void => shared.broadcastAll();
-  let planIsRepo = false;
-  try {
-    execFileSync('git', ['rev-parse', '--git-dir'], { cwd: o.planRoot, stdio: 'ignore', timeout: 5000 });
-    planIsRepo = true;
-  } catch { /* not a repository, or git is missing: the checks report the latter */ }
-  // The console's own folder never shows up in the project's git status (kept in .git/info/exclude, not in its .gitignore).
-  if (planIsRepo) await excludeConsoleFolder(o.planRoot).catch(() => { /* cosmetic: the first worktree tries again */ });
-  // Nobody pushes main from this checkout except the console, after the user approves a release (SPEC 9.1, 15.5).
-  if (planIsRepo) await installReleaseHook(o.planRoot).catch(() => 'skipped_existing');
+  for (const rel of repos()) await prepareRepo(repoPathOf(o.planRoot, rel));
 
   // Notifications (SPEC 20): the server raises a native toast for what needs the user, also with the browser closed.
   const notifyClock = o.notifyClock ?? realNotifyClock;
@@ -667,7 +679,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
         const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; action?: unknown };
         if (typeof b.name !== 'string' || b.name === '' || b.action !== 'remove') return { status: 'error', code: 'bad_request' };
         return cleanupWorktree({
-          repo: resolve(o.planRoot), plan: planName, secretPatterns: runtime.git.secretPatterns,
+          repo: registry.get(b.name)?.git?.repo ?? resolve(o.planRoot), plan: planName, secretPatterns: runtime.git.secretPatterns,
           agentGit: (s) => (registry.get(s)?.role === 'agent' ? registry.get(s)?.git : undefined),
           // A running agent, one waiting for a slot, or one under review (its branch must not move) is never touched.
           isActive: (s) => ptys.status(s) === 'running' || registry.get(s)?.state === 'queued' || ticketStatusOf(s) === 'in_review',
@@ -761,7 +773,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
         if (b.budget !== undefined && !(typeof b.budget === 'number' && Number.isInteger(b.budget) && b.budget >= 1000 && b.budget <= 100_000_000)) {
           return { status: 'error', code: 'bad_request' };
         }
-        const out = await spawnAgent(ctx, { slug: b.name, profile: b.profile, goal: b.goal, model: typeof b.model === 'string' ? b.model : undefined, source: 'main', ...(b.budget !== undefined ? { budget: b.budget as number } : {}) });
+        const out = await spawnAgent(ctx, { slug: b.name, profile: b.profile, goal: b.goal, model: typeof b.model === 'string' ? b.model : undefined, source: 'main', ...(b.budget !== undefined ? { budget: b.budget as number } : {}), ...(typeof b.repo === 'string' ? { repo: b.repo } : {}) });
         if (!out.ok) return { status: 'error', code: out.code, ...(out.params ? { params: out.params } : {}) };
         return out.status === 'started' ? { status: 'started', name: out.slug } : { status: 'queued', name: out.slug, position: out.position };
       },
@@ -775,7 +787,7 @@ async function createPlanRuntime(shared: Shared, p: { planRoot: string; planName
     uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
     testMode: process.env.CONSOLE_TEST === '1',
     configPath,
-    planIsRepo,
+    repos, prepareRepo,
     getPrereq: () => shared.getPrereq(),
     ensurePrereq: () => shared.ensurePrereq(),
     refreshPrereq: () => shared.refreshPrereq(),

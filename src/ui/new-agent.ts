@@ -13,7 +13,7 @@ export function errorText(err: ApiError): string {
  * The "+ new agent" control. Opening the form is a user click, so moving the cursor into the slug field is allowed;
  * creating an agent never moves the keyboard anywhere (the new panel appears dimmed, P2).
  */
-export function createNewAgentControl(getProfiles: () => readonly string[], afterCreate: () => void): HTMLElement {
+export function createNewAgentControl(getProfiles: () => readonly string[], afterCreate: () => void, getRepos: () => readonly string[] = () => []): HTMLElement {
   const wrap = document.createElement('div');
   const button = document.createElement('button');
   button.id = 'new-agent-btn';
@@ -45,6 +45,23 @@ export function createNewAgentControl(getProfiles: () => readonly string[], afte
     }
     profileLabel.append(profileText, profile);
 
+    // A plan folder that holds several repositories: the agent works in exactly one of them.
+    const repoNames = getRepos().filter((r) => r !== '');
+    const repoLabel = document.createElement('label');
+    const repo = document.createElement('select');
+    repo.name = 'repo';
+    if (repoNames.length > 1) {
+      const repoText = document.createElement('span');
+      bindText(repoText, 'panel.repoLabel');
+      for (const r of repoNames) {
+        const o = document.createElement('option');
+        o.value = r;
+        o.textContent = r; // repo names are data
+        repo.append(o);
+      }
+      repoLabel.append(repoText, repo);
+    }
+
     const error = document.createElement('div');
     error.className = 'form-error';
     const actions = document.createElement('div');
@@ -56,13 +73,13 @@ export function createNewAgentControl(getProfiles: () => readonly string[], afte
     cancel.type = 'button';
     bindText(cancel, 'common.cancel');
     actions.append(create, cancel);
-    form.append(slugLabel, profileLabel, error, actions);
+    form.append(slugLabel, profileLabel, repoLabel, error, actions);
 
     const close = () => { form.remove(); button.hidden = false; afterCreate(); };
     cancel.addEventListener('click', close);
     form.addEventListener('submit', (ev) => {
       ev.preventDefault();
-      void api<ApiError | { slug: string }>('/api/agents', { method: 'POST', body: { slug: slug.value, profile: profile.value } })
+      void api<ApiError | { slug: string }>('/api/agents', { method: 'POST', body: { slug: slug.value, profile: profile.value, ...(repoNames.length > 1 ? { repo: repo.value } : {}) } })
         .then((res) => {
           if (res.status === 201 || res.status === 202) close(); // 202: queued behind the limit, it starts by itself
           else error.textContent = errorText(res.body as ApiError);

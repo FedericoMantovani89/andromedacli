@@ -65,6 +65,13 @@ export function createConfirmEntry(item: QueueItem, send: (answer: string) => vo
     bindText(line, 'queue.confirm.extra', { count: extra });
     el.append(line);
   }
+  const repos = arr(p.repos).filter(isObj);
+  if (repos.length > 0) {
+    const line = document.createElement('div');
+    line.className = 'queue-extra';
+    bindText(line, 'queue.confirm.repos', { repos: repos.map((r) => str(r.repo)).join(', ') }); // repo names are data
+    el.append(line);
+  }
   if (p.truncated === true) {
     const warn = document.createElement('div');
     warn.className = 'queue-extra';

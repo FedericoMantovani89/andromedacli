@@ -2,6 +2,9 @@ import type { Activity, ModEvent } from '../../shared/activity';
 
 export type Role = 'main' | 'agent' | 'reviewer' | 'recovery';
 
+/** An agent's own worktree and branch (Phase 3) and the repository they belong to (absolute path; absent: the plan root). */
+export interface AgentGit { worktree: string; branch: string; repo?: string }
+
 export interface AgentRuntime {
   slug: string;
   role: Role;
@@ -17,7 +20,7 @@ export interface AgentRuntime {
   /** The profile is read-only (a reviewer): the guard refuses anything that writes. */
   readOnly?: boolean;
   /** The agent's own worktree and branch (Phase 3); absent for the main and when `git.worktrees` is off. */
-  git?: { worktree: string; branch: string };
+  git?: AgentGit;
   /** The folder the session runs in (from `session.start` or set by the console). */
   cwd?: string;
 }
@@ -48,7 +51,7 @@ export class AgentRegistry {
    * An agent restored after a console restart (Phase 6A): no process, no quota spent. `dormant` wakes on demand, `interrupted` lost its
    * turn (or its worktree), `finished` waits for its own flow (a suspended or blocked ticket). It never counts as active.
    */
-  registerRestored(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: { worktree: string; branch: string }; cwd?: string; state: 'dormant' | 'interrupted' | 'finished' }): void {
+  registerRestored(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: AgentGit; cwd?: string; state: 'dormant' | 'interrupted' | 'finished' }): void {
     this.agents.set(a.slug, {
       slug: a.slug, role: a.role, profile: a.profile, goal: a.goal, state: a.state, pendingGoal: false,
       ...(a.sessionId !== undefined ? { sessionId: a.sessionId } : {}),
@@ -59,7 +62,7 @@ export class AgentRegistry {
   }
 
   /** Shorthand for the common case of `registerRestored`. */
-  registerDormant(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: { worktree: string; branch: string }; cwd?: string }): void {
+  registerDormant(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: AgentGit; cwd?: string }): void {
     this.registerRestored({ ...a, state: 'dormant' });
   }
 
@@ -92,7 +95,7 @@ export class AgentRegistry {
     this.set(a, 'queued');
   }
 
-  setGit(slug: string, git: { worktree: string; branch: string } | undefined): void {
+  setGit(slug: string, git: AgentGit | undefined): void {
     const a = this.agents.get(slug);
     if (a) a.git = git;
   }

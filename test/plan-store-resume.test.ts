@@ -34,3 +34,12 @@ it('keeps the main session id and the clean-stop flag', () => {
   again.writeCleanStop(true);
   expect(new PlanStore(root).readCleanStop()).toBe(true);
 });
+
+it('an agent record keeps the repository of its worktree', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ps-repo-'));
+  const s = new PlanStore(root);
+  s.init('p');
+  s.addAgent({ slug: 'a', profile: 'backend' });
+  s.updateAgent('a', { repo: 'R' });
+  expect(s.listAgents()[0]?.repo).toBe('R');
+});

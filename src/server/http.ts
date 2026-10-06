@@ -68,7 +68,10 @@ export interface Context extends V1Context {
   uiDist: string;
   testMode: boolean;
   configPath: string;
-  planIsRepo: boolean;
+  /** The repositories agents can work in (see `discoverRepos`), read at each use: a repo made later is seen. */
+  repos(): string[];
+  /** Once per repository: keeps `.console/` out of its git status and installs the release hook. Never rejects. */
+  prepareRepo(path: string): Promise<void>;
   /** Build version (latest tag on main), shown on the splash and in the tab title. */
   version: string;
   tickets: TicketStore;
@@ -176,6 +179,7 @@ export function buildState(ctx: Context): StateMessage {
   let squash: boolean | undefined;
   let offeredProfiles: string[] | undefined;
   try { ({ testCommand, squash, profiles: offeredProfiles } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
+  const repos = ctx.repos();
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
   const installed = ctx.installer.state();
@@ -186,7 +190,7 @@ export function buildState(ctx: Context): StateMessage {
     // One plan per console today: the stricter of the global and the per-plan limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perPlan }) => Math.min(global, perPlan))(ctx.scheduler.effectiveLimits()) },
     type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? PROFILES,
-    prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: ctx.planIsRepo, planRoot: ctx.planRoot,
+    prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: repos.length > 0, repos, planRoot: ctx.planRoot,
     queue: ctx.questions.pending(),
     ...(ctx.plans ? { plans: ctx.plans.list() } : {}),
     notifications: { toast: ctx.notify.toast(), config: ctx.notificationsConfig },
@@ -283,9 +287,9 @@ export function createRequestHandler(source: Context | PlanResolver, host: HostC
     if (req.method === 'POST' && path === '/api/agents') {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
-      const b = (typeof body === 'object' && body !== null ? body : {}) as { slug?: unknown; profile?: unknown };
+      const b = (typeof body === 'object' && body !== null ? body : {}) as { slug?: unknown; profile?: unknown; repo?: unknown };
       // The UI button (a user) and the main's spawn_agent tool share one flow: validation, name reservation, limits.
-      const out = await spawnAgent(ctx, { slug: String(b.slug ?? ''), profile: String(b.profile ?? ''), source: 'user' });
+      const out = await spawnAgent(ctx, { slug: String(b.slug ?? ''), profile: String(b.profile ?? ''), source: 'user', ...(typeof b.repo === 'string' ? { repo: b.repo } : {}) });
       if (!out.ok) return fail(res, out.httpStatus, out.code, out.params);
       return out.status === 'started' ? send(res, 201, { slug: out.slug }) : send(res, 202, { slug: out.slug, status: 'queued', position: out.position });
     }

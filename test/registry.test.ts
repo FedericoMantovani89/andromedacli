@@ -109,3 +109,10 @@ it('setCwd and session.start store the folder; a recovery agent counts as active
   expect(r.get('rec-x')!.cwd).toBe('/w/two');
   expect(r.isActive('rec-x')).toBe(true);
 });
+
+it('the git info of an agent can carry its repository', () => {
+  const r = new AgentRegistry();
+  agent(r, 'a-job');
+  r.setGit('a-job', { worktree: 'W', branch: 'B', repo: 'R' });
+  expect(r.get('a-job')?.git).toEqual({ worktree: 'W', branch: 'B', repo: 'R' });
+});

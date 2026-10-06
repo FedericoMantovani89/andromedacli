@@ -77,3 +77,13 @@ describe('renderRestartNotice', () => {
     expect(text).not.toMatch(/\{(dormant|interrupted|stopped|repaired)\}/); // every placeholder was filled; "{names}" is the tool's argument
   });
 });
+
+describe('restoreAgents: repository', () => {
+  it('a record with a repo keeps it on the restored git info; an old record without one has none (the plan root)', () => {
+    tickets.setGoal('a', 'g'); tickets.setGoal('b', 'g');
+    const withRepo = rec('a', { repo: join(root, 'abc-fe') });
+    run([withRepo, rec('b')]);
+    expect(registry.get('a')?.git).toEqual({ worktree: withRepo.worktree, branch: 'agent/p/a', repo: join(root, 'abc-fe') });
+    expect(registry.get('b')?.git).not.toHaveProperty('repo');
+  });
+});

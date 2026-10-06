@@ -70,7 +70,7 @@ export class AgentPersister {
       this.d.updateAgent(slug, {
         role: a.role,
         ...(a.sessionId !== undefined ? { sessionId: a.sessionId } : {}),
-        ...(a.git ? { worktree: a.git.worktree, branch: a.git.branch } : {}),
+        ...(a.git ? { worktree: a.git.worktree, branch: a.git.branch, ...(a.git.repo !== undefined ? { repo: a.git.repo } : {}) } : {}),
         ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
         lastState: a.state,
         // Only a state that shows the agent at work counts as activity (an exit or a queue slot does not).

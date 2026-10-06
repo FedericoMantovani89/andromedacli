@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Translate } from '../../shared/i18n';
+import type { AgentGit } from '../agents/registry';
 import { git } from '../git/git';
 import { changedFiles, ensurePlanWorktree, mergeIntoPlan, resetTo, startMergeForAuthor, withPlanLock } from '../git/merge';
 import { commonDir, removeWorktree } from '../git/worktree';
@@ -10,10 +11,10 @@ import { runValidation } from './validate';
 
 export interface MergeDeps {
   tickets: TicketStore;
-  /** The plan folder = the repository. */
+  /** The plan folder: its state lives here. It is also the repository of an agent that has none of its own (a plan folder that is a repo). */
   root: string;
   plan: string;
-  worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
+  worktreeOf(slug: string): AgentGit | undefined;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
   /** Plan option: one commit per ticket (default) or the step commits behind a merge commit. */
@@ -47,22 +48,26 @@ export class MergeService {
   constructor(private readonly d: MergeDeps) {}
 
   mergeTicket(slug: string): Promise<MergeResult> {
-    const locked = () => withPlanLock(this.d.root, () => this.merge(slug));
+    const locked = () => withPlanLock(this.repoOf(this.d.worktreeOf(slug)), () => this.merge(slug));
     const run = this.chain.then(locked, locked);
     this.chain = run.catch(() => undefined);
     return run;
   }
+
+  /** The repository of an agent: its own when it has one, else the plan folder. */
+  private repoOf(a: { repo?: string } | undefined): string { return a?.repo ?? this.d.root; }
 
   private async merge(slug: string): Promise<MergeResult> {
     const ticket = this.d.tickets.get(slug);
     if (!ticket || ticket.status !== 'approved' || !ticket.deliveredSha) return { status: 'refused', code: 'not_approved' };
     const author = this.d.worktreeOf(slug);
     if (!author) return { status: 'refused', code: 'no_worktree' };
-    const tip = await git(this.d.root, ['rev-parse', `refs/heads/${author.branch}`]);
+    const repo = this.repoOf(author);
+    const tip = await git(repo, ['rev-parse', `refs/heads/${author.branch}`]);
     if (tip.code !== 0 || tip.stdout.trim() !== ticket.deliveredSha) {
       return { status: 'refused', code: 'author_moved', detail: `reviewed ${ticket.deliveredSha.slice(0, 7)}, the branch is at ${tip.stdout.trim().slice(0, 7)}` };
     }
-    const plan = await ensurePlanWorktree(this.d.root, this.d.plan);
+    const plan = await ensurePlanWorktree(repo, this.d.plan);
     if (!plan.ok) return { status: 'refused', code: plan.code, detail: plan.detail };
     const before = (await git(plan.path, ['rev-parse', 'HEAD'])).stdout.trim();
     // A crash after the merge commit and before the ticket update leaves the ticket `approved` with its commit already on the plan
@@ -81,7 +86,7 @@ export class MergeService {
       return this.completeMerge(slug, author, adopted);
     }
 
-    const files = (await changedFiles(this.d.root, `plan/${this.d.plan}`, ticket.deliveredSha)) ?? [];
+    const files = (await changedFiles(repo, `plan/${this.d.plan}`, ticket.deliveredSha)) ?? [];
     const { lang, t } = this.d.language();
     const message = squashMessage({
       slug, plan: this.d.plan, branch: author.branch, goal: ticket.goal, steps: ticket.steps, files, tests: ticket.tests,
@@ -104,7 +109,7 @@ export class MergeService {
     return this.completeMerge(slug, author, merged.sha);
   }
 
-  private async completeMerge(slug: string, author: { worktree: string; branch: string }, sha: string): Promise<MergeResult> {
+  private async completeMerge(slug: string, author: AgentGit, sha: string): Promise<MergeResult> {
     this.d.tickets.move(slug, 'merged', { mergedSha: sha });
     const cleanup = await this.cleanUp(slug, author);
     this.d.notifyMain(`Ticket "${slug}" was merged into plan/${this.d.plan} (${sha.slice(0, 7)}).${cleanup ? ' Its session or folder could not be cleaned up completely; the work is safe on the plan branch.' : ''} Next: merge the other approved tickets, then propose_release.`);
@@ -158,20 +163,21 @@ export class MergeService {
   }
 
   /** After the merge (SPEC 9.7): end the session, remove the worktree and the local branch; the remote branch stays. Returns true when something is left. */
-  private async cleanUp(slug: string, author: { worktree: string; branch: string }): Promise<boolean> {
+  private async cleanUp(slug: string, author: AgentGit): Promise<boolean> {
+    const repo = this.repoOf(author);
     let incomplete = false;
     try { await this.d.finishAgent(slug); } catch { incomplete = true; }
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        await removeWorktree(this.d.root, author.worktree);
+        await removeWorktree(repo, author.worktree);
         break;
       } catch {
         incomplete = attempt === 4 || incomplete; // the folder may still be held for a moment by the process that just ended
         await sleep(300);
       }
     }
-    await git(this.d.root, ['branch', '-D', author.branch]);
-    try { rmSync(join(await commonDir(this.d.root), 'console-hooks', slug), { recursive: true, force: true }); } catch { incomplete = true; }
+    await git(repo, ['branch', '-D', author.branch]);
+    try { rmSync(join(await commonDir(repo), 'console-hooks', slug), { recursive: true, force: true }); } catch { incomplete = true; }
     return incomplete;
   }
 }

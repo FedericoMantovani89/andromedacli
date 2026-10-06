@@ -14,7 +14,7 @@ export const USER_ERROR_CODES = [
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
   'plan.fieldInvalid', 'plan.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
-  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
+  'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -82,6 +82,8 @@ export interface StateMessage {
   /** true until the first-start wizard saved a configuration file. */
   needsSetup: boolean;
   planIsRepo: boolean;
+  /** The git repositories agents can work in, relative to the plan folder (`['']` when the plan folder is one); empty when there is none. */
+  repos: string[];
   planRoot: string;
   /** Everything that waits for the user: questions from the main and the agents. */
   queue: QueueItem[];

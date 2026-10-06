@@ -161,3 +161,14 @@ it('the main prompt does not promise a queue decision after a loop stop (only a 
   expect(text).not.toContain('You are told, and the user gets a decision in the queue.');
   expect(text).toMatch(/after a loop stop the next move is yours/);
 });
+
+it('the main prompt lists the repositories only when there are several, and says to pass repo', () => {
+  const out = tmp();
+  const many = readFileSync(renderMainPrompt({ plan: 'p', workLanguage: 'English', outDir: out, repos: ['abc-be', 'abc-fe'] }), 'utf8');
+  expect(many).toContain('abc-be, abc-fe');
+  expect(many).toMatch(/"repo" to spawn_agent/);
+  for (const repos of [[''], ['only'], undefined]) {
+    const one = readFileSync(renderMainPrompt({ plan: 'q', workLanguage: 'English', outDir: out, ...(repos ? { repos } : {}) }), 'utf8');
+    expect(one).not.toMatch(/several git repositories/);
+  }
+});
