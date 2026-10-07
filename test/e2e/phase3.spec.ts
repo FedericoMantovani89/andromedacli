@@ -249,7 +249,9 @@ try {
     check('the switch is saved in config.json', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).agents?.bypassPermissions === true));
     check('the guard mode is saved', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).guard?.mode === 'shadow'));
     check('the test command is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'project.json'), 'utf8')).testCommand === 'npx vitest run'));
-    check('Save closes the dialog', await until(async () => await page.locator('#overlay').isHidden()));
+    check('the bypass change asks whether to restart the sessions', await until(async () => (await page.locator('.restart-dialog').count()) === 1));
+    await page.click('button[name="restartNo"]');
+    check('No closes the question and the dialog', await until(async () => await page.locator('#overlay').isHidden()));
     await spawn('second-job');
     check('the agent started before the change has no bypass', !s.lastLaunchArgs('first-job')!.includes('--dangerously-skip-permissions'));
     check('the agent started after it has', s.lastLaunchArgs('second-job')!.includes('--dangerously-skip-permissions'));
