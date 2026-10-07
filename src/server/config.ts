@@ -53,9 +53,9 @@ export const DEFAULT_CONFIG: Config = {
   telemetry: false,
 };
 
-/** %APPDATA%/console, or CONSOLE_CONFIG_DIR when set (tests, portable installs). */
+/** %APPDATA%/andromedacli, or CONSOLE_CONFIG_DIR when set (tests, portable installs). */
 export const configDir = (): string =>
-  process.env.CONSOLE_CONFIG_DIR ?? join(process.env.APPDATA ?? homedir(), 'console');
+  process.env.CONSOLE_CONFIG_DIR ?? join(process.env.APPDATA ?? homedir(), 'andromedacli');
 
 /** Same rule as `MODEL_RE` in agents/spawn.ts (not imported: spawn.ts reaches profiles.ts, which imports this file). */
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;

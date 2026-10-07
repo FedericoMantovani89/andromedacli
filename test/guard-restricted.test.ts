@@ -13,7 +13,7 @@ describe('restricted sessions', () => {
 
   it('the refusal under a budget or limit restriction names only step_done (writing a note is refused too)', () => {
     for (const reason of ['budget', 'limit'] as const) {
-      const d = evaluate({ role: 'agent', tool: 'Write', input: { file_path: 'C:/w/a/.console/handover.md' } }, { ...base, restricted: { reason } });
+      const d = evaluate({ role: 'agent', tool: 'Write', input: { file_path: 'C:/w/a/.andromedacli/handover.md' } }, { ...base, restricted: { reason } });
       expect(d).toMatchObject({ decision: 'deny' });
       const text = (d as { reason: string }).reason;
       expect(text).toContain('step_done');

@@ -42,19 +42,13 @@ export function openWizard(getState: () => StateMessage | undefined): void {
     } else if (step === 'prerequisites') {
       renderPrereqTable(body, state?.prereq ?? null);
     } else {
-      const name = document.createElement('div');
-      const nameLabel = document.createElement('span');
-      bindText(nameLabel, 'wizard.project.name');
-      const nameValue = document.createElement('strong');
-      nameValue.textContent = ` ${state?.project.name ?? ''}`;
-      name.append(nameLabel, nameValue);
       const folder = document.createElement('div');
       const folderLabel = document.createElement('span');
       bindText(folderLabel, 'wizard.project.folder');
       const folderValue = document.createElement('code');
       folderValue.textContent = ` ${state?.projectRoot ?? ''}`;
       folder.append(folderLabel, folderValue);
-      body.append(name, folder);
+      body.append(folder);
       if (state && !state.projectIsRepo) {
         const warn = document.createElement('div');
         warn.className = 'form-error';
@@ -74,7 +68,7 @@ export function openWizard(getState: () => StateMessage | undefined): void {
     skip.addEventListener('click', () => { if (last) void finish(); else { index += 1; render(); } });
     actions.append(next, skip);
     if (last) {
-      // SPEC 29.2 step 6: the user may start from a template. The wizard is finished first (the configuration is saved), then the dialog opens.
+      // SPEC 29.2 step 6: the user may open another project (the dialog asks only for its folder). The wizard is finished first (the configuration is saved).
       const fromTemplate = document.createElement('button');
       bindText(fromTemplate, 'wizard.project.newProject');
       fromTemplate.addEventListener('click', () => { void finish().then(() => openNewProjectDialog(getState)); });

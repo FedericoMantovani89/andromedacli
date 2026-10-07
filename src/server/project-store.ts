@@ -71,16 +71,16 @@ export function isValidProjectField(field: ProjectField, v: unknown, knownProfil
   }
 }
 
-/** Project state under <repo>/.console/ (SPEC 23): project.json and state/agents.json. */
+/** Project state under <repo>/.andromedacli/ (SPEC 23): project.json and state/agents.json. */
 export class ProjectStore {
   private readonly projectFile: string;
   private readonly agentsFile: string;
   private readonly stateDir: string;
 
   constructor(root: string) {
-    this.stateDir = join(root, '.console', 'state');
-    this.projectFile = join(root, '.console', 'project.json');
-    this.agentsFile = join(root, '.console', 'state', 'agents.json');
+    this.stateDir = join(root, '.andromedacli', 'state');
+    this.projectFile = join(root, '.andromedacli', 'project.json');
+    this.agentsFile = join(root, '.andromedacli', 'state', 'agents.json');
   }
 
   init(name: string): void {

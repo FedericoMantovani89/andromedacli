@@ -16,7 +16,7 @@ export interface GuardLogEntry {
 
 const MAX_DETAIL = 300;
 
-/** Appends what the guard refused (or would have refused) to `.console/state/guard.jsonl`. Never throws: logging must not fail a tool call. */
+/** Appends what the guard refused (or would have refused) to `.andromedacli/state/guard.jsonl`. Never throws: logging must not fail a tool call. */
 export class GuardLog {
   constructor(private readonly file: string) {}
 

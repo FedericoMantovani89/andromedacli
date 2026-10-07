@@ -52,7 +52,7 @@ function readProfile(file: string, name: string, source: Profile['source']): Pro
 /** SPEC 11.4: the project's profiles override the user's, which override the shipped ones. */
 export function loadProfile(name: string, projectRoot: string, userDir: string = join(configDir(), 'profiles')): Profile | undefined {
   if (!NAME_RE.test(name)) return undefined; // also rules out path traversal
-  return readProfile(join(projectRoot, '.console', 'profiles', `${name}.md`), name, 'project')
+  return readProfile(join(projectRoot, '.andromedacli', 'profiles', `${name}.md`), name, 'project')
     ?? readProfile(join(userDir, `${name}.md`), name, 'user')
     ?? readProfile(join(promptsDir(), 'profiles', `${name}.md`), name, 'shipped');
 }
@@ -75,11 +75,11 @@ function writePrompt(outDir: string, name: string, text: string): string {
 
 const MAX_PROJECT_TEXT = 32 * 1024;
 
-/** A project's own text file (`.console/main.md`, `.console/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
+/** A project's own text file (`.andromedacli/main.md`, `.andromedacli/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
 function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.md'): string | undefined {
   if (!projectRoot) return undefined;
   try {
-    const path = join(projectRoot, '.console', file);
+    const path = join(projectRoot, '.andromedacli', file);
     if (!existsSync(path)) return undefined;
     const text = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').trim();
     return text === '' ? undefined : text.slice(0, MAX_PROJECT_TEXT);

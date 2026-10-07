@@ -54,7 +54,7 @@ export function neighbourProject(projects: ProjectTab[], selected: string, direc
 
 /**
  * Asks before closing a project (its running sessions end; nothing is deleted on disk unless the box is ticked: then the project's worktrees,
- * branches and `.console` go too and the project opens again as new). Closing the last project leaves the welcome screen, which needs a reload.
+ * branches and `.andromedacli` go too and the project opens again as new). Closing the last project leaves the welcome screen, which needs a reload.
  */
 export function openCloseProjectDialog(name: string, last = false): void {
   const overlay = document.getElementById('overlay')!;

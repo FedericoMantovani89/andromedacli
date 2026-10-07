@@ -8,10 +8,14 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- The console never starts git on its own: a new folder is only created (no `git init`). Options, Git tab: shows whether git is installed (with the install command and the consent dialog when it is missing) and a "Start a git repository here" button (`POST /api/projects/git-init`: `git init -b main` and an empty first commit) for a project folder that is not a repository.
+- Options, Project tab: a template picker with "Apply template" (`POST /api/projects/apply-template`): the profiles, main.md and rules.md of the template replace the files of the same name, the commands already set stay; the build, lint, model and agent-limit fields are always shown.
+- The first-start wizard's project step shows only the folder (no name) and points to Options, Git when it is not a repository; its last button opens the one-field new-project dialog.
+- The new-project dialog asks only for the folder: the template (Java, web front end or generic) and the build/test/lint commands are picked from what the folder holds (`POST /api/projects` with `auto: true`), a folder that does not exist is created with a git repository (the dialog says so), and a name field appears only when the folder's name is taken or unusable. Commands, model and limits are changed in Options, Project tab.
 - "Plan" is now "project" everywhere (UI texts in English and Italian, prompts, API `/api/projects`, `project.json`, `projects.json`, `--project-root`, branches `project/<project>` and `agent/<project>/<name>`, the `.project` merge worktree). No migration: projects created before this change must be recreated.
-- New agents' worktrees (and the console's `.project` merge checkout) live under the project's `.console/worktrees/` (`<repo>/` one level down when the project folder holds several repos) instead of `<repo>.worktrees`; worktrees already made keep working where they are. Claude Code's folder trust now reaches them from the project folder.
+- New agents' worktrees (and the console's `.project` merge checkout) live under the project's `.andromedacli/worktrees/` (`<repo>/` one level down when the project folder holds several repos) instead of `<repo>.worktrees`; worktrees already made keep working where they are. Claude Code's folder trust now reaches them from the project folder.
 - The last open project can be closed: the console goes back to the welcome screen.
-- The close-project dialog has a box "also delete the project's data": it removes the project's worktrees, its `agent/<project>/*` and `project/<project>` branches and its `.console`, so the project opens again as new (`DELETE /api/projects/<name>?purge=1`).
+- The close-project dialog has a box "also delete the project's data": it removes the project's worktrees, its `agent/<project>/*` and `project/<project>` branches and its `.andromedacli`, so the project opens again as new (`DELETE /api/projects/<name>?purge=1`).
 - Agents are launched with `--name "<agent> <project> AndromedaCli"` (same reason).
 - The main session is launched with `--name "<project> AndromedaCli"` (also on restart/resume), so Remote Control shows it instead of the default name.
 - The guard refuses the main any Claude Code built-in subagent other than the read-only Explore, Plan and claude-code-guide types (rule `agent.builtin-subagent`), pointing it to `spawn_agent`; the mod now sends the subagent type and also guards the older `Task` tool name.
@@ -44,7 +48,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
 ## Phase 6: multiple projects, full resume, notifications, templates, options (2026-10-05)
 
 ### 6C: Multiple projects and tabs
-- One console now hosts several projects (one per project folder), each with its own main session, agents, tickets, queue and `.console/` folder, shown as tabs with a dot while its queue waits; `+ project` opens a project, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
+- One console now hosts several projects (one per project folder), each with its own main session, agents, tickets, queue and `.andromedacli/` folder, shown as tabs with a dot while its queue waits; `+ project` opens a project, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
 - `POST /api/projects`, `DELETE /api/projects/<name>`, `?project=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first project); `StateMessage.projects`; the open projects are remembered in `<configDir>/projects.json`.
 - The active-agent global limit counts agents of all projects; a freed slot in one project starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all projects.
 
@@ -62,13 +66,13 @@ Next: Phase 7 (external providers, optional); ask before starting.
 
 ### 6D: Templates and the new-project flow
 - Project templates: a folder with `template.json`, `main.md`, `rules.md` and `profiles/*.md`; shipped ones live in `templates/` (`backend-java`, `frontend-web`, `generic`), the user's in `<config dir>/templates/` (the user's wins on the same id); an invalid template is listed as unavailable with the reason. `GET /api/templates` lists them.
-- New project from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.console/profiles/`, writes `.console/main.md` and `.console/rules.md` and the project fields; what the user typed beats the detected commands, which beat the template's.
+- New project from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.andromedacli/profiles/`, writes `.andromedacli/main.md` and `.andromedacli/rules.md` and the project fields; what the user typed beats the detected commands, which beat the template's.
 - `GET /api/projects/detect?root=` proposes build, test and lint commands from `pom.xml`, Gradle or `package.json` (bounded reads, no process is run).
 - `POST /api/projects/save-template` saves the current project as a user template (a copy: later project changes never touch it; an existing id is refused unless `overwrite`).
 - New optional project fields (`project.json`, `PUT /api/project`): `buildCommand`, `lintCommand`, `profiles`, `model`, `agentTokens`, `maxActive`, `docs`, `secretPatterns`; the project's profiles limit the new-agent picker and `spawn_agent`, its model, token budget, active-agent limit and secret patterns sit behind the request's and the profile's own values.
-- The main's prompt gets `.console/main.md` and every session's prompt gets `.console/rules.md`; an agent is told which documents to update at the last step (`docs`).
+- The main's prompt gets `.andromedacli/main.md` and every session's prompt gets `.andromedacli/rules.md`; an agent is told which documents to update at the last step (`docs`).
 - New-project dialog (template, folder, name; commands prefilled from the folder) and a "save as template" dialog; the first-start wizard offers to create a project from a template.
-- SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.console/rules.md`, appended to every session's system prompt.
+- SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.andromedacli/rules.md`, appended to every session's system prompt.
 
 ### 6E: Options, remote model list, plugin catalog
 - The gear opens a tabbed Options dialog (models, profiles, budget and limits, names, project, git, guard, mod, notifications, language, prerequisites, plugins, server); each editable field saves on change and goes back when the server refuses it.
@@ -94,7 +98,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
 
 ### Added
 - Per-agent token budget: alert at 80% (WIP commit by the console, message to the agent and the main), restriction at 100%, orderly stop after the grace with the ticket in `suspended_budget`; tokens come from the Claude Code transcript (input + cache_creation + output) and are recorded in a monthly ledger.
-- The budget alert tells the agent to write its handover note to `.console/handover.md`; the console reads it (bounded, no symlinks) at the stop and gives it to the new agent.
+- The budget alert tells the agent to write its handover note to `.andromedacli/handover.md`; the console reads it (bounded, no symlinks) at the stop and gives it to the new agent.
 - Recovery: after a budget stop or a block the main can start a read-only recovery agent (`start_recovery`) that verifies the work, diagnoses the cause from the ledger and reports a remedy (`recovery_report`); the restart is a new agent on the same branch, at most 2 attempts, and a spend is always the user's decision (a `change_model` remedy asks as well).
 - Loop and block detection from the transcript: repeated identical calls, repeated identical errors and repeated compactions are corrected, then limited, then stopped (ticket `blocked`, recovery by the main) and keep escalating while the loop goes on; silence (any sign of life counts, the notice says whether the process is alive) and a long time without `step_done` only warn the main.
 - Subscription quota: the mod reports the limits (`session.measure`, `quota` event); at 70% the active-agent limit halves, at 85% nothing new starts and agents are told to close the step, at 95% they are restricted, committed and ended in priority order, the main last; a spend limit never drives the steps.
@@ -122,7 +126,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - Ticket pipeline (`tickets/flow.ts`): `in_progress` â†’ `delivered` â†’ `in_review` â†’ `approved` â†’ `merged` â†’ `released`, with
   `changes_requested`, `conflict` and `needs_user` on the side; an impossible change is refused with a code. The panel header
   shows it as a chip (`In review`, `Approved`, `Merged`, `Rework 1/2`â€¦), kept after the worktree is gone.
-- `report.md` per ticket (`.console/tickets/<name>/`), written by the console without a model: objective, checklist, files
+- `report.md` per ticket (`.andromedacli/tickets/<name>/`), written by the console without a model: objective, checklist, files
   (from git), tests (the console's own run), documentation, the agents' notes verbatim, the review. Headings follow the
   interface language (`report.*` keys); the squash commit message is English.
 - Main tools: `ticket_report` (facts from git and from the tests the console reruns on exactly the delivered commit),
@@ -168,12 +172,12 @@ Next: Phase 7 (external providers, optional); ask before starting.
   mandatory skeleton (study, tests first, steps, validation, documentation), commits each closed step itself
   (`step n/N: title`, trailers `Agent:`, `Ticket:`, `Progetto:`), refuses secrets (`.env`, keys, credentials, configurable
   patterns), runs the project's test command at the validation step with a timeout, and pushes the branch when the last step
-  closes, telling the main. Steps close in order, one at a time; the checklist is also saved in `.console/checklist.md`.
+  closes, telling the main. Steps close in order, one at a time; the checklist is also saved in `.andromedacli/checklist.md`.
 - Guard: `POST /v1/guard` judges every `Bash`, `PowerShell`, `Write`, `Edit`, `NotebookEdit`, `Read`, `Grep` and `Glob` call
   with the caller's own role and worktree (git commit/push/force/tag/checkout/merge/reset, config tampering, paths outside the
   worktree and `.git`, secrets, wide deletes, download-and-run). The main has a shorter list. Fails closed for shell and
   writing tools when the console is unreachable. `guard.mode` `enforce` or `shadow` (allow and log); refusals are logged to
-  `.console/state/guard.jsonl`.
+  `.andromedacli/state/guard.jsonl`.
 - Settings dialog: a switch for `agents.bypassPermissions` (with a warning), the guard mode, and the project's test command;
   `PUT /api/config` takes them (and still the language), `PUT /api/project` the test command. Bypass and guard mode apply to
   sessions launched afterwards; running sessions keep what they started with.
@@ -207,7 +211,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
   the agent starts by itself when a slot frees; lowering the limit stops nobody. One flow serves the UI button and the tool.
 - Question queue (drawer, `Alt+Q`, dot on the project tab): answers reach the waiting tool call without moving the focus.
 - "Read" panel (`Alt+L` or the Read button): the last 50 answers of each session as sanitised Markdown with normal
-  scrolling, filter and copy; kept on disk under `.console/state/reading/`.
+  scrolling, filter and copy; kept on disk under `.andromedacli/state/reading/`.
 - Profiles (`prompts/profiles/*.md`, project > user > shipped), the main's instructions (`prompts/main.md`) and the agent's
   (`prompts/agent.md`) naming the deferred tools by full name.
 - Tests: scheduler, registry, questions, reading, markdown sanitiser, `/v1` security, launch, profiles; browser e2e with a
@@ -238,7 +242,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - Browser UI (xterm.js): fixed main on the left, agents stacked on the right (full panels up to four, then bars),
   manual agent launch, status bar, `Alt+1..9` shortcuts. The keyboard focus never moves on its own.
 - Activity-name (slug) rules: format, length, generic names, Windows reserved names, uniqueness, accents transliterated.
-- Project state under `<repo>/.console/` (`project.json`, `state/agents.json`); the project keeps its original name.
+- Project state under `<repo>/.andromedacli/` (`project.json`, `state/agents.json`); the project keeps its original name.
 - Internationalisation through `.properties` bundles (`en`, `it`); languages are discovered from the files and can be
   switched at runtime without reloading.
 - Build gate `npm run check`: key/placeholder parity between languages, unused and undefined keys, user-facing error

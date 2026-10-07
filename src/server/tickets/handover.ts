@@ -1,7 +1,7 @@
 import { closeSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
 
-const HANDOVER_REL = ['.console', 'handover.md'] as const;
+const HANDOVER_REL = ['.andromedacli', 'handover.md'] as const;
 const MAX_FILE_BYTES = 64 * 1024;
 const MAX_CHARS = 4000;
 
@@ -11,8 +11,8 @@ const inside = (root: string, p: string): boolean => {
 };
 
 /**
- * The handover note an agent wrote in its worktree (`.console/handover.md`), at most 4000 characters. The agent is untrusted, so the
- * file must be a regular file (no symlink) of at most 64 KiB whose real path, and that of `.console`, stay inside the worktree; at
+ * The handover note an agent wrote in its worktree (`.andromedacli/handover.md`), at most 4000 characters. The agent is untrusted, so the
+ * file must be a regular file (no symlink) of at most 64 KiB whose real path, and that of `.andromedacli`, stay inside the worktree; at
  * most 4000 characters worth of bytes are read. Never throws: any problem gives undefined.
  */
 export function readHandoverNote(worktree: string): string | undefined {

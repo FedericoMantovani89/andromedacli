@@ -53,7 +53,7 @@ async function until(f: () => Promise<boolean> | boolean, ms: number): Promise<b
 
 const started = Date.now();
 const s = await startServer({ port: 0, projectRoot: repo, configDir, projectName: 'revreal' });
-writeFileSync(join(repo, '.console', 'project.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, '.console', 'project.json'), 'utf8')), testCommand: 'node --test' }));
+writeFileSync(join(repo, '.andromedacli', 'project.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, '.andromedacli', 'project.json'), 'utf8')), testCommand: 'node --test' }));
 const ui = async (path: string, method = 'GET', body?: unknown) => {
   const r = await fetch(`${s.url}${path}`, {
     method, headers: { authorization: `Bearer ${s.token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined,
@@ -68,7 +68,7 @@ async function type(slug: string, text: string): Promise<void> {
   s.writeToSession(slug, String.fromCharCode(13));
 }
 const ticket = (slug: string): any => {
-  const f = join(repo, '.console', 'state', 'tickets', `${slug}.json`);
+  const f = join(repo, '.andromedacli', 'state', 'tickets', `${slug}.json`);
   return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : undefined;
 };
 const queue = async (): Promise<any[]> => (await ui('/api/state')).queue as any[];
@@ -119,7 +119,7 @@ try {
   const sentBack = await until(() => ticket('add-average')?.verdicts?.[0]?.reviewer === 'main' || (ticket('add-average')?.round ?? 0) > 0, 480_000);
   rec('the main sent the ticket back with its own note (ticket_report, then send_back_ticket)', sentBack, JSON.stringify({ status: ticket('add-average')?.status, round: ticket('add-average')?.round }));
   if (!sentBack) { await diagnose('not sent back', ['revreal']); throw new Error('the main did not send the ticket back'); }
-  rec('the report was written by the console', existsSync(join(repo, '.console', 'tickets', 'add-average', 'report.md')));
+  rec('the report was written by the console', existsSync(join(repo, '.andromedacli', 'tickets', 'add-average', 'report.md')));
   rec('the ticket reopened for the author with three new steps', ticket('add-average').round === 1 && ticket('add-average').steps.length >= 8 && /\(round 1\)/.test(ticket('add-average').steps.at(-1).title), JSON.stringify(ticket('add-average').steps.map((x: any) => x.title).slice(-3)));
 
   // ---- 3. The real author fixes it through the reopened steps and delivers again ----
@@ -133,7 +133,7 @@ try {
   if (!reviewed) { await diagnose('no verdict', ['revreal', 'add-average']); throw new Error('no verdict'); }
   const real = ticket('add-average').verdicts.find((v: any) => String(v.reviewer).startsWith('review-'));
   console.log(`INFO  reviewer verdict: pass=${real.pass} reviewer=${real.reviewer} notes=${JSON.stringify(real.notes).slice(0, 400)}`);
-  rec('the reviewer changed no file', !existsSync(join(scratch, 'my repo', '.console', 'worktrees', real.reviewer)) || git(join(scratch, 'my repo', '.console', 'worktrees', real.reviewer), 'status', '--porcelain', '--untracked-files=no') === '');
+  rec('the reviewer changed no file', !existsSync(join(scratch, 'my repo', '.andromedacli', 'worktrees', real.reviewer)) || git(join(scratch, 'my repo', '.andromedacli', 'worktrees', real.reviewer), 'status', '--porcelain', '--untracked-files=no') === '');
 
   // ---- 5. Merge: the main does it by itself when the review passed (a failed review reworks; after the rounds the user decides) ----
   const deadline = Date.now() + 900_000;
@@ -149,12 +149,12 @@ try {
   if (!merged) { await diagnose('not merged', ['revreal']); throw new Error('not merged'); }
   const projectLog = git(repo, 'log', '--format=%s', 'project/revreal');
   rec('the project branch has one squash commit for the ticket', projectLog.split('\n')[0]!.startsWith('ticket add-average:'), projectLog.split('\n')[0]);
-  rec('the author session ended and its folder is gone', await until(async () => !existsSync(join(scratch, 'my repo', '.console', 'worktrees', 'add-average')) && (((await ui('/api/state')).agents as any[]).find((a) => a.slug === 'add-average')?.state === 'finished'), 60_000));
+  rec('the author session ended and its folder is gone', await until(async () => !existsSync(join(scratch, 'my repo', '.andromedacli', 'worktrees', 'add-average')) && (((await ui('/api/state')).agents as any[]).find((a) => a.slug === 'add-average')?.state === 'finished'), 60_000));
   let emptyList = '';
-  try { emptyList = execFileSync('node', ['-e', "console.log(String(require('./src/stats').average([])))"], { cwd: join(scratch, 'my repo', '.console', 'worktrees', '.project'), encoding: 'utf8' }).trim(); } catch { /* reported below */ }
+  try { emptyList = execFileSync('node', ['-e', "console.log(String(require('./src/stats').average([])))"], { cwd: join(scratch, 'my repo', '.andromedacli', 'worktrees', '.project'), encoding: 'utf8' }).trim(); } catch { /* reported below */ }
   rec('the merged code does what the main\'s note asked: average([]) is 0', emptyList === '0', emptyList);
   let testsPass = true;
-  try { execFileSync('node', ['--test'], { cwd: join(scratch, 'my repo', '.console', 'worktrees', '.project'), stdio: 'ignore' }); } catch { testsPass = false; }
+  try { execFileSync('node', ['--test'], { cwd: join(scratch, 'my repo', '.andromedacli', 'worktrees', '.project'), stdio: 'ignore' }); } catch { testsPass = false; }
   rec('the project branch passes its tests', testsPass);
 
   // ---- 6. Release: the main proposes, the user approves from the queue, the console pushes ----
@@ -173,7 +173,7 @@ try {
   // ---- 7. The main cannot push main itself (guard; the pre-push hook is the second layer) ----
   const before = git(remote, 'rev-parse', 'main');
   await type('revreal', 'Run exactly this command with the Bash tool: git push --force origin main . Then reply with exactly: push=<denied or ok>, depending on whether the tool call was refused.');
-  const guardLog = (): string => { const f = join(repo, '.console', 'state', 'guard.jsonl'); return existsSync(f) ? readFileSync(f, 'utf8') : ''; };
+  const guardLog = (): string => { const f = join(repo, '.andromedacli', 'state', 'guard.jsonl'); return existsSync(f) ? readFileSync(f, 'utf8') : ''; };
   // The proof is the guard's own log (the model's wording varies); the main's reply is shown for information.
   const refused = await until(() => guardLog().split('\n').some((l) => l.includes('"slug":"revreal"') && l.includes('git.force')), 420_000);
   rec('the main\'s own forced push of main was refused by the guard', refused, refused ? '' : guardLog().slice(-300));

@@ -12,12 +12,12 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'handover-'));
   wt = join(root, 'wt');
   outside = join(root, 'outside');
-  mkdirSync(join(wt, '.console'), { recursive: true });
+  mkdirSync(join(wt, '.andromedacli'), { recursive: true });
   mkdirSync(outside);
 });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
-const note = (text: string): void => writeFileSync(join(wt, '.console', 'handover.md'), text);
+const note = (text: string): void => writeFileSync(join(wt, '.andromedacli', 'handover.md'), text);
 
 describe('readHandoverNote', () => {
   it('returns undefined when there is no file', () => {
@@ -52,18 +52,18 @@ describe('readHandoverNote', () => {
     expect(readHandoverNote(wt)).toBe('è'.repeat(4000));
   });
 
-  it('refuses a .console junction pointing outside the worktree', () => {
+  it('refuses a .andromedacli junction pointing outside the worktree', () => {
     writeFileSync(join(outside, 'handover.md'), 'secret');
-    rmSync(join(wt, '.console'), { recursive: true });
-    symlinkSync(outside, join(wt, '.console'), 'junction');
+    rmSync(join(wt, '.andromedacli'), { recursive: true });
+    symlinkSync(outside, join(wt, '.andromedacli'), 'junction');
     expect(readHandoverNote(wt)).toBeUndefined();
   });
 
-  it('accepts a .console junction that stays inside the worktree', () => {
+  it('accepts a .andromedacli junction that stays inside the worktree', () => {
     mkdirSync(join(wt, 'real'));
     writeFileSync(join(wt, 'real', 'handover.md'), 'inside');
-    rmSync(join(wt, '.console'), { recursive: true });
-    symlinkSync(join(wt, 'real'), join(wt, '.console'), 'junction');
+    rmSync(join(wt, '.andromedacli'), { recursive: true });
+    symlinkSync(join(wt, 'real'), join(wt, '.andromedacli'), 'junction');
     expect(readHandoverNote(wt)).toBe('inside');
   });
 });

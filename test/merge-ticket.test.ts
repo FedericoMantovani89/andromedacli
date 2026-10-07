@@ -246,7 +246,7 @@ describe('recovery after a crash between the merge commit and the ticket update'
     const count = projectCount();
     const sha = projectTip();
     // the process died after the commit and before the ticket moved: put the ticket back to "approved", as the disk would have it
-    const file = join(t.repo, '.console', 'state', 'tickets', 'a-job.json');
+    const file = join(t.repo, '.andromedacli', 'state', 'tickets', 'a-job.json');
     const raw = JSON.parse(readFileSync(file, 'utf8'));
     writeFileSync(file, JSON.stringify({ ...raw, status: 'approved', mergedSha: undefined }));
     // and the author's branch is still there, as it would be

@@ -30,7 +30,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 15000): Promise<b
   while (Date.now() - t < ms) { if (await f()) return true; await sleep(50); }
   return false;
 }
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.console', 'worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.andromedacli', 'worktrees', slug);
 const wipCommits = (wt: string): string[] => gitSync(wt, 'log', '--format=%s').split('\n').filter((l) => l.startsWith('wip:'));
 const classesOf = async (loc: ReturnType<Page['locator']>): Promise<string[]> => ((await loc.getAttribute('class')) ?? '').split(/\s+/);
 
@@ -119,7 +119,7 @@ async function boot(o: { config?: Record<string, unknown>; sleepClock?: SleepClo
   const inbox = async (slug: string): Promise<string[]> => ((await asMod(slug, '/v1/inbox')).json?.messages ?? []).map((m: any) => m.text as string);
   const guard = async (slug: string, toolName: string, input: unknown): Promise<any> => (await asMod(slug, '/v1/guard', 'POST', { tool: toolName, input })).json;
   const agentOf = async (slug: string): Promise<any> => (await asUi('/api/state')).json.agents.find((a: any) => a.slug === slug);
-  const ticketFile = (slug: string): any => { try { return JSON.parse(readFileSync(join(t.repo, '.console', 'state', 'tickets', `${slug}.json`), 'utf8')); } catch { return undefined; } };
+  const ticketFile = (slug: string): any => { try { return JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', `${slug}.json`), 'utf8')); } catch { return undefined; } };
   /** The "budget" scenario's stop, condensed: 850 then 300 of 1000 tokens, no grace; resolves once the ticket is suspended_budget. */
   let msgN = 1000;
   const budgetStop = async (slug: string): Promise<boolean> => {
@@ -193,7 +193,7 @@ scenario('budget', async () => {
   await check('Close puts the ticket in needs_user', await until(async () => (await agent())?.ticket?.status === 'needs_user'), async () => JSON.stringify((await agent())?.ticket));
   await check('the ticket chip follows in the browser', await until(async () => (await classesOf(ticketChip)).includes('needs_user')));
   await check('the queue is empty again', await until(async () => (await page.locator('#drawer .queue-item').count()) === 0));
-  await check('the ticket file on disk says needs_user', JSON.parse(readFileSync(join(t.repo, '.console', 'state', 'tickets', 'fix-x.json'), 'utf8')).status === 'needs_user');
+  await check('the ticket file on disk says needs_user', JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', 'fix-x.json'), 'utf8')).status === 'needs_user');
 });
 
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
@@ -391,7 +391,7 @@ scenario('limit', async () => {
 // ask again; the delivered author's branch is not moved by a WIP commit
 scenario('limit-reviewer', async () => {
   const { s, t, event, tool, spawn, inbox, agentOf, ticketFile } = await boot();
-  const projectFile = join(t.repo, '.console', 'project.json');
+  const projectFile = join(t.repo, '.andromedacli', 'project.json');
   writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   const page = await open(`${s.url}/?token=${s.token}`);
   await until(async () => (await page.locator(`${panel('shop-api')} .xterm`).count()) > 0);

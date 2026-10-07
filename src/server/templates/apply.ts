@@ -12,9 +12,9 @@ export interface ApplyOptions {
   templateId: string;
   root: string;
   name: string;
-  /** Create the folder, and make it a git repository when it is not one. */
+  /** Create the folder (nothing else: a git repository is made only on `init`, from Options). */
   create: boolean;
-  /** Make the folder a git repository when it is not one, without creating it (the user asked for it). */
+  /** Make the folder a git repository when it is not one (the user asked for it). */
   init?: boolean;
   /** What the user typed: beats the detected commands, which beat the template's. An empty string means none. */
   build?: string;
@@ -34,7 +34,7 @@ async function isRepo(root: string): Promise<boolean> {
 }
 
 /** `git init -b main` and an empty first commit, so the project branch and the worktrees have something to start from. */
-async function initRepo(root: string): Promise<ApplyResult> {
+export async function initRepo(root: string): Promise<ApplyResult> {
   if (!(await isRepo(root))) {
     const init = await git(root, ['init', '-b', 'main']);
     if (init.code !== 0) return { ok: false, code: 'git.notRepo', detail: init.stderr.trim() };
@@ -51,9 +51,9 @@ async function initRepo(root: string): Promise<ApplyResult> {
 }
 
 /**
- * Makes a project from a template (SPEC 21.2): the folder (and its repository) if asked, the template's profiles, main.md and rules.md
- * under `.console/`, and the project.json fields. Every step is idempotent. The project's own CLAUDE.md is never written: it would
- * dirty the user's checkout and would not reach the worktrees (the rules travel in `.console/rules.md` instead).
+ * Makes a project from a template (SPEC 21.2): the folder if asked (a repository only on `init`), the template's profiles, main.md and rules.md
+ * under `.andromedacli/`, and the project.json fields. Every step is idempotent. The project's own CLAUDE.md is never written: it would
+ * dirty the user's checkout and would not reach the worktrees (the rules travel in `.andromedacli/rules.md` instead).
  */
 export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
   if (!TEMPLATE_ID_RE.test(o.templateId)) return { ok: false, code: 'template.notFound' };
@@ -71,13 +71,13 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
     return { ok: false, code: 'project.badRoot', detail: e instanceof Error ? e.message : String(e) };
   }
 
-  if (o.create || o.init) {
+  if (o.init) {
     const repo = await initRepo(root);
     if (!repo.ok) return repo;
   }
 
   try {
-    const consoleDir = join(root, '.console');
+    const consoleDir = join(root, '.andromedacli');
     mkdirSync(consoleDir, { recursive: true });
     const profilesSrc = join(template.dir, 'profiles');
     if (existsSync(profilesSrc)) {

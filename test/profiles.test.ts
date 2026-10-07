@@ -19,8 +19,8 @@ it('the project profile overrides the user profile, which overrides the shipped 
   mkdirSync(join(user), { recursive: true });
   writeFileSync(join(user, 'backend.md'), '---\nname: backend\ndescription: user version\n---\nUSER BODY');
   expect(loadProfile('backend', project, user)!.description).toBe('user version');
-  mkdirSync(join(project, '.console', 'profiles'), { recursive: true });
-  writeFileSync(join(project, '.console', 'profiles', 'backend.md'), '---\nname: backend\ndescription: project version\n---\nPROJECT BODY');
+  mkdirSync(join(project, '.andromedacli', 'profiles'), { recursive: true });
+  writeFileSync(join(project, '.andromedacli', 'profiles', 'backend.md'), '---\nname: backend\ndescription: project version\n---\nPROJECT BODY');
   const p = loadProfile('backend', project, user)!;
   expect(p.description).toBe('project version');
   expect(p.body).toBe('PROJECT BODY');

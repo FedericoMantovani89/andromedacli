@@ -6,7 +6,7 @@ import { autoClose, bootServer, modEvent, mod, state, ui, until, type Running } 
 import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { agentBranchFor, worktreePathFor as pathFor, worktreesDirFor } from '../src/server/git/worktree';
 
-/** Where the server puts an agent's worktree: under the project's .console (the project folder is the repo here). */
+/** Where the server puts an agent's worktree: under the project's .andromedacli (the project folder is the repo here). */
 const worktreePathFor = (repo: string, slug: string): string => pathFor(repo, slug, worktreesDirFor(repo, repo));
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
@@ -48,7 +48,7 @@ it('starting an agent creates the project branch, its branch and the sibling wor
 it('the prompt file tells the agent its branch, its folder and that the console commits', async () => {
   const { s, t } = await boot();
   await spawnTool(s, 'fix-login');
-  const prompt = readFileSync(join(t.repo, '.console', 'state', 'prompts', 'agent-fix-login.md'), 'utf8');
+  const prompt = readFileSync(join(t.repo, '.andromedacli', 'state', 'prompts', 'agent-fix-login.md'), 'utf8');
   expect(prompt).toContain('agent/shop-api/fix-login');
   expect(prompt).toContain(worktreePathFor(t.repo, 'fix-login'));
   expect(prompt).toContain('mcp__console-mod__step_done');
@@ -132,22 +132,22 @@ it('worktrees:false keeps the Phase 2 behaviour: the agent runs in the project f
 it('keeps the console folder out of git status from the start, without touching the project\'s .gitignore', async () => {
   const { t } = await boot({ config: { git: { worktrees: false } } });
   const exclude = readFileSync(join(t.repo, '.git', 'info', 'exclude'), 'utf8');
-  expect(exclude.split(/\r?\n/)).toContain('.console/');
+  expect(exclude.split(/\r?\n/)).toContain('.andromedacli/');
   expect(gitSync(t.repo, 'status', '--porcelain')).toBe('');
   expect(existsSync(join(t.repo, '.gitignore'))).toBe(false);
 });
 
 it('the budget defaults to config.budget.agentTokens, and a profile with console: budget_tokens wins over it', async () => {
   const { s, t } = await boot({ config: { budget: { agentTokens: 7000 } } });
-  mkdirSync(join(t.repo, '.console', 'profiles'), { recursive: true });
+  mkdirSync(join(t.repo, '.andromedacli', 'profiles'), { recursive: true });
   // The shipped profiles carry their own budget_tokens, so the default is seen through a project profile without one.
-  writeFileSync(join(t.repo, '.console', 'profiles', 'plain.md'), '---\nname: plain\ndescription: no budget of its own\n---\nBODY');
-  writeFileSync(join(t.repo, '.console', 'profiles', 'lean.md'), '---\nname: lean\ndescription: a lean profile\nconsole:\n  budget_tokens: 5000\n---\nBODY');
+  writeFileSync(join(t.repo, '.andromedacli', 'profiles', 'plain.md'), '---\nname: plain\ndescription: no budget of its own\n---\nBODY');
+  writeFileSync(join(t.repo, '.andromedacli', 'profiles', 'lean.md'), '---\nname: lean\ndescription: a lean profile\nconsole:\n  budget_tokens: 5000\n---\nBODY');
   expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'first-job', profile: 'plain', goal: 'go' })).body.status).toBe('started');
   expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'second-job', profile: 'lean', goal: 'go' })).body.status).toBe('started');
   // The state shows no usage before the first turn (n/a); the limit itself is on the ticket.
   const limitOf = (slug: string): number | undefined => {
-    const file = join(t.repo, '.console', 'state', 'tickets', `${slug}.json`);
+    const file = join(t.repo, '.andromedacli', 'state', 'tickets', `${slug}.json`);
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')).budget?.limit : undefined;
   };
   await until(() => limitOf('first-job') !== undefined && limitOf('second-job') !== undefined);
@@ -158,7 +158,7 @@ it('the budget defaults to config.budget.agentTokens, and a profile with console
 it('the goal the main wrote is kept in the ticket (the review checks the diff against it)', async () => {
   const { s, t } = await boot();
   await spawnTool(s, 'fix-login', 'Fix the login timeout in AuthService');
-  const file = join(t.repo, '.console', 'state', 'tickets', 'fix-login.json');
+  const file = join(t.repo, '.andromedacli', 'state', 'tickets', 'fix-login.json');
   await until(() => existsSync(file), 30_000);
   expect(JSON.parse(readFileSync(file, 'utf8')).goal).toBe('Fix the login timeout in AuthService');
 });

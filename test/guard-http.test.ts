@@ -22,7 +22,7 @@ const spawn = async (s: Running, name: string): Promise<void> => {
 };
 const guard = (s: Running, slug: string, tool: string, input: unknown) => mod(s, slug, '/v1/guard', 'POST', { tool, input });
 const logOf = (t: TestRepo): any[] => {
-  const file = join(t.repo, '.console', 'state', 'guard.jsonl');
+  const file = join(t.repo, '.andromedacli', 'state', 'guard.jsonl');
   return existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 };
 
@@ -82,7 +82,7 @@ it('an unknown tool is allowed; bad bodies are 400; tokens are required and only
   expect((await req(s, '/v1/guard', { method: 'POST', token: s.token, body: { tool: 'Bash', input: {} } })).status).toBe(401);
   expect((await mod(s, 'first-job', '/v1/guard', 'GET')).status).toBe(404);
 });
-it('every deny is logged to .console/state/guard.jsonl; allows are not', async () => {
+it('every deny is logged to .andromedacli/state/guard.jsonl; allows are not', async () => {
   const { s, t } = await boot();
   await spawn(s, 'first-job');
   await guard(s, 'first-job', 'Bash', { command: 'git status' });

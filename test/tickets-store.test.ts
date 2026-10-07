@@ -14,7 +14,7 @@ const steps = (): Step[] => {
   if (!r.ok) throw new Error(r.code);
   return r.steps;
 };
-const dir = (): string => join(root, '.console', 'state', 'tickets');
+const dir = (): string => join(root, '.andromedacli', 'state', 'tickets');
 
 describe('TicketStore', () => {
   it('has nothing for an unknown ticket', () => {

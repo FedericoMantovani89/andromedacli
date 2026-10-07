@@ -87,5 +87,5 @@ export function makeMultiRepo(names: string[], o: { remote?: boolean } = {}): Mu
   return { base, root, repos };
 }
 
-/** Where the server puts an agent's worktree when the project folder is the repository: `<repo>/.console/worktrees/<slug>`. */
-export const worktreePathFor = (repo: string, slug: string): string => join(repo, '.console', 'worktrees', slug);
+/** Where the server puts an agent's worktree when the project folder is the repository: `<repo>/.andromedacli/worktrees/<slug>`. */
+export const worktreePathFor = (repo: string, slug: string): string => join(repo, '.andromedacli', 'worktrees', slug);

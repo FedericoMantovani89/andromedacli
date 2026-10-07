@@ -364,7 +364,7 @@ describe('review findings: rounds', () => {
     deliver();
     await svc.requestReview('a-job');
     // two earlier reopenings that were not review failures (a conflict and a merge with red tests)
-    const file = join(t.repo, '.console', 'state', 'tickets', 'a-job.json');
+    const file = join(t.repo, '.andromedacli', 'state', 'tickets', 'a-job.json');
     writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), round: 2 }));
     const r = await svc.reviewVerdict('review-a-job', { pass: false, notes: NOTES });
     expect(r).toMatchObject({ ok: true, outcome: 'sent_back' }); // the first failed review still goes back to the author

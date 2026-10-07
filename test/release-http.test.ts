@@ -19,7 +19,7 @@ async function boot(config: Record<string, unknown> = {}): Promise<{ s: Running;
   repos.push(t);
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true }, ...config } });
   s.setLimits({ global: 20, perProject: 20 });
-  const file = join(t.repo, '.console', 'project.json');
+  const file = join(t.repo, '.andromedacli', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   return { s, t };
 }

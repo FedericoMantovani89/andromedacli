@@ -31,7 +31,7 @@ const field = (name: string): HTMLInputElement => document.querySelector(`#overl
 const browse = (): HTMLButtonElement => document.querySelector('#overlay button.browse-folder')!;
 
 describe('the Browse button of the new-project dialog', () => {
-  it('fills the folder with what the native window returned, proposes the name and reads the project', async () => {
+  it('fills the folder with what the native window returned and checks it', async () => {
     openNewProjectDialog(() => undefined);
     await tick();
     expect(browse().dataset.i18n).toBe('projects.new.browse');
@@ -39,9 +39,7 @@ describe('the Browse button of the new-project dialog', () => {
     await tick(); await tick();
     expect(calls.some((c) => c.path === '/api/pick-folder' && c.method === 'POST')).toBe(true);
     expect(field('folder').value).toBe('D:\\work\\Shop API');
-    expect(field('name').value).toBe('shop-api');
     expect(calls.some((c) => c.path === `/api/projects/detect?root=${encodeURIComponent('D:\\work\\Shop API')}`)).toBe(true);
-    expect(field('test').value).toBe('mvn test');
   });
 
   it('leaves the folder alone when the window was closed', async () => {
@@ -95,6 +93,53 @@ describe('the new-project dialog tells who created the project', () => {
     document.querySelector<HTMLFormElement>('#overlay form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     await tick(); await tick();
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe('the new-project dialog asks only for the folder', () => {
+  const submit = (): void => { document.querySelector<HTMLFormElement>('#overlay form')!.dispatchEvent(new Event('submit', { cancelable: true })); };
+  const posted = (): unknown => calls.find((c) => c.path === '/api/projects' && c.method === 'POST')!.body;
+
+  it('has no template, command or name field, and sends the folder with auto', async () => {
+    openNewProjectDialog(() => undefined);
+    await tick();
+    expect(document.querySelector('#overlay select')).toBeNull();
+    for (const n of ['create', 'build', 'test', 'lint']) expect(field(n)).toBeNull();
+    expect(field('name').closest('label')!.hidden).toBe(true);
+    field('folder').value = 'D:\\work\\shop-api';
+    submit();
+    await tick(); await tick(); await tick();
+    expect(posted()).toEqual({ root: 'D:\\work\\shop-api', auto: true, create: false });
+  });
+
+  it('a folder that does not exist yet says it will be created, and is sent with create', async () => {
+    vi.stubGlobal('fetch', async (path: string, init?: { method?: string; body?: string }) => {
+      const method = init?.method ?? 'GET';
+      calls.push({ path, method, body: init?.body ? JSON.parse(init.body) : undefined });
+      const answer = (status: number, body: unknown) => ({ status, json: async () => body });
+      if (path.startsWith('/api/projects/detect')) return answer(422, { code: 'project.badRoot' });
+      return answer(201, { name: 'fresh' });
+    });
+    openNewProjectDialog(() => undefined);
+    await tick();
+    field('folder').value = 'D:\\work\\fresh';
+    field('folder').dispatchEvent(new Event('blur'));
+    await tick(); await tick();
+    expect(document.querySelector<HTMLElement>('#overlay .create-note')!.dataset.i18n).toBe('projects.new.willCreate');
+    submit();
+    await tick(); await tick(); await tick();
+    expect(posted()).toMatchObject({ create: true, auto: true });
+  });
+
+  it('a refused name (taken or unusable) shows the name field, proposed from the folder', async () => {
+    created = { status: 409, body: { code: 'project.duplicate' } };
+    openNewProjectDialog(() => undefined);
+    await tick();
+    field('folder').value = 'D:\\work\\Shop API';
+    submit();
+    await tick(); await tick(); await tick();
+    expect(field('name').closest('label')!.hidden).toBe(false);
+    expect(field('name').value).toBe('shop-api');
   });
 });
 

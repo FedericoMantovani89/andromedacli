@@ -10,6 +10,8 @@ export interface AddProjectOptions {
   name?: string;
   templateId?: string;
   create?: boolean;
+  /** The console picks the template and the commands from what the folder contains (the new-project dialog only asks for the folder). */
+  auto?: boolean;
   build?: string;
   test?: string;
   lint?: string;
@@ -28,7 +30,7 @@ export interface ProjectsApi {
   /** The context of every open project, in the order they were opened (the first one answers requests with no `?project=`). */
   contexts(): Context[];
   add(o: AddProjectOptions): Promise<{ name: string }>;
-  /** `purge`: also takes the project back to "never opened" (worktrees, its branches, `.console`). */
+  /** `purge`: also takes the project back to "never opened" (worktrees, its branches, `.andromedacli`). */
   close(name: string, purge?: boolean): Promise<void>;
 }
 
@@ -51,6 +53,7 @@ export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | '
     if (b.name !== undefined && typeof b.name !== 'string') return fail(res, 400, 'bad_request');
     if (b.templateId !== undefined && typeof b.templateId !== 'string') return fail(res, 400, 'bad_request');
     if (b.create !== undefined && typeof b.create !== 'boolean') return fail(res, 400, 'bad_request');
+    if (b.auto !== undefined && typeof b.auto !== 'boolean') return fail(res, 400, 'bad_request');
     if (!isAbsolute(b.root.trim())) return fail(res, 422, 'project.badRoot');
     // Same rule as an agent: nothing starts while a required prerequisite is not ok (unknown is never ok).
     const blocked = (await host.ensurePrereq()).find((c) => c.required && c.status !== 'ok');
@@ -58,7 +61,7 @@ export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | '
     try {
       const out = await projects.add({
         root: b.root.trim(), ...(b.name !== undefined && b.name !== '' ? { name: b.name } : {}),
-        ...(b.templateId !== undefined && b.templateId !== '' ? { templateId: b.templateId } : {}), ...(b.create === true ? { create: true } : {}),
+        ...(b.templateId !== undefined && b.templateId !== '' ? { templateId: b.templateId } : {}), ...(b.create === true ? { create: true } : {}), ...(b.auto === true ? { auto: true } : {}),
         ...(build !== undefined ? { build } : {}), ...(test !== undefined ? { test } : {}), ...(lint !== undefined ? { lint } : {}),
       });
       return send(res, 201, out);

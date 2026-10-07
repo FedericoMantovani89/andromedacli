@@ -25,7 +25,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 15000): Promise<b
   return false;
 }
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.console', 'worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.andromedacli', 'worktrees', slug);
 const gitFails = (cwd: string, ...args: string[]): boolean => {
   try { execFileSync('git', args, { cwd, stdio: 'ignore' }); return false; } catch { return true; }
 };
@@ -39,7 +39,7 @@ async function boot(o: { config?: Record<string, unknown>; testCommand?: string 
   const s = await startServer({
     port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null,
   });
-  const projectFile = join(t.repo, '.console', 'project.json');
+  const projectFile = join(t.repo, '.andromedacli', 'project.json');
   writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: o.testCommand ?? `node -e "require('fs').writeFileSync('validated.txt','ran')"` }));
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
@@ -182,7 +182,7 @@ try {
     check('git status is allowed', !(await denied('Bash', { command: 'git status' })));
     check('an edit inside the worktree is allowed', !(await denied('Edit', { file_path: join(wt, 'src', 'a.ts') })));
     check('npm test is allowed', !(await denied('PowerShell', { command: 'npm test' })));
-    const log = readFileSync(join(t.repo, '.console', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const log = readFileSync(join(t.repo, '.andromedacli', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     check('every denial is in guard.jsonl and allows are not', log.length === 6 && log.every((l: any) => l.outcome === 'denied'), String(log.length));
     await s.close();
   }
@@ -191,7 +191,7 @@ try {
     await spawn('fix-login-timeout');
     const r = await guard('fix-login-timeout', 'Bash', { command: 'git push --force' });
     check('shadow mode allows what enforce would deny', r.json.decision === 'allow');
-    const log = readFileSync(join(t.repo, '.console', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const log = readFileSync(join(t.repo, '.andromedacli', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     check('and logs it as shadow-allowed', log.length === 1 && log[0].outcome === 'shadow-allowed' && log[0].rule === 'git.force', JSON.stringify(log));
     await s.close();
   }
@@ -247,7 +247,7 @@ try {
     await page.click('.options-tab[data-tab="projects"]');
     await page.fill('input[name="testCommand"]', 'npx vitest run');
     await page.click('.settings-test button[type="submit"]');
-    check('the test command is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'project.json'), 'utf8')).testCommand === 'npx vitest run'));
+    check('the test command is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'project.json'), 'utf8')).testCommand === 'npx vitest run'));
     await spawn('second-job');
     check('the agent started before the change has no bypass', !s.lastLaunchArgs('first-job')!.includes('--dangerously-skip-permissions'));
     check('the agent started after it has', s.lastLaunchArgs('second-job')!.includes('--dangerously-skip-permissions'));

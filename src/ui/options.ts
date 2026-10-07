@@ -1,8 +1,9 @@
-import type { ApiError, StateMessage } from '../shared/protocol';
+import type { ApiError, PrereqResult, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { errorText } from './new-agent';
 import { bindText, k, language, t } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
+import { openInstallDialog } from './install-dialog';
 import { renderNotificationsTab } from './options-notifications';
 import { openSaveTemplateDialog } from './new-project';
 
@@ -186,10 +187,82 @@ function budgetTab(env: Env): HTMLElement {
   return box;
 }
 
+/** Whether git is installed (from the prerequisite checks) and, when it is not, the exact command the console would run to install it. */
+function gitToolSection(env: Env): HTMLElement {
+  const box = el('div', 'options-git-tool');
+  box.append(heading(k('options.git.program')));
+  const row = el('div', 'prereq-row');
+  const status = el('span');
+  const detail = el('span');
+  const command = el('p', 'settings-note');
+  const install = el('button');
+  install.type = 'button';
+  install.name = 'installGit';
+  bindText(install, 'prereq.install');
+  const recheck = el('button');
+  recheck.type = 'button';
+  recheck.name = 'recheckGit';
+  bindText(recheck, 'prereq.recheck');
+  const show = (results: PrereqResult[] | null): void => {
+    const git = results?.find((r) => r.id === 'git');
+    if (!git) { status.className = 'prereq-unknown'; bindText(status, 'common.notAvailable'); detail.textContent = ''; } // unknown is never "ok"
+    else { status.className = `prereq-${git.status}`; bindText(status, `prereq.status.${git.status}`); detail.textContent = git.version ?? ''; }
+    const missing = git !== undefined && (git.status === 'missing' || git.status === 'error');
+    install.hidden = !missing;
+    command.hidden = !missing;
+    if (missing) {
+      void api<{ display?: string }>('/api/prereq/git/install').then((res) => {
+        if (res.status === 200 && res.body.display) bindText(command, 'options.git.installCommand', { command: res.body.display });
+        else bindText(command, 'prereq.install.manual.git');
+      });
+    }
+  };
+  show(env.state?.prereq ?? null);
+  install.addEventListener('click', () => openInstallDialog('git', () => recheck.click()));
+  recheck.addEventListener('click', () => {
+    void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => { if (res.status === 200) show(res.body); else env.fail(res); });
+  });
+  row.append(el('span'), status, detail, install, recheck);
+  bindText(row.firstElementChild as HTMLElement, 'prereq.git');
+  box.append(row, command);
+  return box;
+}
+
+/** What the project folder is for git, and the button that makes it a repository when it is not one (nothing starts git on its own). */
+function gitProjectSection(env: Env): HTMLElement {
+  const box = el('div', 'options-git-project');
+  box.append(heading(k('options.git.project')));
+  const state = env.state;
+  const message = el('p', 'settings-note');
+  box.append(message);
+  if (!state) { bindText(message, 'common.notAvailable'); return box; }
+  if (state.projectIsRepo) {
+    if (state.repos.includes('')) bindText(message, 'options.git.isRepo');
+    else bindText(message, 'options.git.holdsRepos', { repos: state.repos.join(', ') });
+    return box;
+  }
+  bindText(message, 'options.git.notRepo');
+  const init = el('button');
+  init.type = 'button';
+  init.name = 'gitInit';
+  bindText(init, 'options.git.init');
+  init.addEventListener('click', () => {
+    init.disabled = true;
+    void api<ApiError>('/api/projects/git-init', { method: 'POST' }).then((res) => {
+      if (env.fail(res)) { init.disabled = false; return; }
+      bindText(message, 'options.git.init.done');
+      init.hidden = true;
+    });
+  });
+  box.append(init, note(k('options.git.init.help')));
+  return box;
+}
+
 function gitTab(env: Env): HTMLElement {
   const box = el('div', 'settings-agents');
   const bad = unavailable(env);
   if (bad) { box.append(bad); return box; }
+  box.append(gitToolSection(env), gitProjectSection(env));
   box.append(
     fields(env, [
       { path: 'git.worktrees', label: k('options.git.worktrees'), kind: 'bool', help: k('options.git.worktrees.help') },
@@ -284,13 +357,12 @@ function projectsTab(env: Env): HTMLElement {
   testForm.append(testLabel, save, note(k('settings.testCommand.help')));
   box.append(squashRow, note(k('settings.squash.help')), testForm);
 
-  // Project fields added by the templates part: shown only when the project carries them.
+  // Fields of the project: always shown (a project made from the generic template carries none yet, and this is where they are set).
   const project = (state?.project ?? {}) as Record<string, unknown>;
   for (const [key, label, kind] of [
     ['buildCommand', k('options.projects.buildCommand'), 'text'], ['lintCommand', k('options.projects.lintCommand'), 'text'],
     ['model', k('options.projects.model'), 'text'], ['maxActive', k('options.projects.maxActive'), 'number'],
   ] as const) {
-    if (!(key in project)) continue;
     const row = el('label', 'options-field');
     const span = el('span');
     bindText(span, label);
@@ -300,7 +372,7 @@ function projectsTab(env: Env): HTMLElement {
     input.value = String(project[key] ?? '');
     let saved = input.value;
     input.addEventListener('change', () => {
-      const wanted = kind === 'number' ? Number(input.value) : input.value;
+      const wanted = kind === 'number' ? (input.value.trim() === '' ? null : Number(input.value)) : input.value;
       void api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }).then((res) => {
         if (env.fail(res)) input.value = saved; else saved = input.value;
       });
@@ -308,6 +380,38 @@ function projectsTab(env: Env): HTMLElement {
     row.append(span, input);
     box.append(row);
   }
+
+  // Another template for this project: its profiles, main.md and rules.md replace the files of the same name; the commands stay.
+  const pick = el('select');
+  pick.name = 'template';
+  const apply = el('button');
+  apply.type = 'button';
+  apply.name = 'applyTemplate';
+  bindText(apply, 'options.projects.template.apply');
+  apply.disabled = true;
+  const applied = note(k('options.projects.template.help'));
+  void api<{ id: string; name: Record<string, string>; valid: boolean }[]>('/api/templates').then((res) => {
+    if (res.status !== 200) return;
+    for (const item of res.body.filter((x) => x.valid)) {
+      const o = el('option');
+      o.value = item.id;
+      o.textContent = item.name[language()] ?? item.name.en ?? item.id;
+      pick.append(o);
+    }
+    apply.disabled = pick.options.length === 0;
+  });
+  apply.addEventListener('click', () => {
+    apply.disabled = true;
+    void api<ApiError>('/api/projects/apply-template', { method: 'POST', body: { templateId: pick.value } }).then((res) => {
+      apply.disabled = false;
+      if (!env.fail(res)) bindText(applied, 'options.projects.template.done');
+    });
+  });
+  const templateLabel = el('label', 'options-field');
+  const templateText = el('span');
+  bindText(templateText, 'options.projects.template');
+  templateLabel.append(templateText, pick);
+  box.append(templateLabel, apply, applied);
 
   const template = el('button');
   template.type = 'button';

@@ -60,7 +60,7 @@ export interface Context extends V1Context {
   reading: ReadingStore;
   /** Last launch arguments per session (a test seam; contains no secrets). */
   launchLog: Map<string, string[]>;
-  /** Where rendered system-prompt files are written (under the project's .console/state). */
+  /** Where rendered system-prompt files are written (under the project's .andromedacli/state). */
   promptsDir: string;
   bypass: boolean;
   language: string;
@@ -70,7 +70,9 @@ export interface Context extends V1Context {
   configPath: string;
   /** The repositories agents can work in (see `discoverRepos`), read at each use: a repo made later is seen. */
   repos(): string[];
-  /** Once per repository: keeps `.console/` out of its git status and installs the release hook. Never rejects. */
+  /** Drops the remembered list of repositories (one was just made). */
+  forgetRepos(): void;
+  /** Once per repository: keeps `.andromedacli/` out of its git status and installs the release hook. Never rejects. */
   prepareRepo(path: string): Promise<void>;
   /** Build version (latest tag on main), shown on the splash and in the tab title. */
   version: string;
@@ -425,6 +427,36 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const saved = saveTemplate({ projectRoot: ctx.projectRoot, project, configDir: dirname(ctx.configPath), id: String(b.id ?? ''), name: b.name, overwrite: b.overwrite === true });
       if (!saved.ok) return fail(res, saved.code === 'template.exists' ? 409 : 422, saved.code);
       return send(res, 201, { id: String(b.id) });
+    }
+
+    // Changes the template of the open project: the profiles, main.md and rules.md of the new one replace the files of the same name; the
+    // commands already set stay (what the user typed beats the template's).
+    if (req.method === 'POST' && path === '/api/projects/apply-template') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      if (typeof body !== 'object' || body === null || Array.isArray(body) || typeof (body as { templateId?: unknown }).templateId !== 'string') return fail(res, 400, 'bad_request');
+      let current;
+      try { current = ctx.store.project; } catch { return fail(res, 422, 'template.invalid'); }
+      const { applyTemplate } = await import('./templates/apply');
+      const done = await applyTemplate({
+        templateId: (body as { templateId: string }).templateId, root: ctx.projectRoot, name: ctx.projectName, create: false,
+        build: current.buildCommand, test: current.testCommand, lint: current.lintCommand, configDir: dirname(ctx.configPath),
+      });
+      if (!done.ok) return fail(res, 422, done.code);
+      ctx.broadcastState();
+      return send(res, 200, { templateId: (body as { templateId: string }).templateId });
+    }
+
+    // Makes the project folder a git repository (`git init -b main` and an empty first commit). Refused when it already is, or holds repositories.
+    if (req.method === 'POST' && path === '/api/projects/git-init') {
+      if (ctx.repos().length > 0) return fail(res, 409, 'git.alreadyRepo');
+      const { initRepo } = await import('./templates/apply');
+      const made = await initRepo(ctx.projectRoot);
+      if (!made.ok) return fail(res, 422, made.code, made.detail ? { reason: made.detail } : undefined);
+      ctx.forgetRepos();
+      await ctx.prepareRepo(ctx.projectRoot); // keeps .andromedacli/ out of the new repository's status
+      ctx.broadcastState();
+      return send(res, 200, { ok: true });
     }
 
     return fail(res, 404, 'not_found');

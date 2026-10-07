@@ -8,8 +8,8 @@ import { bootServer, until } from './helpers';
 const SID = '7487d159-b5c4-4f4f-8624-992be7e584c7';
 function projectWithSavedMain(): string {
   const root = mkdtempSync(join(tmpdir(), 'mr-project-'));
-  mkdirSync(join(root, '.console', 'state'), { recursive: true });
-  writeFileSync(join(root, '.console', 'state', 'main.json'), JSON.stringify({ sessionId: SID }));
+  mkdirSync(join(root, '.andromedacli', 'state'), { recursive: true });
+  writeFileSync(join(root, '.andromedacli', 'state', 'main.json'), JSON.stringify({ sessionId: SID }));
   return root;
 }
 

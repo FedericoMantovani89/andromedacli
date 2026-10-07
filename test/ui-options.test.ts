@@ -11,15 +11,19 @@ const options = {
 };
 const state = { settings: { bypassPermissions: false, guardMode: 'enforce', worktrees: true }, project: { name: 'p' }, language: 'en', languages: ['en', 'it'], prereq: null } as unknown as StateMessage;
 
+let posts: string[] = [];
 let puts: unknown[] = [];
 let putStatus = 200;
 beforeEach(() => {
   puts = [];
+  posts = [];
   putStatus = 200;
   document.body.innerHTML = '<div id="overlay" hidden></div>';
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
     const json = (status: number, body: unknown) => ({ status, json: async () => body });
     if (init?.method === 'PUT') { puts.push(JSON.parse(init.body ?? 'null')); return json(putStatus, putStatus === 200 ? {} : { code: 'config.invalid', params: { path: 'x' } }); }
+    if (init?.method === 'POST') { posts.push(url); return json(200, url === '/api/prereq/recheck' ? [{ id: 'git', status: 'ok', version: '2.50', required: true }] : { ok: true }); }
+    if (url === '/api/prereq/git/install') return json(200, { id: 'git', action: 'install', display: 'winget install --id Git.Git -e --source winget' });
     if (url === '/api/options') return json(200, options);
     if (url === '/api/models') return json(200, { models: [{ id: 'opus', label: 'opus', alias: true }], source: 'shipped', current: '', missing: false });
     if (url === '/api/plugins') return json(200, { source: 'shipped', plugins: [] });
@@ -41,6 +45,33 @@ describe('options dialog', () => {
     document.querySelector<HTMLElement>('.options-tab[data-tab="guard"]')!.click();
     expect(document.querySelector('input[name="bypass"]')).not.toBeNull();
     expect(document.querySelector('select[name="guardMode"]')).not.toBeNull();
+  });
+  it('the Git tab shows the git check, the install command when it is missing, and the git init button for a folder that is no repository', async () => {
+    const missing = { ...state, projectIsRepo: false, repos: [], prereq: [{ id: 'git', status: 'missing', required: true }] } as unknown as StateMessage;
+    await openOptions(() => missing);
+    document.querySelector<HTMLElement>('.options-tab[data-tab="git"]')!.click();
+    await flush();
+    expect(document.querySelector<HTMLElement>('.options-git-tool .prereq-missing')).not.toBeNull();
+    expect(document.querySelector<HTMLElement>('.options-git-tool button[name="installGit"]')!.hidden).toBe(false);
+    expect(document.querySelector('.options-git-tool .settings-note')!.getAttribute('data-i18n-params')).toContain('winget install');
+    document.querySelector<HTMLButtonElement>('button[name="gitInit"]')!.click();
+    await flush();
+    expect(posts).toContain('/api/projects/git-init');
+    expect(document.querySelector<HTMLElement>('button[name="gitInit"]')!.hidden).toBe(true);
+  });
+  it('the Git tab has no git init button when the folder is already a repository, and no install button when git is there', async () => {
+    const fine = { ...state, projectIsRepo: true, repos: [''], prereq: [{ id: 'git', status: 'ok', version: '2.50', required: true }] } as unknown as StateMessage;
+    await openOptions(() => fine);
+    document.querySelector<HTMLElement>('.options-tab[data-tab="git"]')!.click();
+    await flush();
+    expect(document.querySelector('button[name="gitInit"]')).toBeNull();
+    expect(document.querySelector<HTMLElement>('.options-git-tool button[name="installGit"]')!.hidden).toBe(true);
+  });
+  it('the Project tab lets the template be applied to the open project', async () => {
+    await openOptions(() => state);
+    document.querySelector<HTMLElement>('.options-tab[data-tab="projects"]')!.click();
+    expect(document.querySelector('select[name="template"]')).not.toBeNull();
+    expect(document.querySelector('button[name="applyTemplate"]')).not.toBeNull();
   });
   it('a saved field sends only its own entry', async () => {
     await openOptions(() => state);

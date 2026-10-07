@@ -42,14 +42,14 @@ export function withProjectLock<T>(repo: string, fn: () => Promise<T>): Promise<
 /** The console's own worktree on the project branch, where tickets are merged. A leading dot can never be an agent's name. */
 export const projectWorktreePath = (repo: string, dir?: string): string => {
   const earlier = join(dirname(repo), `${basename(repo)}.worktrees`, '.project');
-  // An existing checkout in the earlier layout (a project started before the move) is kept; a new one goes under the project's .console.
+  // An existing checkout in the earlier layout (a project started before the move) is kept; a new one goes under the project's .andromedacli.
   return dir === undefined || existsSync(earlier) ? earlier : join(dir, '.project');
 };
 
 export type ProjectWorktree = { ok: true; path: string } | { ok: false; code: 'project_branch_checked_out' | 'git_failed'; detail?: string };
 
 /**
- * Makes sure `<project>/.console/worktrees/.project` (earlier projects: `<repo>.worktrees/.project`) is a clean checkout of `project/<project>`: created when missing, and any half-done merge left by
+ * Makes sure `<project>/.andromedacli/worktrees/.project` (earlier projects: `<repo>.worktrees/.project`) is a clean checkout of `project/<project>`: created when missing, and any half-done merge left by
  * a crash is thrown away (the worktree is the console's own and its branch tip is committed state). Refuses when somebody else
  * (the user's checkout) has the project branch checked out, because a branch cannot be checked out twice.
  */

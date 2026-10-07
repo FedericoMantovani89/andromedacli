@@ -9,7 +9,7 @@ export const MAX_REWORK_ROUNDS = 2;
 
 export interface ReviewDeps {
   tickets: TicketStore;
-  /** The project folder (where `.console/` lives). */
+  /** The project folder (where `.andromedacli/` lives). */
   root: string;
   project: string;
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;

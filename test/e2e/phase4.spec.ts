@@ -26,7 +26,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 20000): Promise<b
 }
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
 const NOTES = [{ severity: 'high', where: 'src/math.js:3', text: 'negative input is not handled' }];
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.console', 'worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.andromedacli', 'worktrees', slug);
 const gitFails = (cwd: string, ...args: string[]): boolean => {
   try { execFileSync('git', args, { cwd, stdio: 'ignore' }); return false; } catch { return true; }
 };
@@ -38,7 +38,7 @@ async function boot() {
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
   const s = await startServer({ port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null });
   s.setLimits({ global: 20, perProject: 20 });
-  const projectFile = join(t.repo, '.console', 'project.json');
+  const projectFile = join(t.repo, '.andromedacli', 'project.json');
   writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
@@ -102,7 +102,7 @@ try {
     check('the delivered ticket shows as Delivered in its panel', await until(async () => (await chip(page, 'fix-login').innerText().catch(() => '')) === 'Delivered'), await chip(page, 'fix-login').innerText().catch(() => ''));
     const r = await tool('shop-api', 'ticket_report', { name: 'fix-login' });
     check('ticket_report gives the facts: tests rerun by the console, checklist complete, docs changed', r.json.status === 'ok' && r.json.facts.testsOk === true && r.json.facts.checklistComplete === true && r.json.facts.docsChanged === true, JSON.stringify(r.json.facts));
-    check('report.md is written on disk with the objective', existsSync(join(t.repo, '.console', 'tickets', 'fix-login', 'report.md')) && readFileSync(join(t.repo, '.console', 'tickets', 'fix-login', 'report.md'), 'utf8').includes('Fix the login so negative ids are rejected'));
+    check('report.md is written on disk with the objective', existsSync(join(t.repo, '.andromedacli', 'tickets', 'fix-login', 'report.md')) && readFileSync(join(t.repo, '.andromedacli', 'tickets', 'fix-login', 'report.md'), 'utf8').includes('Fix the login so negative ids are rejected'));
     await page.close();
     await s.close();
   }
@@ -239,7 +239,7 @@ try {
     await page.click('.options-tab[data-tab="projects"]');
     check('the squash switch starts on', await page.locator('input[name="squash"]').isChecked());
     await page.uncheck('input[name="squash"]');
-    check('turning it off is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'project.json'), 'utf8')).squash === false));
+    check('turning it off is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'project.json'), 'utf8')).squash === false));
     await page.close();
     await s.close();
   }

@@ -158,8 +158,8 @@ try {
     check(`...in well under a minute (${seconds.toFixed(1)} s)`, seconds < 60);
     check('both projects are open', ((await S.state()).projects ?? []).map((p: any) => p.name).join(',') === 'shop-api,shop-two', JSON.stringify((await S.state()).projects));
     check('its main is running', await until(async () => (await S.state('shop-two')).main.status === 'running'));
-    const projectJson = JSON.parse(readFileSync(join(project, '.console', 'project.json'), 'utf8'));
-    check('the template put its commands and profiles in the project', projectJson.testCommand === detected?.test && existsSync(join(project, '.console', 'profiles', 'backend.md')), JSON.stringify(projectJson));
+    const projectJson = JSON.parse(readFileSync(join(project, '.andromedacli', 'project.json'), 'utf8'));
+    check('the template put its commands and profiles in the project', projectJson.testCommand === detected?.test && existsSync(join(project, '.andromedacli', 'profiles', 'backend.md')), JSON.stringify(projectJson));
 
     const made = await S.ui('/api/agents?project=shop-two', 'POST', { slug: 'two-job', profile: 'backend' });
     check('an agent can be started in the new project', made.status === 201, JSON.stringify(made));

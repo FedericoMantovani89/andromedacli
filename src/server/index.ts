@@ -13,6 +13,7 @@ import { PluginCatalog } from './catalog/plugins';
 import { ProjectStore } from './project-store';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
+import { detectProject } from './templates/detect';
 import { createToken, SessionTokens } from './security';
 import { AgentRegistry } from './agents/registry';
 import { Inbox } from './agents/inbox';
@@ -201,7 +202,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const ptys = new PtyManager();
   const tokens = new SessionTokens();
   // What was not delivered before a stop is delivered after the restart (messages for dormant agents wait for their wake-up).
-  const inbox = new Inbox(join(o.projectRoot, '.console', 'state', 'inbox.json'));
+  const inbox = new Inbox(join(o.projectRoot, '.andromedacli', 'state', 'inbox.json'));
   inbox.load();
   const registry = new AgentRegistry();
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
@@ -211,7 +212,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) && hasMainTranscript(savedMainSession) ? savedMainSession : undefined;
   registry.register({ slug: projectName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
   const questions = new QuestionQueue();
-  const reading = new ReadingStore(join(o.projectRoot, '.console', 'state', 'reading'));
+  const reading = new ReadingStore(join(o.projectRoot, '.andromedacli', 'state', 'reading'));
   // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
   /** The global secret patterns plus the project's own (Phase 6D). */
   const secretPatterns = (): string[] => [...runtime.git.secretPatterns, ...(store.fields().secretPatterns ?? [])];
@@ -286,7 +287,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     registry.markFinished(slug);
     await ptys.killTree(slug);
   };
-  /** The handover note an agent wrote in its worktree (`.console/handover.md`), at most 4000 characters; undefined when none. */
+  /** The handover note an agent wrote in its worktree (`.andromedacli/handover.md`), at most 4000 characters; undefined when none. */
   const readHandover = (slug: string): string | undefined => {
     const worktree = registry.get(slug)?.git?.worktree;
     if (!worktree) return undefined;
@@ -514,6 +515,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     if (!repoCache || now - repoCache.at > 5000) repoCache = { at: now, list: discoverRepos(o.projectRoot) };
     return repoCache.list;
   };
+  const forgetRepos = (): void => { repoCache = undefined; };
   const preparedRepos = new Set<string>();
   const prepareRepo = async (path: string): Promise<void> => {
     const key = path.replace(/\\/g, '/').toLowerCase();
@@ -538,7 +540,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tellMain: (text) => { inbox.push(projectName, text); },
     changed: () => broadcast(),
   });
-  const guardLog = new GuardLog(join(o.projectRoot, '.console', 'state', 'guard.jsonl'));
+  const guardLog = new GuardLog(join(o.projectRoot, '.andromedacli', 'state', 'guard.jsonl'));
   const steps = new StepService({
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
@@ -611,7 +613,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get budgetConfig() { return config.budget; },
     get guardMode() { return runtime.guardMode; },
     modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resolve(import.meta.dirname, '..', '..', 'mod') : undefined)),
-    promptsDir: join(o.projectRoot, '.console', 'state', 'prompts'),
+    promptsDir: join(o.projectRoot, '.andromedacli', 'state', 'prompts'),
     guard: (slug, tool, input) => {
       const rt = registry.get(slug);
       const role = rt?.role ?? 'agent';
@@ -787,7 +789,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
     testMode: process.env.CONSOLE_TEST === '1',
     configPath,
-    repos, prepareRepo,
+    repos, forgetRepos, prepareRepo,
     getPrereq: () => shared.getPrereq(),
     ensurePrereq: () => shared.ensurePrereq(),
     refreshPrereq: () => shared.refreshPrereq(),
@@ -1072,6 +1074,12 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     if (runtimes.some((r) => r.name === wanted)) throw new ProjectError('project.duplicate', 409);
     if (a.create) mkdirSync(root, { recursive: true });
     else if (!(existsSync(root) && statSync(root).isDirectory())) throw new ProjectError('project.badRoot', 422);
+    if (a.auto && !a.templateId) {
+      // The dialog only asked for the folder: what it holds says the template and the commands (the user changes them in Options).
+      const found = detectProject(root);
+      a = { ...a, templateId: found.source === 'package.json' ? 'frontend-web' : found.source ? 'backend-java' : 'generic',
+        build: a.build ?? found.build, test: a.test ?? found.test, lint: a.lint ?? found.lint };
+    }
     if (a.templateId) {
       // The template (Phase 6D) prepares the folder: git init, profiles, rules, commands.
       const { applyTemplate } = await import('./templates/apply');

@@ -7,8 +7,8 @@ import { loadProfile, renderAgentPrompt, renderMainPrompt } from '../src/server/
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'prm-'));
 function projectWith(files: Record<string, string>): string {
   const root = tmp();
-  mkdirSync(join(root, '.console'), { recursive: true });
-  for (const [f, text] of Object.entries(files)) writeFileSync(join(root, '.console', f), text);
+  mkdirSync(join(root, '.andromedacli'), { recursive: true });
+  for (const [f, text] of Object.entries(files)) writeFileSync(join(root, '.andromedacli', f), text);
   return root;
 }
 const main = (projectRoot?: string): string => readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'English', outDir: tmp(), projectRoot }), 'utf8');

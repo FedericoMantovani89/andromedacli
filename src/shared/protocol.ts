@@ -9,7 +9,7 @@ export type Profile = (typeof PROFILES)[number];
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
-  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
+  'git.notRepo', 'git.alreadyRepo', 'git.noCommits', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
   'folder.pickBusy', 'project.duplicate', 'project.badRoot', 'project.badName', 'project.notFound',
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',

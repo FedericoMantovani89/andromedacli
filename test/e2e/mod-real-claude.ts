@@ -13,7 +13,7 @@ if (!projectRoot) throw new Error('usage: mod-real-claude.ts <trusted-folder>');
 
 const configDir = mkdtempSync(join(tmpdir(), 'real-cfg-'));
 writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false }, claude: { command: ['claude', '--model', 'haiku'] } }));
-rmSync(join(projectRoot, '.console'), { recursive: true, force: true });
+rmSync(join(projectRoot, '.andromedacli'), { recursive: true, force: true });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ESC = String.fromCharCode(27);
@@ -108,7 +108,7 @@ try {
   }
 } finally {
   await s.close();
-  rmSync(join(projectRoot, '.console'), { recursive: true, force: true });
+  rmSync(join(projectRoot, '.andromedacli'), { recursive: true, force: true });
   for (const f of ['permtest.txt', 'denytest.txt']) rmSync(join(projectRoot, f), { force: true });
 }
 const failed = results.filter(([, ok]) => !ok).length;

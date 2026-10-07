@@ -13,7 +13,7 @@ You stay in charge: agents never push to `main`, never touch each other's files,
 One coding agent can handle a task. Several at once create a different job: who is working, who is waiting for an answer, who is stuck, what it all costs, and whose changes may be merged. AndromedaCli makes that job visible and safe:
 
 - **See everything.** Real terminals (xterm.js) side by side, with a state dot for each agent (working, waiting for you, idle, blocked, dormant...).
-- **Isolation by default.** Every agent gets `<project>/.console/worktrees/<name>` on the branch `agent/<project>/<name>`; the console commits each checklist step, runs your tests and pushes only that branch.
+- **Isolation by default.** Every agent gets `<project>/.andromedacli/worktrees/<name>` on the branch `agent/<project>/<name>`; the console commits each checklist step, runs your tests and pushes only that branch.
 - **One queue for you.** Questions, permission prompts, merge decisions and budget decisions all arrive in a single drawer, with desktop notifications when you are away.
 - **A brake that is not the model's good intentions.** A guard checks every file and shell tool call against explicit rules before it runs.
 - **Cost under control.** Per-agent token budgets, loop detection and subscription-limit handling (sleep until the window resets, wake only the main).
@@ -52,7 +52,7 @@ Useful options:
 
 ## Using it
 
-1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.console/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and build/test/lint commands, detected from `pom.xml`, Gradle or `package.json`.
+1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.andromedacli/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and build/test/lint commands, detected from `pom.xml`, Gradle or `package.json`.
 2. **Talk to the main.** The left panel is a normal Claude Code session that knows the console's tools. Describe what you want; the main decides which jobs to start.
 3. **Agents appear on the right.** The main starts one agent per job (profiles: `backend`, `dba`, `frontend`, plus the read-only `reviewer` and `recovery`), or you press *new agent* yourself. Four panels fit; more collapse into bars. Agents above the active limit wait in a queue and start by themselves.
 4. **Answer the queue.** Open the drawer with the *Queue* button (`Alt+Q`). It collects questions to you, tool permissions, merge conflicts, budget decisions and the release confirmation.
@@ -90,7 +90,7 @@ Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read pane
 
 ## Configuration
 
-Settings live in `%APPDATA%\console\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog: models, profiles, budget and limits, names, project, git, guard, mod, notifications, language, prerequisites, plugins and server. An invalid entry never blocks the console: the default is used and the problem is shown.
+Settings live in `%APPDATA%ndromedacli\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog: models, profiles, budget and limits, names, project, git, guard, mod, notifications, language, prerequisites, plugins and server. An invalid entry never blocks the console: the default is used and the problem is shown.
 
 The interface is translated through `src/i18n/messages_<lang>.properties` (English and Italian today; a new language is just a new file).
 

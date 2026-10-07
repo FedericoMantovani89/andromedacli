@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +7,20 @@ import { autoClose, bootServer, req, ui } from './helpers';
 autoClose();
 
 describe('POST /api/projects', () => {
+  it('auto: the folder alone is enough, the template and the commands come from what it holds', async () => {
+    const s = await bootServer();
+    const java = mkdtempSync(join(tmpdir(), 'project-auto-j-'));
+    writeFileSync(join(java, 'pom.xml'), '<project/>');
+    const made = await ui(s, '/api/projects', 'POST', { root: java, auto: true });
+    expect(made.status).toBe(201);
+    const project = JSON.parse(readFileSync(join(java, '.andromedacli', 'project.json'), 'utf8'));
+    expect(project.testCommand).toMatch(/test/);
+    expect(existsSync(join(java, '.andromedacli', 'profiles', 'backend.md'))).toBe(true);
+    const plain = mkdtempSync(join(tmpdir(), 'project-auto-g-'));
+    expect((await ui(s, '/api/projects', 'POST', { root: plain, auto: true })).status).toBe(201);
+    expect(existsSync(join(plain, '.andromedacli', 'project.json'))).toBe(true);
+  });
+
   it('needs the token', async () => {
     const s = await bootServer();
     expect((await req(s, '/api/projects', { method: 'POST', body: { root: tmpdir() } })).status).toBe(401);

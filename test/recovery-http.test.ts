@@ -23,7 +23,7 @@ const SLUG = 'fix-login';
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
 const tool = (s: Running, slug: string, name: string, body: unknown = {}) => mod(s, slug, `/v1/tools/${name}`, 'POST', body);
 const inbox = async (s: Running, slug: string): Promise<string[]> => (await mod(s, slug, '/v1/inbox')).body.messages.map((m: { text: string }) => m.text);
-const ticketFile = (t: TestRepo, slug: string): string => join(t.repo, '.console', 'state', 'tickets', `${slug}.json`);
+const ticketFile = (t: TestRepo, slug: string): string => join(t.repo, '.andromedacli', 'state', 'tickets', `${slug}.json`);
 const ticketOf = (t: TestRepo, slug = SLUG): any => JSON.parse(readFileSync(ticketFile(t, slug), 'utf8'));
 const agentOf = async (s: Running, slug: string): Promise<any> => (await state(s)).agents.find((a: any) => a.slug === slug);
 
@@ -42,7 +42,7 @@ async function stopped(o: { handover?: string } = {}): Promise<{ s: Running; t: 
   expect((await tool(s, SLUG, 'step_done', { n: 1, note: 'the login lives in login.js' })).body.status).toBe('closed');
   writeFileSync(join(wt, 'half.js'), 'half done\n');
   // the alert tells the agent to write its handover note here before the limit (kept out of git by the console)
-  if (o.handover !== undefined) { mkdirSync(join(wt, '.console'), { recursive: true }); writeFileSync(join(wt, '.console', 'handover.md'), o.handover); }
+  if (o.handover !== undefined) { mkdirSync(join(wt, '.andromedacli'), { recursive: true }); writeFileSync(join(wt, '.andromedacli', 'handover.md'), o.handover); }
   const file = transcriptPath(projectsDir, wt, `sess-${SLUG}`);
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'claude-test', usage: { input_tokens: 0, output_tokens: 1050 }, content: [{ type: 'tool_use', id: 'tu1', name: 'Read', input: {} }] } })}\n`);

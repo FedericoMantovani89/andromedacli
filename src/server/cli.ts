@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     });
     const link = `${server.url}/?token=${server.token}`;
     console.log(`Console: ${link}`);
-    if (projectRoot) console.log(`Project folder: ${projectRoot} (state in ${join(projectRoot, '.console')})`);
+    if (projectRoot) console.log(`Project folder: ${projectRoot} (state in ${join(projectRoot, '.andromedacli')})`);
     if (!args.noOpen) openBrowser(link);
     const stop = () => { void server.close().then(() => process.exit(0)); };
     process.on('SIGINT', stop);
