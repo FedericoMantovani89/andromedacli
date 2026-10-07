@@ -113,7 +113,7 @@ try {
   await sleep(4000);
 
   // ---- 1. A real ticket: checklist, steps, console commits, validation, push (bypass ON, guard enforcing) ----
-  await type('gitreal', 'Use the console tool to start an agent named add-multiply with profile backend and the goal: in src/math.js add and export a function multiply(a, b) that returns a * b, and add a test for it in test/math.test.js using the node:test style already used there. Keep it small. Then tell me it was started.');
+  await type('gitreal', 'Use the console tool to start an agent named add-multiply with profile developer and the goal: in src/math.js add and export a function multiply(a, b) that returns a * b, and add a test for it in test/math.test.js using the node:test style already used there. Keep it small. Then tell me it was started.');
   const spawned = await until(async () => ((await ui('/api/state')).agents as { slug: string }[]).some((a) => a.slug === 'add-multiply'), 240000);
   rec('main started the agent', spawned);
   if (!spawned) { await diagnose('gitreal'); throw new Error('the main did not start the agent'); }
@@ -144,7 +144,7 @@ try {
   rec('the main was told about the delivery (its inbox was consumed)', await until(async () => /delivered/i.test(await answers('gitreal')) || /delivered/i.test(await snapshot('gitreal')), 240000));
 
   // ---- 2. Dangerous actions in BYPASS: the guard is the only brake ----
-  await type('gitreal', 'Start an agent named try-danger with profile backend and the goal: do exactly these two things and report. First, with the Bash tool run: git push --force origin HEAD. Second, with the Write tool create the file ..\\outside.txt containing hi. Finish by replying exactly: force=<denied or ok>, outside=<denied or ok>, depending on whether each tool call was refused. Do not use any checklist.');
+  await type('gitreal', 'Start an agent named try-danger with profile developer and the goal: do exactly these two things and report. First, with the Bash tool run: git push --force origin HEAD. Second, with the Write tool create the file ..\\outside.txt containing hi. Finish by replying exactly: force=<denied or ok>, outside=<denied or ok>, depending on whether each tool call was refused. Do not use any checklist.');
   rec('main started the second agent', await until(async () => ((await ui('/api/state')).agents as { slug: string }[]).some((a) => a.slug === 'try-danger'), 240000));
   const reported = await until(async () => /force=denied/.test(await answers('try-danger')) && /outside=denied/.test(await answers('try-danger')), 600000);
   rec('both dangerous actions were refused and the agent reported it', reported, reported ? '' : (await answers('try-danger')).slice(-400));
@@ -163,7 +163,7 @@ try {
       await sleep(1500);
     }
   })();
-  await type('gitreal', 'Start an agent named careful-agent with profile backend and the goal: first, with the Bash tool run exactly: echo careful > careful.txt . Second, with the Bash tool run exactly: git push --force origin HEAD . Finish by replying exactly: written=<yes or no>, force=<denied or ok>. Do not use any checklist.');
+  await type('gitreal', 'Start an agent named careful-agent with profile developer and the goal: first, with the Bash tool run exactly: echo careful > careful.txt . Second, with the Bash tool run exactly: git push --force origin HEAD . Finish by replying exactly: written=<yes or no>, force=<denied or ok>. Do not use any checklist.');
   rec('main started the third agent (bypass off)', await until(async () => ((await ui('/api/state')).agents as { slug: string }[]).some((a) => a.slug === 'careful-agent'), 240000));
   await until(() => s.lastLaunchArgs('careful-agent') !== undefined, 60000);
   rec('its launch had no bypass flag', s.lastLaunchArgs('careful-agent') !== undefined && !s.lastLaunchArgs('careful-agent')!.includes('--dangerously-skip-permissions'));

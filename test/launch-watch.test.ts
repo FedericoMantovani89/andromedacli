@@ -15,7 +15,7 @@ beforeEach(() => {
 afterEach(() => { watch.close(); vi.useRealTimers(); });
 
 const launch = (slug: string, goal = 'do it'): void => {
-  registry.register({ slug, role: 'agent', profile: 'backend', goal });
+  registry.register({ slug, role: 'agent', profile: 'developer', goal });
   registry.onSpawned(slug);
   watch.watch(slug);
 };
@@ -97,7 +97,7 @@ describe('LaunchWatch', () => {
   it('a change of delay applies to the checks started afterwards', async () => {
     let delay = 90_000;
     const w = new LaunchWatch({ registry, delayMs: () => delay, notifyMain: (t) => { sent.push(t); } });
-    registry.register({ slug: 'a-job', role: 'agent', profile: 'backend', goal: 'g' });
+    registry.register({ slug: 'a-job', role: 'agent', profile: 'developer', goal: 'g' });
     registry.onSpawned('a-job');
     delay = 10_000;
     w.watch('a-job');

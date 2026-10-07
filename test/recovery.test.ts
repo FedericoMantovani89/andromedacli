@@ -84,7 +84,7 @@ beforeEach(async () => {
     askUser: (q, answer) => { asked.push({ ...q, answer }); },
     endRecovery: (slug) => { ended.push(slug); },
     budget: { restart: (slug, limit) => { restarted.push({ slug, limit }); }, usage: () => usage },
-    profileOf: () => 'backend',
+    profileOf: () => 'developer',
     changed: () => {},
   };
   svc = new RecoveryService(deps);
@@ -226,7 +226,7 @@ describe('report', () => {
     expect(r).toEqual({ ok: true, ticket: 'a-job', outcome: 'restarted' });
     expect(ended).toEqual([rec]);
     expect(replacements).toHaveLength(1);
-    expect(replacements[0]).toMatchObject({ slug: 'a-job-r2', from: 'a-job', profile: 'backend', budget: 1000 });
+    expect(replacements[0]).toMatchObject({ slug: 'a-job-r2', from: 'a-job', profile: 'developer', budget: 1000 });
     const goal = replacements[0]!.goal;
     expect(goal).toContain('Add multiply to src/math.js');
     expect(goal).toContain('It read dist/ again and again.');

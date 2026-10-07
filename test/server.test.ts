@@ -123,14 +123,14 @@ it('creates the main session at start and lists it in /api/state', async () => {
 });
 it('rejects a generic slug with a code and params, and does not spawn', async () => {
   const s = await boot();
-  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'agent-1', profile: 'backend' } });
+  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'agent-1', profile: 'developer' } });
   expect(r.status).toBe(422);
   expect(r.body).toEqual({ code: 'slug.generic', params: { slug: 'agent-1' } });
   expect((await request(s, '/api/state')).body.agents).toEqual([]);
 });
 it('rejects a slug equal to the project name (it is the main session)', async () => {
   const s = await boot();
-  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'shop-api', profile: 'backend' } });
+  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'shop-api', profile: 'developer' } });
   expect(r.body.code).toBe('slug.duplicate');
 });
 it('rejects an unknown profile', async () => {
@@ -141,12 +141,12 @@ it('rejects an unknown profile', async () => {
 });
 it('accepts a valid slug, spawns, and rejects the same slug again as duplicate', async () => {
   const s = await boot();
-  const a = await request(s, '/api/agents', { method: 'POST', body: { slug: 'attività-login', profile: 'backend' } });
+  const a = await request(s, '/api/agents', { method: 'POST', body: { slug: 'attività-login', profile: 'developer' } });
   expect(a.status).toBe(201);
   expect(a.body).toEqual({ slug: 'attivita-login' });
   const state = (await request(s, '/api/state')).body;
   expect(state.agents.map((x: any) => [x.slug, x.status])).toEqual([['attivita-login', 'running']]);
-  const b = await request(s, '/api/agents', { method: 'POST', body: { slug: 'attivita-login', profile: 'backend' } });
+  const b = await request(s, '/api/agents', { method: 'POST', body: { slug: 'attivita-login', profile: 'developer' } });
   expect(b.status).toBe(422);
   expect(b.body.code).toBe('slug.duplicate');
 });
@@ -184,7 +184,7 @@ it('pushes state over /ws/ui when an agent is added', async () => {
   const { ws } = await wsOpen(s, '/ws/ui');
   const states: any[] = [];
   ws!.on('message', (d) => states.push(JSON.parse(d.toString())));
-  await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'backend' } });
+  await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'developer' } });
   await until(() => states.some((m) => m.type === 'state' && m.agents.length === 1));
   ws!.close();
 });
@@ -206,7 +206,7 @@ it('blocks agent creation when a required tool is missing, with a code and the t
   };
   const s = await boot(missingGit);
   await until(async () => (await request(s, '/api/state')).body.prereq !== null);
-  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'backend' } });
+  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'developer' } });
   expect(r.status).toBe(422);
   expect(r.body).toEqual({ code: 'prereq.blocked', params: { tool: 'git' } });
 });
@@ -222,7 +222,7 @@ it('re-runs the checks on demand', async () => {
   const r = await request(s, '/api/prereq/recheck', { method: 'POST' });
   expect(r.status).toBe(200);
   expect(r.body.find((c: any) => c.id === 'git').status).toBe('ok');
-  const created = await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'backend' } });
+  const created = await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'developer' } });
   expect(created.status).toBe(201);
 });
 it('reports first run until the language is saved, then keeps it', async () => {
@@ -249,7 +249,7 @@ it('waits for the startup checks instead of creating an agent while prerequisite
     return goodRunner(cmd, a, t);
   };
   const s = await boot(slowMissingGit);
-  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'backend' } });
+  const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'fix-login', profile: 'developer' } });
   expect(r.status).toBe(422);
   expect(r.body).toEqual({ code: 'prereq.blocked', params: { tool: 'git' } });
 });
@@ -269,11 +269,11 @@ it('refuses to overwrite a config file it cannot read, and leaves it untouched',
   expect(readFileSync(join(lastDirs.configDir, 'config.json'), 'utf8')).toBe(broken);
 });
 it('lists only sessions of this run: agents saved by an earlier run do not take panel slots, but keep their slug reserved', async () => {
-  const old = JSON.stringify([{ slug: 'old-job', profile: 'backend', createdAt: '2026-01-01T00:00:00Z' }]);
+  const old = JSON.stringify([{ slug: 'old-job', profile: 'developer', createdAt: '2026-01-01T00:00:00Z' }]);
   const s = await boot(goodRunner, { agentsJson: old });
   expect((await request(s, '/api/state')).body.agents).toEqual([]);
-  expect((await request(s, '/api/agents', { method: 'POST', body: { slug: 'old-job', profile: 'backend' } })).body.code).toBe('slug.duplicate');
-  expect((await request(s, '/api/agents', { method: 'POST', body: { slug: 'new-job', profile: 'backend' } })).status).toBe(201);
+  expect((await request(s, '/api/agents', { method: 'POST', body: { slug: 'old-job', profile: 'developer' } })).body.code).toBe('slug.duplicate');
+  expect((await request(s, '/api/agents', { method: 'POST', body: { slug: 'new-job', profile: 'developer' } })).status).toBe(201);
   expect((await request(s, '/api/state')).body.agents.map((a: any) => a.slug)).toEqual(['new-job']);
 });
 
@@ -312,17 +312,17 @@ it('cleans up when saving the new agent fails after the process started, so the 
   const original = readFileSync(file, 'utf8');
   rmSync(file);
   mkdirSync(file); // a directory where the file should be: writing fails
-  const failed = await request(s, '/api/agents', { method: 'POST', body: { slug: 'retry-job', profile: 'backend' } });
+  const failed = await request(s, '/api/agents', { method: 'POST', body: { slug: 'retry-job', profile: 'developer' } });
   expect(failed.status).toBe(500);
   expect(failed.body.code).toBe('agent.spawnFailed');
   expect((await request(s, '/api/state')).body.agents).toEqual([]);
   rmSync(file, { recursive: true });
   writeFileSync(file, original);
-  const retried = await request(s, '/api/agents', { method: 'POST', body: { slug: 'retry-job', profile: 'backend' } });
+  const retried = await request(s, '/api/agents', { method: 'POST', body: { slug: 'retry-job', profile: 'developer' } });
   expect(retried.status).toBe(201);
 });
 it('keeps the project name stored in project.json even if the folder was renamed to something else', async () => {
-  const old = JSON.stringify([{ slug: 'old-job', profile: 'backend', createdAt: '2026-01-01T00:00:00Z' }]);
+  const old = JSON.stringify([{ slug: 'old-job', profile: 'developer', createdAt: '2026-01-01T00:00:00Z' }]);
   const s = await boot(goodRunner, { agentsJson: old, projectName: 'old-job' });
   const st = (await request(s, '/api/state')).body;
   expect(st.project.name).toBe('shop-api');

@@ -100,7 +100,7 @@ async function boot(o: { config?: Record<string, unknown>; sleepClock?: SleepClo
   const asUi = (path: string, method = 'GET', body?: unknown) => call(s.token, path, method, body);
   const event = (slug: string, type: string, data?: unknown) => asMod(slug, '/v1/events', 'POST', { type, sessionId: `sess-${slug}`, data });
   // The explicit budget is the one under test: the profile's own budget_tokens beats the config default (budget.agentTokens).
-  const spawn = (name: string, goal = 'Do the work', budget = 1000) => asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal, budget });
+  const spawn = (name: string, goal = 'Do the work', budget = 1000) => asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal, budget });
   // Writes one assistant line with `out` output tokens in the transcript the server will read for this agent.
   const addTokens = (slug: string, out: number, n: number): void => {
     const file = transcriptPath(projectsDir, worktreeOf(t, slug), `sess-${slug}`);

@@ -25,7 +25,7 @@ async function boot(testCommand: string | null = 'node -e "process.exit(0)"'): P
   return { s, t };
 }
 const spawn = async (s: Running, name = 'fix-login'): Promise<void> => {
-  const r = await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'make it work' });
+  const r = await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'make it work' });
   expect(r.body.status).toBe('started');
 };
 const tool = (s: Running, slug: string, name: string, body: unknown) => mod(s, slug, `/v1/tools/${name}`, 'POST', body);
@@ -120,7 +120,7 @@ it('report_blocked tells the main, shows Blocked, and the next closed step clear
 });
 it('an agent without a worktree (git.worktrees off) cannot use the ticket tools and says why', async () => {
   const s = await bootServer();
-  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'fix-login', profile: 'backend', goal: 'g' })).body.status).toBe('started');
+  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'fix-login', profile: 'developer', goal: 'g' })).body.status).toBe('started');
   expect((await tool(s, 'fix-login', 'step_done', { n: 1 })).body).toMatchObject({ status: 'refused', code: 'no_worktree' });
   expect((await tool(s, 'fix-login', 'checklist_set', { items: ITEMS })).body).toMatchObject({ status: 'refused', code: 'no_worktree' });
   expect((await agentState(s)).state).toBe('starting');

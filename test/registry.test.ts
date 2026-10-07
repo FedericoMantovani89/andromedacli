@@ -3,7 +3,7 @@ import { AgentRegistry } from '../src/server/agents/registry';
 
 const ev = (type: 'session.start' | 'session.end' | 'turn.start' | 'turn.complete', sessionId = 's1') => ({ type, sessionId });
 const agent = (r: AgentRegistry, slug = 'fix-login', extra: Record<string, unknown> = {}) =>
-  r.register({ slug, role: 'agent', profile: 'backend', goal: 'do it', ...extra });
+  r.register({ slug, role: 'agent', profile: 'developer', goal: 'do it', ...extra });
 
 it('a queued request is "queued", a spawned process is "starting"', () => {
   const r = new AgentRegistry();
@@ -74,7 +74,7 @@ it('notifies listeners on changes and not on a repeated no-op', () => {
 
 it('a session finished on purpose ends as "finished", not "interrupted", and no longer counts as active', () => {
   const r = new AgentRegistry();
-  r.register({ slug: 'fix-login', role: 'agent', profile: 'backend', goal: 'g' });
+  r.register({ slug: 'fix-login', role: 'agent', profile: 'developer', goal: 'g' });
   r.onSpawned('fix-login');
   r.onModEvent('fix-login', { type: 'session.start', sessionId: 's' });
   r.onModEvent('fix-login', { type: 'turn.start', sessionId: 's' });
@@ -89,7 +89,7 @@ it('a session finished on purpose ends as "finished", not "interrupted", and no 
 });
 it('a session that dies without being finished is still "interrupted"', () => {
   const r = new AgentRegistry();
-  r.register({ slug: 'fix-login', role: 'agent', profile: 'backend' });
+  r.register({ slug: 'fix-login', role: 'agent', profile: 'developer' });
   r.onSpawned('fix-login');
   r.onProcessExit('fix-login');
   expect(r.get('fix-login')!.state).toBe('interrupted');

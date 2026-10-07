@@ -42,7 +42,7 @@ async function boot(limit = 4) {
   const asMod = (slug: string, path: string, method = 'GET', body?: unknown) => call(s.sessionTokenFor(slug), path, method, body);
   const asUi = (path: string, method = 'GET', body?: unknown) => call(s.token, path, method, body);
   const event = (slug: string, type: string, data?: unknown) => asMod(slug, '/v1/events', 'POST', { type, sessionId: `sess-${slug}`, data });
-  const spawn = (name: string, goal = 'Do the work', profile = 'backend') => asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile, goal });
+  const spawn = (name: string, goal = 'Do the work', profile = 'developer') => asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile, goal });
   const agents = async () => (await asUi('/api/state')).json.agents as { slug: string; status: string; state: string }[];
   return { s, asMod, asUi, event, spawn, agents };
 }

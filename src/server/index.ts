@@ -218,6 +218,13 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   /** The global secret patterns plus the project's own (Phase 6D). */
   const secretPatterns = (): string[] => [...runtime.git.secretPatterns, ...(store.fields().secretPatterns ?? [])];
   // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
+  // The test command the console runs: the one saved for the project, else the one its files suggest (pom.xml, build.gradle, package.json).
+  let detectedTest: { at: number; value: string | undefined } | undefined;
+  const detectedTestCommand = (): string | undefined => {
+    if (!detectedTest || Date.now() - detectedTest.at > 5000) detectedTest = { at: Date.now(), value: detectProject(resolve(o.projectRoot)).test };
+    return detectedTest.value;
+  };
+  const effectiveTestCommand = (): string | undefined => store.project.testCommand?.trim() || detectedTestCommand();
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
   const tickets = new TicketStore(o.projectRoot);
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
@@ -246,7 +253,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const review = new ReviewService({
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: () => store.project.testCommand,
+    testCommand: effectiveTestCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
     language: reportLanguage,
@@ -264,7 +271,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const merge = new MergeService({
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: () => store.project.testCommand,
+    testCommand: effectiveTestCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     squash: () => store.project.squash !== false,
     language: reportLanguage,
@@ -276,7 +283,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   });
   const release = new ReleaseService({
     tickets, root: o.projectRoot, project: projectName,
-    testCommand: () => store.project.testCommand,
+    testCommand: effectiveTestCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     language: reportLanguage,
     notifyMain: (text) => { inbox.push(projectName, text); },
@@ -337,7 +344,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const recovery: RecoveryService = new RecoveryService({
     tickets, ledger, root: resolve(o.projectRoot), project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: () => store.project.testCommand,
+    testCommand: effectiveTestCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     spawnRecovery: async (r) => {
       const out = await spawnAgent(ctx, { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
@@ -371,7 +378,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
     endRecovery: (slug) => endReadOnlySession(slug),
     budget,
-    profileOf: (ticket) => store.listAgents().find((a) => a.slug === ticket)?.profile ?? registry.get(ticket)?.profile ?? 'backend',
+    profileOf: (ticket) => store.listAgents().find((a) => a.slug === ticket)?.profile ?? registry.get(ticket)?.profile ?? 'developer',
     readHandover,
     changed: () => broadcast(),
   });
@@ -545,7 +552,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const steps = new StepService({
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: () => store.project.testCommand,
+    testCommand: effectiveTestCommand,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     secretPatterns,
     notifyMain: (_slug, text) => { inbox.push(projectName, text); },
@@ -613,6 +620,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get git() { return runtime.git; },
     get budgetConfig() { return config.budget; },
     get guardMode() { return runtime.guardMode; },
+    detectedTestCommand,
     modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resolve(import.meta.dirname, '..', '..', 'mod') : undefined)),
     promptsDir: join(o.projectRoot, '.andromedacli', 'state', 'prompts'),
     guard: (slug, tool, input) => {

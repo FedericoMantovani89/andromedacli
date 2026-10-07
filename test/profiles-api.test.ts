@@ -13,7 +13,7 @@ describe('profiles API', () => {
     const s = await bootServer();
     const first = await ui(s, '/api/profiles');
     expect(first.status).toBe(200);
-    expect(first.body.map((p: { name: string }) => p.name)).toEqual(['backend', 'dba', 'frontend', 'reviewer', 'recovery']);
+    expect(first.body.map((p: { name: string }) => p.name)).toEqual(['developer', 'reviewer', 'recovery']);
     expect(first.body.every((p: { shipped: boolean; userFile: boolean }) => p.shipped && !p.userFile)).toBe(true);
 
     const made = await ui(s, '/api/profiles/docs-writer', 'PUT', entry({ budgetTokens: 250000, readOnly: true, model: 'claude-opus-5-5' }));
@@ -34,15 +34,15 @@ describe('profiles API', () => {
 
   it('a shipped profile is edited as a copy and restored by removing it; restore-all keeps the user\'s own profiles', async () => {
     const s = await bootServer();
-    await ui(s, '/api/profiles/backend', 'PUT', entry({ name: 'backend', body: 'My own backend rules.' }));
+    await ui(s, '/api/profiles/developer', 'PUT', entry({ name: 'developer', body: 'My own rules.' }));
     await ui(s, '/api/profiles/docs-writer', 'PUT', entry());
-    const edited = (await ui(s, '/api/profiles')).body.find((p: { name: string }) => p.name === 'backend');
-    expect(edited).toMatchObject({ shipped: true, userFile: true, body: 'My own backend rules.' });
+    const edited = (await ui(s, '/api/profiles')).body.find((p: { name: string }) => p.name === 'developer');
+    expect(edited).toMatchObject({ shipped: true, userFile: true, body: 'My own rules.' });
 
     expect((await ui(s, '/api/profiles/restore', 'POST')).body).toEqual({ restored: 1 });
     const after = (await ui(s, '/api/profiles')).body as { name: string; userFile: boolean; body: string }[];
-    expect(after.find((p) => p.name === 'backend')).toMatchObject({ userFile: false });
-    expect(after.find((p) => p.name === 'backend')!.body).not.toContain('My own backend rules.');
+    expect(after.find((p) => p.name === 'developer')).toMatchObject({ userFile: false });
+    expect(after.find((p) => p.name === 'developer')!.body).not.toContain('My own rules.');
     expect(after.find((p) => p.name === 'docs-writer')).toMatchObject({ userFile: true });
   });
 

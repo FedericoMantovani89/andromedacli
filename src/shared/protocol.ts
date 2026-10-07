@@ -2,7 +2,7 @@
 import type { Activity } from './activity';
 import type { NotificationsConfig, ToastStatus } from './notify';
 
-export const PROFILES = ['backend', 'dba', 'frontend', 'reviewer', 'recovery'] as const;
+export const PROFILES = ['developer', 'reviewer', 'recovery'] as const;
 export type Profile = (typeof PROFILES)[number];
 
 /** Error codes the user can act on: each one needs an `error.<code>` text in every language (checked at build). */
@@ -68,7 +68,7 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
-  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean };
+  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** What the project's files suggest (used while `testCommand` is empty). */ detectedTestCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean; /** The model this project's agents get (empty: the one of Options, Models). */ model?: string; /** The most agents running at once in this project. */ maxActive?: number };
   /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
   settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };
   main: SessionInfo;

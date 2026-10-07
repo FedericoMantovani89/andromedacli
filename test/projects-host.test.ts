@@ -22,7 +22,7 @@ describe('projects host', () => {
     expect(b.projectRoot).toBe(dir);
     expect(a.projects.map((p: { name: string }) => p.name)).toEqual(['alpha-project', 'beta-project']);
     // An agent made in project B is not in project A.
-    const made = await ui(s, '/api/agents?project=beta-project', 'POST', { slug: 'worker-one', profile: 'backend' });
+    const made = await ui(s, '/api/agents?project=beta-project', 'POST', { slug: 'worker-one', profile: 'developer' });
     expect([201, 202]).toContain(made.status);
     expect((await ui(s, '/api/state')).body.agents).toEqual([]);
     await until(async () => (await ui(s, '/api/state?project=beta-project')).body.agents.length === 1);
@@ -45,9 +45,9 @@ describe('projects host', () => {
   it('counts active agents of every project against the global limit', async () => {
     const s = await bootServer({ projectName: 'alpha-project', config: { agents: { maxActiveGlobal: 1, maxActivePerProject: 3 } } });
     await s.addProject(newDir(), 'beta-project');
-    const one = await ui(s, '/api/agents', 'POST', { slug: 'first-one', profile: 'backend' });
+    const one = await ui(s, '/api/agents', 'POST', { slug: 'first-one', profile: 'developer' });
     expect(one.status).toBe(201);
-    const two = await ui(s, '/api/agents?project=beta-project', 'POST', { slug: 'second-one', profile: 'backend' });
+    const two = await ui(s, '/api/agents?project=beta-project', 'POST', { slug: 'second-one', profile: 'developer' });
     expect(two.status).toBe(202); // queued behind the other project's agent
   });
 

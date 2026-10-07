@@ -17,7 +17,7 @@ async function boot(activity: (slug: string) => void) {
   const tokens = new SessionTokens();
   const token = tokens.issue('job-a');
   const registry = new AgentRegistry();
-  registry.register({ slug: 'job-a', role: 'agent', profile: 'backend' });
+  registry.register({ slug: 'job-a', role: 'agent', profile: 'developer' });
   const ctx: V1Context = {
     tokens, inbox: new Inbox(), registry, questions: new QuestionQueue(),
     handleModEvent: () => {}, tools: { list_agents: async () => ({ agents: [] }) },

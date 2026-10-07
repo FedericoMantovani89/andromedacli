@@ -15,7 +15,7 @@ describe('POST /api/projects', () => {
     expect(made.status).toBe(201);
     const project = JSON.parse(readFileSync(join(java, '.andromedacli', 'project.json'), 'utf8'));
     expect(project.testCommand).toMatch(/test/);
-    expect(existsSync(join(java, '.andromedacli', 'profiles', 'backend.md'))).toBe(true);
+    expect(existsSync(join(java, '.andromedacli', 'rules.md'))).toBe(true);
     const plain = mkdtempSync(join(tmpdir(), 'project-auto-g-'));
     expect((await ui(s, '/api/projects', 'POST', { root: plain, auto: true })).status).toBe(201);
     expect(existsSync(join(plain, '.andromedacli', 'project.json'))).toBe(true);

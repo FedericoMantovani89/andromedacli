@@ -4,7 +4,7 @@ import { autoClose, bootServer, modEvent, mod, state, until } from './helpers';
 autoClose();
 
 const spawn = (s: Awaited<ReturnType<typeof bootServer>>, name: string) =>
-  mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'make it work' });
+  mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'make it work' });
 const mainInbox = async (s: Awaited<ReturnType<typeof bootServer>>): Promise<string[]> =>
   (await mod(s, 'shop-api', '/v1/inbox')).body.messages.map((m: { text: string }) => m.text);
 

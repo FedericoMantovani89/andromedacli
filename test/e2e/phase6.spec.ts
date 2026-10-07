@@ -81,7 +81,7 @@ try {
     await A.event('shop-api', 'session.start', mainSid);
     const sids = new Map<string, string>();
     for (const name of ['one-job', 'two-job', 'three-job']) {
-      const out = await A.asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'Do the work' });
+      const out = await A.asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'Do the work' });
       check(`agent ${name} started`, out.json?.status === 'started', JSON.stringify(out.json));
       await until(async () => (await A.agent(name))?.status === 'running');
       const sid = randomUUID();
@@ -122,7 +122,7 @@ try {
     const toasts: Toast[] = [];
     const s = await boot({ projectRoot: tmp('e2e6-project-'), configDir, notifier: { available: async () => true, notify: async (n) => { toasts.push(n); } } });
     const S = api(s);
-    const out = await S.asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'ask-job', profile: 'backend', goal: 'Ask something' });
+    const out = await S.asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'ask-job', profile: 'developer', goal: 'Ask something' });
     check('agent for the notification scenario started', out.json?.status === 'started');
     await until(async () => (await S.agent('ask-job'))?.status === 'running');
     void S.asMod('ask-job', '/v1/tools/ask_user', 'POST', { question: 'Which color?' }); // waits for an answer: not awaited
@@ -159,9 +159,9 @@ try {
     check('both projects are open', ((await S.state()).projects ?? []).map((p: any) => p.name).join(',') === 'shop-api,shop-two', JSON.stringify((await S.state()).projects));
     check('its main is running', await until(async () => (await S.state('shop-two')).main.status === 'running'));
     const projectJson = JSON.parse(readFileSync(join(project, '.andromedacli', 'project.json'), 'utf8'));
-    check('the template put its commands and profiles in the project', projectJson.testCommand === detected?.test && existsSync(join(project, '.andromedacli', 'profiles', 'backend.md')), JSON.stringify(projectJson));
+    check('the template put its commands and rules in the project', projectJson.testCommand === detected?.test && existsSync(join(project, '.andromedacli', 'rules.md')), JSON.stringify(projectJson));
 
-    const made = await S.ui('/api/agents?project=shop-two', 'POST', { slug: 'two-job', profile: 'backend' });
+    const made = await S.ui('/api/agents?project=shop-two', 'POST', { slug: 'two-job', profile: 'developer' });
     check('an agent can be started in the new project', made.status === 201, JSON.stringify(made));
     check('the projects do not share agents', (await S.agent('two-job', 'shop-two')) !== undefined && (await S.agent('two-job')) === undefined);
     const dup = await S.ui('/api/projects', 'POST', { root: project });

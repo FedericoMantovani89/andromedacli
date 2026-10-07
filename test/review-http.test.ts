@@ -30,7 +30,7 @@ const agentsOf = async (s: Running): Promise<any[]> => (await ui(s, '/api/state'
 
 /** The Phase 3 flow, end to end: spawn, checklist, six steps, delivered. */
 async function deliverTicket(s: Running, t: TestRepo, slug = 'fix-login', file = 'math.js'): Promise<void> {
-  expect((await tool(s, 'shop-api', 'spawn_agent', { name: slug, profile: 'backend', goal: 'Fix the login so negative ids are rejected' })).body.status).toBe('started');
+  expect((await tool(s, 'shop-api', 'spawn_agent', { name: slug, profile: 'developer', goal: 'Fix the login so negative ids are rejected' })).body.status).toBe('started');
   expect((await tool(s, slug, 'checklist_set', { items: ITEMS })).body.status).toBe('ok');
   const wt = worktreePathFor(t.repo, slug);
   writeFileSync(join(wt, file), 'module.exports = {};\n');
@@ -197,13 +197,13 @@ it('the whole pipeline: delivered, reviewed, approved, merged into the project b
   expect(gitSync(t.repo, 'branch', '--list', 'agent/*')).toBe('');
   expect((await inbox(s, 'shop-api')).join('\n')).toMatch(/fix-login.*merged/);
   // a new agent starts from the updated project branch
-  await tool(s, 'shop-api', 'spawn_agent', { name: 'second-job', profile: 'backend', goal: 'next thing' });
+  await tool(s, 'shop-api', 'spawn_agent', { name: 'second-job', profile: 'developer', goal: 'next thing' });
   await until(() => existsSync(join(worktreePathFor(t.repo, 'second-job'), 'math.js')));
 });
 
 it('the state tells the UI where each ticket is in the pipeline (nothing for a ticket still being written)', async () => {
   const { s, t } = await boot();
-  expect((await tool(s, 'shop-api', 'spawn_agent', { name: 'fix-login', profile: 'backend', goal: 'g' })).body.status).toBe('started');
+  expect((await tool(s, 'shop-api', 'spawn_agent', { name: 'fix-login', profile: 'developer', goal: 'g' })).body.status).toBe('started');
   const ticketOf = async (slug = 'fix-login') => (await agentsOf(s)).find((a) => a.slug === slug)?.ticket;
   expect(await ticketOf()).toBeUndefined();
   await tool(s, 'fix-login', 'checklist_set', { items: ITEMS });

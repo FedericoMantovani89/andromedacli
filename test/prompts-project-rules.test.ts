@@ -13,7 +13,7 @@ function projectWith(files: Record<string, string>): string {
 }
 const main = (projectRoot?: string): string => readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'English', outDir: tmp(), projectRoot }), 'utf8');
 const agent = (o: { projectRoot?: string; docs?: string[]; review?: boolean }): string =>
-  readFileSync(renderAgentPrompt({ profile: loadProfile('backend', tmp(), tmp())!, slug: 'fix-login', project: 'shop-api', outDir: tmp(), ...o }), 'utf8');
+  readFileSync(renderAgentPrompt({ profile: loadProfile('developer', tmp(), tmp())!, slug: 'fix-login', project: 'shop-api', outDir: tmp(), ...o }), 'utf8');
 
 it('without projectRoot the prompts are unchanged', () => {
   expect(main()).toBe(main(tmp()));

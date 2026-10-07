@@ -12,7 +12,7 @@ autoClose();
 const put = (s: Running, body: unknown) => ui(s, '/api/config', 'PUT', body);
 const file = (s: Running): any => JSON.parse(readFileSync(configFileOf(s), 'utf8'));
 const spawn = async (s: Running, name: string): Promise<void> => {
-  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'g' })).body.status).toBe('started');
+  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'g' })).body.status).toBe('started');
 };
 const BYPASS = '--dangerously-skip-permissions';
 
@@ -93,7 +93,7 @@ it('a launch that started before the change keeps the value it started with', as
   let release!: () => void;
   const gate = new Promise<void>((ok) => { release = ok; });
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } }, afterWorktreeCreated: () => gate });
-  const spawning = mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'slow-job', profile: 'backend', goal: 'g' });
+  const spawning = mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'slow-job', profile: 'developer', goal: 'g' });
   await until(async () => (await state(s)).agents.some((a: any) => a.slug === 'slow-job'));
   await put(s, { agents: { bypassPermissions: true } });
   release();

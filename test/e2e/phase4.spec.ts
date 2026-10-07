@@ -52,7 +52,7 @@ async function boot() {
   const asMod = (slug: string, path: string, method = 'GET', body?: unknown) => call(s.sessionTokenFor(slug), path, method, body);
   const asUi = (path: string, method = 'GET', body?: unknown) => call(s.token, path, method, body);
   const tool = (slug: string, name: string, body: unknown = {}) => asMod(slug, `/v1/tools/${name}`, 'POST', body);
-  const spawn = (name: string, goal = 'Do the work') => tool('shop-api', 'spawn_agent', { name, profile: 'backend', goal });
+  const spawn = (name: string, goal = 'Do the work') => tool('shop-api', 'spawn_agent', { name, profile: 'developer', goal });
   const inbox = async (slug: string): Promise<string[]> => (await asMod(slug, '/v1/inbox')).json.messages.map((m: any) => m.text as string);
   /** The Phase 3 flow, end to end: spawn, checklist, six steps. The ticket ends delivered. */
   const deliver = async (slug: string, files: Record<string, string>, goal = 'Add the feature'): Promise<void> => {

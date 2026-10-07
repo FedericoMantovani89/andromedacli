@@ -3,7 +3,7 @@ import { AgentRegistry } from '../src/server/agents/registry';
 import { Scheduler, type SpawnRequest } from '../src/server/agents/scheduler';
 import type { QuotaStep } from '../src/server/budget/quota';
 
-const req = (slug: string): SpawnRequest => ({ slug, profile: 'backend', goal: `goal of ${slug}`, source: 'main' });
+const req = (slug: string): SpawnRequest => ({ slug, profile: 'developer', goal: `goal of ${slug}`, source: 'main' });
 
 function setup(limit: number, opts: { failFor?: string } = {}) {
   const registry = new AgentRegistry();

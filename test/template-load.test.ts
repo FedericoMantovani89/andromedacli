@@ -26,9 +26,8 @@ it('the three shipped templates are valid and carry what the design says', () =>
     expect(t.data!.name.it!.length).toBeGreaterThan(2);
   }
   const java = all.find((t) => t.id === 'backend-java')!.data!;
-  expect(java.profiles).toEqual(['backend', 'dba']);
   expect(java.docs).toEqual(['README.md', 'CHANGELOG.md']);
-  expect(all.find((t) => t.id === 'frontend-web')!.data!.profiles).toEqual(['frontend']);
+  expect(all.find((t) => t.id === 'frontend-web')!.data!.profiles).toBeUndefined(); // no language profiles: the project's CLAUDE.md says how it is built
   expect(all.find((t) => t.id === 'generic')!.data!.profiles).toBeUndefined(); // no restriction: every shipped profile is offered
 });
 
@@ -44,7 +43,7 @@ it('an invalid file makes the template unavailable with the reason, and never th
   put(shipped, 'wrong-id', valid('other-id'));
   put(shipped, 'no-name', { schema: 1, id: 'no-name', description: { en: 'd' } });
   put(shipped, 'bad-command', valid('bad-command', { commands: { test: 'a\nb' } }));
-  put(shipped, 'bad-profile', valid('bad-profile', { profiles: ['nonsense'] }));
+  put(shipped, 'bad-profile', valid('bad-profile', { profiles: 'not-a-list' }));
   put(shipped, 'bad-defaults', valid('bad-defaults', { defaults: { maxActive: 0 } }));
   mkdirSync(join(shipped, 'empty-folder'));
   const all = loadTemplates({ configDir: tmp(), shippedDir: shipped });

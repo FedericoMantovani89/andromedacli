@@ -170,6 +170,29 @@ describe('options dialog', () => {
     const out = document.querySelector<HTMLInputElement>('input[type="range"][name="budget.agentTokens"]')!.nextElementSibling as HTMLElement;
     expect(out.textContent).toMatch(/^400\D?000$/);
   });
+  it('the project model is a menu like the one in Models: saved value selected, no alias, saved with Save', async () => {
+    const withModel = { ...state, project: { name: 'p', model: 'claude-opus-5-5' } } as unknown as StateMessage;
+    await openOptions(() => withModel, 'projects');
+    await flush();
+    await flush();
+    const menu = document.querySelector<HTMLSelectElement>('select[name="model"]')!;
+    expect(menu.value).toBe('claude-opus-5-5'); // kept even when the catalog does not list it
+    expect([...menu.options].map((o) => o.value)).toEqual(['', 'claude-opus-5-5']);
+    menu.value = '';
+    menu.dispatchEvent(new Event('change'));
+    await clickSave();
+    expect(puts).toContainEqual({ model: '' });
+  });
+  it('the test command field shows what the project suggests as its placeholder and says where it comes from', async () => {
+    const withDetected = { ...state, project: { name: 'p', detectedTestCommand: 'npm test' } } as unknown as StateMessage;
+    await openOptions(() => withDetected, 'projects');
+    const input = document.querySelector<HTMLInputElement>('input[name="testCommand"]')!;
+    expect(input.placeholder).toBe('npm test');
+    expect(input.value).toBe('');
+    expect([...document.querySelectorAll('.settings-note')].some((n) => n.getAttribute('data-i18n') === 'settings.testCommand.detected')).toBe(true);
+    await openOptions(() => state, 'projects');
+    expect([...document.querySelectorAll('.settings-note')].some((n) => n.getAttribute('data-i18n') === 'settings.testCommand.none')).toBe(true);
+  });
   it('the models menu offers Default and real models only, never an alias', async () => {
     await openOptions(() => state, 'models');
     await flush();

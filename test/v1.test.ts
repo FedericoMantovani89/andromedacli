@@ -99,7 +99,7 @@ it('accepts a quota event with a session token and does not move the session sta
 });
 it('delivers inbox messages until they are acknowledged, and only to their owner', async () => {
   const s = await boot();
-  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'backend' } });
+  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'developer' } });
   const main = s.sessionTokenFor('shop-api')!, other = s.sessionTokenFor('fix-login')!;
   const id = s.sendMessage('shop-api', 'hello main');
   const first = (await req(s, '/v1/inbox', { token: main })).body.messages;
@@ -112,7 +112,7 @@ it('delivers inbox messages until they are acknowledged, and only to their owner
 });
 it('a session can only act as itself: the agent named in the body is ignored', async () => {
   const s = await boot();
-  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'backend' } });
+  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'developer' } });
   const main = s.sessionTokenFor('shop-api')!;
   await req(s, '/v1/events', { token: main, method: 'POST', body: { type: 'turn.start', sessionId: 'x', agent: 'fix-login', slug: 'fix-login' } });
   const st = await state(s);
@@ -121,14 +121,14 @@ it('a session can only act as itself: the agent named in the body is ignored', a
 });
 it('tools are limited by role: an agent cannot call spawn_agent', async () => {
   const s = await boot();
-  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'backend' } });
-  const r = await req(s, '/v1/tools/spawn_agent', { token: s.sessionTokenFor('fix-login'), method: 'POST', body: { name: 'x-job', profile: 'backend', goal: 'g' } });
+  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'developer' } });
+  const r = await req(s, '/v1/tools/spawn_agent', { token: s.sessionTokenFor('fix-login'), method: 'POST', body: { name: 'x-job', profile: 'developer', goal: 'g' } });
   expect(r.status).toBe(403);
   expect((await req(s, '/v1/tools/does_not_exist', { token: s.sessionTokenFor('shop-api'), method: 'POST', body: {} })).status).toBe(404);
 });
 it('a session token stops working once its process has exited', async () => {
   const s = await boot();
-  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'backend' } });
+  await req(s, '/api/agents', { method: 'POST', token: s.token, body: { slug: 'fix-login', profile: 'developer' } });
   const t = s.sessionTokenFor('fix-login')!;
   expect((await req(s, '/v1/inbox', { token: t })).status).toBe(200);
   s.writeToSession('fix-login', 'quit\r');
@@ -156,7 +156,7 @@ it('recovery_report belongs to the recovery role only; start_recovery to the mai
   const tokens = new SessionTokens();
   const registry = new AgentRegistry();
   registry.register({ slug: 'shop-api', role: 'main', profile: 'main' });
-  registry.register({ slug: 'fix-login', role: 'agent', profile: 'backend' });
+  registry.register({ slug: 'fix-login', role: 'agent', profile: 'developer' });
   registry.register({ slug: 'recover-fix-login', role: 'recovery', profile: 'recovery' });
   registry.register({ slug: 'review-fix-login', role: 'reviewer', profile: 'reviewer' });
   const called: string[] = [];
@@ -197,7 +197,7 @@ it('resume_agent belongs to the main only: an agent, a reviewer or a recovery ca
   const tokens = new SessionTokens();
   const registry = new AgentRegistry();
   registry.register({ slug: 'shop-api', role: 'main', profile: 'main' });
-  registry.register({ slug: 'fix-login', role: 'agent', profile: 'backend' });
+  registry.register({ slug: 'fix-login', role: 'agent', profile: 'developer' });
   registry.register({ slug: 'recover-fix-login', role: 'recovery', profile: 'recovery' });
   registry.register({ slug: 'review-fix-login', role: 'reviewer', profile: 'reviewer' });
   const called: unknown[] = [];

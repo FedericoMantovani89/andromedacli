@@ -14,15 +14,15 @@ it('init creates project.json and an empty agents.json', () => {
 });
 it('persists agents across a restart', () => {
   const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
-  s.addAgent({ slug: 'fix-login', profile: 'backend' });
+  s.addAgent({ slug: 'fix-login', profile: 'developer' });
   const again = new ProjectStore(root);
   expect(again.project.name).toBe('shop-api');
-  expect(again.listAgents().map((a) => [a.slug, a.profile])).toEqual([['fix-login', 'backend']]);
+  expect(again.listAgents().map((a) => [a.slug, a.profile])).toEqual([['fix-login', 'developer']]);
 });
 it('rejects a duplicate slug', () => {
   const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
-  s.addAgent({ slug: 'fix-login', profile: 'backend' });
-  expect(() => s.addAgent({ slug: 'fix-login', profile: 'dba' })).toThrow('slug.duplicate');
+  s.addAgent({ slug: 'fix-login', profile: 'developer' });
+  expect(() => s.addAgent({ slug: 'fix-login', profile: 'developer' })).toThrow('slug.duplicate');
 });
 it('init is idempotent and keeps the original creation date', () => {
   const root = repo(); const s = new ProjectStore(root); s.init('shop-api'); const created = s.project.createdAt;

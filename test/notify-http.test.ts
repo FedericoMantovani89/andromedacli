@@ -52,7 +52,7 @@ it('a question from an agent raises a toast whose click opens the queue on that 
   const r = recorder();
   const s = await bootServer({ notifier: r.notifier, config: { notifications: { groupSeconds: 1 } } });
   s.setLimits({ global: 9, perProject: 9 });
-  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
+  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
   const { id } = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { question: 'Which color?' })).body;
   await until(() => r.sent.length === 1, 6000);
   expect(r.sent[0]!.message).toBe('fix-login: Which color?');
@@ -85,7 +85,7 @@ it('a disabled type raises no toast', async () => {
   const r = recorder();
   const s = await bootServer({ notifier: r.notifier, config: { notifications: { groupSeconds: 1, enabled: { question: false } } } });
   s.setLimits({ global: 9, perProject: 9 });
-  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
+  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
   await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { question: 'Which color?' });
   await new Promise((done) => setTimeout(done, 1500));
   expect(r.sent).toHaveLength(0);

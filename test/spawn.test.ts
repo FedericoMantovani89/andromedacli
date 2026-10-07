@@ -3,7 +3,7 @@ import { autoClose, bootServer, modEvent, mod, ui, state, until } from './helper
 
 autoClose();
 
-const spawnTool = (s: Awaited<ReturnType<typeof bootServer>>, name: string, goal = 'make it work', profile = 'backend') =>
+const spawnTool = (s: Awaited<ReturnType<typeof bootServer>>, name: string, goal = 'make it work', profile = 'developer') =>
   mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile, goal });
 
 it('the main starts an agent with a valid name: process, state, and the goal waiting in its inbox', async () => {
@@ -72,9 +72,9 @@ it('a process that dies while working frees its slot for the queue', async () =>
 it('the UI button goes through the same flow: 201 when started, 202 with the position when queued', async () => {
   const s = await bootServer();
   s.setLimits({ global: 1, perProject: 1 });
-  const a = await ui(s, '/api/agents', 'POST', { slug: 'first-job', profile: 'backend' });
+  const a = await ui(s, '/api/agents', 'POST', { slug: 'first-job', profile: 'developer' });
   expect(a.status).toBe(201);
-  const b = await ui(s, '/api/agents', 'POST', { slug: 'second-job', profile: 'backend' });
+  const b = await ui(s, '/api/agents', 'POST', { slug: 'second-job', profile: 'developer' });
   expect(b.status).toBe(202);
   expect(b.body).toEqual({ slug: 'second-job', status: 'queued', position: 1 });
   // a manually launched agent has no goal to deliver
@@ -89,7 +89,7 @@ it('the agent system prompt file and the model reach the launch (profile model, 
 it('a model name that is not a plain model id is refused before anything starts', async () => {
   const s = await bootServer();
   for (const model of ['sonnet&calc', 'a b', 'x;y', '']) {
-    const r = await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'model-test', profile: 'backend', goal: 'g', model });
+    const r = await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'model-test', profile: 'developer', goal: 'g', model });
     if (model === '') expect(r.body.status).toBe('started'); // empty = no model given
     else expect(r.body).toMatchObject({ status: 'error', code: 'model.invalid' });
     if (model !== '') expect((await state(s)).agents).toEqual([]);
@@ -109,12 +109,12 @@ it('a queued replacement whose start fails later hands its ticket to the user (n
   tickets.setChecklist('fix-login-r2', []); // the ticket moved to the new name, back in_progress
   const inbox = new Inbox();
   const registry = new AgentRegistry();
-  registry.register({ slug: 'fix-login-r2', role: 'agent', profile: 'backend', queued: true });
+  registry.register({ slug: 'fix-login-r2', role: 'agent', profile: 'developer', queued: true });
   const ctx = {
     tickets, inbox, registry, tokens: new SessionTokens(), projectName: 'shop-api', broadcastState: () => {},
     review: { abandonReview: () => false }, recovery: { abandon: () => false },
   } as unknown as Parameters<typeof failQueuedStart>[0];
-  failQueuedStart(ctx, { slug: 'fix-login-r2', profile: 'backend', source: 'main', resumeBranch: 'agent/shop-api/fix-login' });
+  failQueuedStart(ctx, { slug: 'fix-login-r2', profile: 'developer', source: 'main', resumeBranch: 'agent/shop-api/fix-login' });
   expect(tickets.get('fix-login-r2')!.status).toBe('needs_user');
   expect(registry.get('fix-login-r2')!.state).toBe('interrupted');
   const told = inbox.pending('shop-api').map((m) => m.text).join('\n');

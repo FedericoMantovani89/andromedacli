@@ -10,7 +10,7 @@ describe('POST /api/restart', () => {
   it('starts the main and the agents that were running again, with the settings saved by then', async () => {
     const s = await bootServer({ projectName: 'alpha-project', config: { git: { worktrees: false } } });
     await until(async () => (await ui(s, '/api/state')).body.main.status === 'running');
-    expect((await ui(s, '/api/agents', 'POST', { slug: 'job-one', profile: 'backend' })).status).toBe(201);
+    expect((await ui(s, '/api/agents', 'POST', { slug: 'job-one', profile: 'developer' })).status).toBe(201);
     await mod(s, 'job-one', '/v1/events', 'POST', { type: 'session.start', sessionId: SID });
     expect(s.lastLaunchArgs('job-one')).not.toContain('--dangerously-skip-permissions');
     expect((await ui(s, '/api/config', 'PUT', { agents: { bypassPermissions: true } })).status).toBe(200);

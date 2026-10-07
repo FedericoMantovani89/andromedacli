@@ -8,19 +8,19 @@ const fresh = () => { const root = mkdtempSync(join(tmpdir(), 'project-resume-')
 
 it('updateAgent merges fields, removes keys set to undefined and ignores unknown slugs', () => {
   const { root, s } = fresh();
-  s.addAgent({ slug: 'a', profile: 'backend', model: 'opus' });
+  s.addAgent({ slug: 'a', profile: 'developer', model: 'opus' });
   s.updateAgent('a', { sessionId: 'x', lastState: 'working', stale: true });
   s.updateAgent('a', { stale: undefined, lastState: 'idle' });
   s.updateAgent('nobody', { lastState: 'idle' });
   const rec = new ProjectStore(root).listAgents()[0]!;
-  expect(rec).toMatchObject({ slug: 'a', profile: 'backend', model: 'opus', sessionId: 'x', lastState: 'idle' });
+  expect(rec).toMatchObject({ slug: 'a', profile: 'developer', model: 'opus', sessionId: 'x', lastState: 'idle' });
   expect('stale' in rec).toBe(false);
   expect(new ProjectStore(root).listAgents()).toHaveLength(1);
 });
 it('old records without the new fields stay valid', () => {
   const { s } = fresh();
-  s.addAgent({ slug: 'a', profile: 'dba' });
-  expect(s.listAgents()[0]).toEqual({ slug: 'a', profile: 'dba', createdAt: expect.any(String) });
+  s.addAgent({ slug: 'a', profile: 'developer' });
+  expect(s.listAgents()[0]).toEqual({ slug: 'a', profile: 'developer', createdAt: expect.any(String) });
 });
 it('keeps the main session id and the clean-stop flag', () => {
   const { root, s } = fresh();
@@ -39,7 +39,7 @@ it('an agent record keeps the repository of its worktree', () => {
   const root = mkdtempSync(join(tmpdir(), 'ps-repo-'));
   const s = new ProjectStore(root);
   s.init('p');
-  s.addAgent({ slug: 'a', profile: 'backend' });
+  s.addAgent({ slug: 'a', profile: 'developer' });
   s.updateAgent('a', { repo: 'R' });
   expect(s.listAgents()[0]?.repo).toBe('R');
 });

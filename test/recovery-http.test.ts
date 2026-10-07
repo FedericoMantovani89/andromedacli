@@ -35,7 +35,7 @@ async function stopped(o: { handover?: string } = {}): Promise<{ s: Running; t: 
   scratch.push(projectsDir);
   const s = await bootServer({ projectRoot: t.repo, projectsDir, config: { git: { worktrees: true }, budget: { graceMinutes: 0 } } });
   s.setLimits({ global: 20, perProject: 20 }); // fake agents never finish a turn by themselves, so they would hold the slots
-  expect((await tool(s, 'shop-api', 'spawn_agent', { name: SLUG, profile: 'backend', goal: 'Fix the login so negative ids are rejected', budget: 1000 })).body.status).toBe('started');
+  expect((await tool(s, 'shop-api', 'spawn_agent', { name: SLUG, profile: 'developer', goal: 'Fix the login so negative ids are rejected', budget: 1000 })).body.status).toBe('started');
   const wt = worktreePathFor(t.repo, SLUG);
   await modEvent(s, SLUG, 'session.start', { cwd: wt });
   expect((await tool(s, SLUG, 'checklist_set', { items: ITEMS })).body.status).toBe('ok');

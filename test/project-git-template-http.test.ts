@@ -26,13 +26,13 @@ describe('POST /api/projects/git-init', () => {
 });
 
 describe('POST /api/projects/apply-template', () => {
-  it('switches the template: its profiles replace the files, the commands already set stay', async () => {
+  it('switches the template: its main.md and rules.md replace the files, the commands already set stay', async () => {
     const root = mkdtempSync(join(tmpdir(), 'apply-tpl-'));
     const s = await bootServer({ projectRoot: root });
     expect((await ui(s, '/api/project', 'PUT', { testCommand: 'my test' })).status).toBe(200);
     const done = await ui(s, '/api/projects/apply-template', 'POST', { templateId: 'frontend-web' });
     expect([done.status, done.body.templateId]).toEqual([200, 'frontend-web']);
-    expect(existsSync(join(root, '.andromedacli', 'profiles', 'frontend.md'))).toBe(true);
+    expect(existsSync(join(root, '.andromedacli', 'main.md'))).toBe(true);
     expect(readFileSync(join(root, '.andromedacli', 'rules.md'), 'utf8')).toMatch(/front end/i);
     expect((await ui(s, '/api/state')).body.project.testCommand).toBe('my test');
   });

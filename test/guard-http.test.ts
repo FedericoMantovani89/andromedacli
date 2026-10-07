@@ -18,7 +18,7 @@ async function boot(config: Record<string, unknown> = {}): Promise<{ s: Running;
   return { s, t };
 }
 const spawn = async (s: Running, name: string): Promise<void> => {
-  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'g' })).body.status).toBe('started');
+  expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'g' })).body.status).toBe('started');
 };
 const guard = (s: Running, slug: string, tool: string, input: unknown) => mod(s, slug, '/v1/guard', 'POST', { tool, input });
 const logOf = (t: TestRepo): any[] => {

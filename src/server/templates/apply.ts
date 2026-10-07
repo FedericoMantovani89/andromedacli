@@ -1,6 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
-import { PROFILES } from '../../shared/protocol';
 import { git } from '../git/git';
 import { ProjectStore } from '../project-store';
 import { detectProject } from './detect';
@@ -103,7 +102,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
       maxActive: data.defaults.maxActive,
       docs: data.docs,
       secretPatterns: data.git.secretPatterns,
-    }, PROFILES);
+    });
     const test = pick(o.test, detected.test, data.commands.test);
     if (test !== undefined) store.setTestCommand(test);
     if (data.git.squash !== undefined) store.setSquash(data.git.squash);

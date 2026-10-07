@@ -30,7 +30,7 @@ async function boot(o: { budget?: Record<string, unknown>; spawnBudget?: number 
   const projectsDir = mkdtempSync(join(tmpdir(), 'bud-proj-'));
   scratch.push(projectsDir);
   const s = await bootServer({ projectRoot: t.repo, projectsDir, config: { git: { worktrees: o.worktrees ?? true }, ...(o.budget ? { budget: o.budget } : {}) } });
-  const body: Record<string, unknown> = { name: SLUG, profile: 'backend', goal: 'make it work' };
+  const body: Record<string, unknown> = { name: SLUG, profile: 'developer', goal: 'make it work' };
   if (o.spawnBudget !== null) body.budget = o.spawnBudget ?? 1000;
   expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', body)).body).toEqual({ status: 'started', name: SLUG });
   const wt = o.worktrees === false ? t.repo : worktreePathFor(t.repo, SLUG);
@@ -170,7 +170,7 @@ it('a spawn_agent budget that is not an integer between 1000 and 100 000 000 is 
   repos.push(t);
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
   for (const budget of [12.5, 999, 100_000_001, '5000']) {
-    expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: SLUG, profile: 'backend', goal: 'go', budget })).body, String(budget)).toEqual({ status: 'error', code: 'bad_request' });
+    expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: SLUG, profile: 'developer', goal: 'go', budget })).body, String(budget)).toEqual({ status: 'error', code: 'bad_request' });
   }
   expect((await state(s)).agents).toEqual([]);
 });
@@ -181,7 +181,7 @@ it('the periodic tick stops an agent whose grace ran out without another turn', 
   const projectsDir = mkdtempSync(join(tmpdir(), 'bud-proj-'));
   scratch.push(projectsDir);
   const s = await bootServer({ projectRoot: t.repo, projectsDir, tickMs: 200, config: { git: { worktrees: true }, budget: { graceMinutes: 0 } } });
-  await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: SLUG, profile: 'backend', goal: 'go', budget: 1000 });
+  await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: SLUG, profile: 'developer', goal: 'go', budget: 1000 });
   const wt = worktreePathFor(t.repo, SLUG);
   await modEvent(s, SLUG, 'session.start', { cwd: wt });
   const file = transcriptPath(projectsDir, wt, `sess-${SLUG}`);

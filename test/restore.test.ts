@@ -14,7 +14,7 @@ beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'restore-')); tickets = new
 
 const wt = (slug: string): string => { const p = join(root, 'wt', slug); mkdirSync(p, { recursive: true }); return p; };
 const rec = (slug: string, o: Partial<AgentRecord> = {}): AgentRecord => ({
-  slug, profile: 'backend', createdAt: '2026-10-05T10:00:00Z', role: 'agent', sessionId: `sess-${slug}`,
+  slug, profile: 'developer', createdAt: '2026-10-05T10:00:00Z', role: 'agent', sessionId: `sess-${slug}`,
   worktree: wt(slug), branch: `agent/p/${slug}`, lastState: 'idle', ...o,
 });
 const run = (records: AgentRecord[], o: { cleanStop?: boolean; worktrees?: boolean; abandon?: (r: string) => boolean } = {}) => restoreAgents({

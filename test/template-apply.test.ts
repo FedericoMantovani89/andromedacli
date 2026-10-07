@@ -24,10 +24,10 @@ it('new folder with init: creates it, starts a repository with an empty first co
   expect(existsSync(join(root, '.git'))).toBe(true);
   expect(gitSync(root, 'log', '--format=%s')).toBe('chore: start');
   expect(gitSync(root, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
-  for (const f of ['profiles/backend.md', 'profiles/dba.md', 'main.md', 'rules.md', 'project.json']) expect(existsSync(join(root, '.andromedacli', f)), f).toBe(true);
+  for (const f of ['main.md', 'rules.md', 'project.json']) expect(existsSync(join(root, '.andromedacli', f)), f).toBe(true);
   expect(existsSync(join(root, '.andromedacli', 'state', 'agents.json'))).toBe(true);
   expect(projectOf(root)).toMatchObject({
-    name: 'shop-api', profiles: ['backend', 'dba'], docs: ['README.md', 'CHANGELOG.md'], buildCommand: 'mvn -q -DskipTests package', testCommand: 'mvn test', squash: true,
+    name: 'shop-api', docs: ['README.md', 'CHANGELOG.md'], buildCommand: 'mvn -q -DskipTests package', testCommand: 'mvn test', squash: true,
   });
   expect(readFileSync(join(root, '.andromedacli', 'rules.md'), 'utf8')).toMatch(/Java backend/);
 });
@@ -89,7 +89,7 @@ it('is idempotent: a second run changes nothing but keeps the project name, date
   const o = base(root, { create: true, init: true });
   await applyTemplate(o);
   const first = readFileSync(join(root, '.andromedacli', 'project.json'), 'utf8');
-  writeFileSync(join(root, '.andromedacli', 'state', 'agents.json'), JSON.stringify([{ slug: 'fix-login', profile: 'backend', createdAt: 'x' }]));
+  writeFileSync(join(root, '.andromedacli', 'state', 'agents.json'), JSON.stringify([{ slug: 'fix-login', profile: 'developer', createdAt: 'x' }]));
   const head = gitSync(root, 'rev-parse', 'HEAD');
   expect(await applyTemplate({ ...o, name: 'another-name' })).toEqual({ ok: true });
   expect(JSON.parse(readFileSync(join(root, '.andromedacli', 'project.json'), 'utf8'))).toEqual(JSON.parse(first)); // same content (key order may differ)

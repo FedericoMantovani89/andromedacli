@@ -6,6 +6,7 @@ import { closeOverlay, createLanguageSelect, renderPrereqTable } from './setting
 import { openInstallDialog } from './install-dialog';
 import { openRestartDialog } from './restart-dialog';
 import { renderProfilesTab } from './options-profiles';
+import { fillModelSelect, loadModelSelect } from './model-select';
 import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
 import { openSaveTemplateDialog } from './new-project';
@@ -59,6 +60,13 @@ const note = (key: string, params?: Record<string, string | number>): HTMLElemen
   bindText(p, key, params);
   return p;
 };
+/** The (i) icon whose tooltip explains an option in detail (the text is a key; it follows the language). */
+const infoIcon = (key: string): HTMLElement => {
+  const icon = el('span', 'info-icon');
+  setTitle(icon, key);
+  icon.tabIndex = 0;
+  return icon;
+};
 const footnote = (key: string): HTMLElement => {
   const p = note(key);
   p.classList.add('options-footnote');
@@ -106,6 +114,7 @@ function createField(env: Env, def: FieldDef): HTMLElement {
     box.checked = current === true;
     box.addEventListener('change', () => saveEntry(env, def.path, box.checked));
     row.append(box, text);
+    if (def.help) row.append(infoIcon(def.help)); // a switch explains itself in a tooltip, not in a line below
   } else if (def.kind === 'lines') {
     const area = el('textarea');
     area.name = def.path;
@@ -138,7 +147,7 @@ function createField(env: Env, def: FieldDef): HTMLElement {
     });
     row.append(text, input);
   }
-  if (def.help) {
+  if (def.help && def.kind !== 'bool') {
     const wrap = el('div', 'options-field-wrap');
     wrap.append(row, note(def.help));
     return wrap;
@@ -365,7 +374,7 @@ function projectsTab(env: Env): HTMLElement {
   squash.checked = state?.project.squash !== false; // one commit per merged ticket unless the project says otherwise
   const squashText = el('span');
   bindText(squashText, 'settings.squash');
-  squashRow.append(squash, squashText);
+  squashRow.append(squash, squashText, infoIcon(k('settings.squash.help')));
   squash.addEventListener('change', () => {
     const wanted = squash.checked;
     env.stage('project:squash', () => api<ApiError>('/api/project', { method: 'PUT', body: { squash: wanted } }));
@@ -385,29 +394,35 @@ function projectsTab(env: Env): HTMLElement {
     const wanted = test.value;
     env.stage('project:testCommand', () => api<ApiError>('/api/project', { method: 'PUT', body: { testCommand: wanted } }));
   });
-  testForm.append(testLabel, note(k('settings.testCommand.help')));
-  box.append(squashRow, note(k('settings.squash.help')), testForm);
+  // Empty means "use what the project's files suggest": the placeholder shows it, and the line below says where it comes from.
+  const detected = state?.project.detectedTestCommand;
+  if (detected) test.placeholder = detected;
+  const detectedNote = detected ? note(k('settings.testCommand.detected'), { command: detected }) : note(k('settings.testCommand.none'));
+  testForm.append(testLabel, note(k('settings.testCommand.help')), detectedNote);
+  box.append(squashRow, testForm);
 
   // Fields of the project: always shown (a project made from the generic template carries none yet, and this is where they are set).
   const project = (state?.project ?? {}) as Record<string, unknown>;
-  for (const [key, label, kind] of [
-    ['buildCommand', k('options.projects.buildCommand'), 'text'], ['lintCommand', k('options.projects.lintCommand'), 'text'],
-    ['model', k('options.projects.model'), 'text'], ['maxActive', k('options.projects.maxActive'), 'number'],
-  ] as const) {
-    const row = el('label', 'options-field');
-    const span = el('span');
-    bindText(span, label);
-    const input = el('input');
-    input.name = key;
-    if (kind === 'number') input.type = 'number';
-    input.value = String(project[key] ?? '');
-    input.addEventListener('change', () => {
-      const wanted = kind === 'number' ? (input.value.trim() === '' ? null : Number(input.value)) : input.value;
-      env.stage(`project:${key}`, () => api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }));
-    });
-    row.append(span, input);
-    box.append(row);
-  }
+  const stageProject = (key: string, wanted: unknown): void => env.stage(`project:${key}`, () => api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }));
+  const modelRow = el('label', 'options-field');
+  const modelText = el('span');
+  bindText(modelText, 'options.projects.model');
+  const model = el('select');
+  model.name = 'model';
+  loadModelSelect(model, String(project.model ?? ''), k('options.projects.model.default'));
+  model.addEventListener('change', () => stageProject('model', model.value));
+  modelRow.append(modelText, model);
+  box.append(modelRow);
+  const maxRow = el('label', 'options-field');
+  const maxText = el('span');
+  bindText(maxText, 'options.projects.maxActive');
+  const maxInput = el('input');
+  maxInput.name = 'maxActive';
+  maxInput.type = 'number';
+  maxInput.value = String(project.maxActive ?? '');
+  maxInput.addEventListener('change', () => stageProject('maxActive', maxInput.value.trim() === '' ? null : Number(maxInput.value)));
+  maxRow.append(maxText, maxInput);
+  box.append(maxRow);
 
   // Another template for this project: its profiles, main.md and rules.md replace the files of the same name; the commands stay.
   const pick = el('select');
@@ -518,28 +533,8 @@ function modelsTab(env: Env): HTMLElement {
   let wantedModel = String(getPath(env.options!.config, 'models.agent') ?? '');
 
   const render = (list: ModelList): void => {
-    select.replaceChildren();
-    const def = el('option');
-    def.value = '';
-    bindText(def, 'options.models.default');
-    select.append(def);
-    const ids = new Set<string>();
-    for (const m of list.models) {
-      if (m.alias) continue; // aliases are not offered: only real model ids
-      const o = el('option');
-      o.value = m.id;
-      o.textContent = m.label;
-      select.append(o);
-      ids.add(m.id);
-    }
+    fillModelSelect(select, list.models, wantedModel, k('options.models.default'));
     const current = wantedModel;
-    if (current !== '' && !ids.has(current)) { // kept selected: the choice is the user's, even if the catalog dropped it
-      const o = el('option');
-      o.value = current;
-      o.textContent = current;
-      select.append(o);
-    }
-    select.value = current;
     bindText(updated, 'options.models.updated', { updated: list.updated ?? t('common.notAvailable') });
     missing.hidden = !(list.missing && current === list.current);
     if (!missing.hidden) bindText(missing, 'options.models.missing', { model: current });
@@ -558,10 +553,7 @@ function modelsTab(env: Env): HTMLElement {
   const urlHead = el('span', 'options-field-head');
   const urlText = el('span');
   bindText(urlText, 'options.models.catalogUrl');
-  const info = el('span', 'info-icon');
-  setTitle(info, k('options.models.catalogUrl.help'));
-  info.tabIndex = 0;
-  urlHead.append(urlText, info);
+  urlHead.append(urlText, infoIcon(k('options.models.catalogUrl.help')));
   const url = el('input');
   url.name = 'models.catalogUrl';
   url.autocomplete = 'off';

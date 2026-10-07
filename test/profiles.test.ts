@@ -7,7 +7,7 @@ import { loadProfile, renderAgentPrompt, renderMainPrompt, languageName } from '
 const tmp = () => mkdtempSync(join(tmpdir(), 'prof-'));
 
 it('the five shipped profiles exist and parse', () => {
-  for (const name of ['backend', 'dba', 'frontend', 'reviewer', 'recovery']) {
+  for (const name of ['developer', 'reviewer', 'recovery']) {
     const p = loadProfile(name, tmp(), tmp());
     expect(p, name).toBeDefined();
     expect(p!.description.length).toBeGreaterThan(5);
@@ -17,11 +17,11 @@ it('the five shipped profiles exist and parse', () => {
 it('the project profile overrides the user profile, which overrides the shipped one', () => {
   const project = tmp(), user = tmp();
   mkdirSync(join(user), { recursive: true });
-  writeFileSync(join(user, 'backend.md'), '---\nname: backend\ndescription: user version\n---\nUSER BODY');
-  expect(loadProfile('backend', project, user)!.description).toBe('user version');
+  writeFileSync(join(user, 'developer.md'), '---\nname: developer\ndescription: user version\n---\nUSER BODY');
+  expect(loadProfile('developer', project, user)!.description).toBe('user version');
   mkdirSync(join(project, '.andromedacli', 'profiles'), { recursive: true });
-  writeFileSync(join(project, '.andromedacli', 'profiles', 'backend.md'), '---\nname: backend\ndescription: project version\n---\nPROJECT BODY');
-  const p = loadProfile('backend', project, user)!;
+  writeFileSync(join(project, '.andromedacli', 'profiles', 'developer.md'), '---\nname: developer\ndescription: project version\n---\nPROJECT BODY');
+  const p = loadProfile('developer', project, user)!;
   expect(p.description).toBe('project version');
   expect(p.body).toBe('PROJECT BODY');
 });
@@ -50,7 +50,7 @@ it('the main prompt names every console tool by full name and says how to load t
 });
 it('the agent prompt carries the profile, the agent identity, and the messages-are-information rule', () => {
   const dir = tmp();
-  const profile = loadProfile('backend', tmp(), tmp())!;
+  const profile = loadProfile('developer', tmp(), tmp())!;
   const file = renderAgentPrompt({ profile, slug: 'fix-login', project: 'shop-api', outDir: dir });
   expect(existsSync(file)).toBe(true);
   const text = readFileSync(file, 'utf8');
@@ -73,7 +73,7 @@ it('ignores a profile model that is not a plain model id (it would become a comm
 it('console.read_only is read from the frontmatter: the shipped reviewer and recovery are read-only, the others are not', () => {
   expect(loadProfile('reviewer', tmp(), tmp())!.readOnly).toBe(true);
   expect(loadProfile('recovery', tmp(), tmp())!.readOnly).toBe(true);
-  for (const name of ['backend', 'dba', 'frontend']) expect(loadProfile(name, tmp(), tmp())!.readOnly, name).toBe(false);
+  for (const name of ['developer']) expect(loadProfile(name, tmp(), tmp())!.readOnly, name).toBe(false);
 });
 it('read_only needs an explicit true inside the console block, and the body never shows it', () => {
   const user = tmp();
@@ -101,7 +101,7 @@ it('the reviewer profile says what the verdict is and that nothing may be change
 });
 it('a re-opened ticket and a merge conflict are explained to the author, and the reviewer prompt replaces the author rules', () => {
   const dir = tmp();
-  const profile = loadProfile('backend', tmp(), tmp())!;
+  const profile = loadProfile('developer', tmp(), tmp())!;
   const author = readFileSync(renderAgentPrompt({ profile, slug: 'fix-login', project: 'shop-api', outDir: dir, git: { worktree: 'D:/w/x', branch: 'agent/shop-api/fix-login' } }), 'utf8');
   expect(author).toMatch(/message from the main/i);
   expect(author).toMatch(/conflict markers/i);
@@ -119,7 +119,7 @@ it('console.budget_tokens is read as a number; anything else leaves it undefined
   writeFileSync(join(user, 'bt-bad.md'), '---\nname: bt-bad\ndescription: d here\nconsole:\n  budget_tokens: lots\n---\nBODY');
   expect(loadProfile('bt-ok', tmp(), user)!.budgetTokens).toBe(12345);
   expect(loadProfile('bt-bad', tmp(), user)!.budgetTokens).toBeUndefined();
-  for (const name of ['backend', 'dba', 'frontend', 'reviewer', 'recovery']) expect(loadProfile(name, tmp(), tmp()), name).toBeDefined();
+  for (const name of ['developer', 'reviewer', 'recovery']) expect(loadProfile(name, tmp(), tmp()), name).toBeDefined();
 });
 
 it('the recovery profile names its three jobs and the exact report call, and stays read-only', () => {

@@ -22,7 +22,7 @@ async function boot(): Promise<{ s: Running; m: MultiRepo }> {
   const s = await bootServer({ projectRoot: m.root, config: { git: { worktrees: true } } });
   return { s, m };
 }
-const spawn = (s: Running, name: string, repo?: string) => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'audit it', ...(repo !== undefined ? { repo } : {}) });
+const spawn = (s: Running, name: string, repo?: string) => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'audit it', ...(repo !== undefined ? { repo } : {}) });
 const snapshot = async (s: Running, slug: string): Promise<string> => (await ui(s, `/api/debug/snapshot/${slug}`)).body.text;
 const cwdOf = async (s: Running, slug: string): Promise<string> => {
   await until(async () => /CWD [^\r\n]+[\r\n]/.test(await snapshot(s, slug)));
@@ -67,10 +67,10 @@ it('agents in both repos at once get their own worktrees (no race on refs or con
 });
 it('the UI route takes a repo too', async () => {
   const { s } = await boot();
-  const bad = await ui(s, '/api/agents', 'POST', { slug: 'x-job', profile: 'backend' });
+  const bad = await ui(s, '/api/agents', 'POST', { slug: 'x-job', profile: 'developer' });
   expect(bad.status).toBe(422);
   expect(bad.body.code).toBe('git.repoRequired');
-  const ok = await ui(s, '/api/agents', 'POST', { slug: 'x-job', profile: 'backend', repo: 'abc-be' });
+  const ok = await ui(s, '/api/agents', 'POST', { slug: 'x-job', profile: 'developer', repo: 'abc-be' });
   expect(ok.status).toBe(201);
 });
 it('the ticket remembers the repo, and the release hook is installed in every repo at start', async () => {

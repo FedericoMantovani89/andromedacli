@@ -25,7 +25,7 @@ function setup(o: SetupOptions = {}) {
   const add = (name: string, suspend: boolean) => {
     tickets.setChecklist(name, []);
     if (suspend) tickets.move(name, 'suspended_limit');
-    registry.register({ slug: name, role: 'agent', profile: 'backend', goal: `goal of ${name}` });
+    registry.register({ slug: name, role: 'agent', profile: 'developer', goal: `goal of ${name}` });
     if (!o.noSession?.includes(name)) registry.onModEvent(name, { type: 'session.start', sessionId: `sess-${name}` });
   };
   for (const name of o.suspended ?? []) add(name, true);
@@ -153,7 +153,7 @@ it('a restart clears a stale blocked reason', async () => {
   t.tickets.setChecklist('job-a', []);
   t.tickets.block('job-a', 'waiting for the schema');
   t.tickets.move('job-a', 'suspended_limit');
-  t.registry.register({ slug: 'job-a', role: 'agent', profile: 'backend' });
+  t.registry.register({ slug: 'job-a', role: 'agent', profile: 'developer' });
   t.registry.onModEvent('job-a', { type: 'session.start', sessionId: 'sess-job-a' });
   expect(t.service.resume(['job-a'])).toMatchObject({ status: 'ok' });
   const ticket = t.tickets.get('job-a')!;

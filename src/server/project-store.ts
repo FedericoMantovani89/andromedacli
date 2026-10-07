@@ -59,10 +59,10 @@ export const PROJECT_FIELDS = ['buildCommand', 'lintCommand', 'profiles', 'model
 export type ProjectField = (typeof PROJECT_FIELDS)[number];
 
 /** Whether a value is acceptable for a project field. `knownProfiles` limits `profiles` (names the console knows). */
-export function isValidProjectField(field: ProjectField, v: unknown, knownProfiles: readonly string[]): boolean {
+export function isValidProjectField(field: ProjectField, v: unknown, knownProfiles?: readonly string[]): boolean {
   switch (field) {
     case 'buildCommand': case 'lintCommand': return isValidTestCommand(v);
-    case 'profiles': return isStringList(v, 64, 40) && v.every((p) => knownProfiles.includes(p));
+    case 'profiles': return isStringList(v, 64, 40) && (knownProfiles === undefined || v.every((p) => knownProfiles.includes(p)));
     case 'model': return typeof v === 'string' && PROJECT_MODEL_RE.test(v);
     case 'agentTokens': return isIntIn(v, 1000, 100_000_000);
     case 'maxActive': return isIntIn(v, 1, 64);
@@ -117,7 +117,7 @@ export class ProjectStore {
    * Sets (or, with `undefined`, `null`, an empty string or an empty list, clears) the Phase 6D fields. Every entry is checked before
    * anything is written; a bad one throws `project.fieldInvalid:<field>` and changes nothing.
    */
-  setFields(patch: Partial<Record<ProjectField, unknown>>, knownProfiles: readonly string[]): void {
+  setFields(patch: Partial<Record<ProjectField, unknown>>, knownProfiles?: readonly string[]): void {
     const next: Record<string, unknown> = { ...this.project };
     for (const field of PROJECT_FIELDS) {
       if (!(field in patch)) continue;

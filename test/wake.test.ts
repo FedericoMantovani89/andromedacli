@@ -14,7 +14,7 @@ const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
 beforeEach(() => {
   registry = new AgentRegistry();
   launched = []; quotaHigh = false; worktree = true; launchResult = { ok: true };
-  registry.registerDormant({ slug: 'a', role: 'agent', profile: 'backend', sessionId: 'sess-a' });
+  registry.registerDormant({ slug: 'a', role: 'agent', profile: 'developer', sessionId: 'sess-a' });
 });
 const make = () => new WakeService({
   registry,
@@ -30,9 +30,9 @@ describe('WakeService', () => {
   it('refuses what is not dormant, has no session or worktree, or while the quota is frozen', async () => {
     const w = make();
     expect(await w.wake('nobody', 'user')).toEqual({ ok: false, code: 'agent.notDormant' });
-    registry.registerRestored({ slug: 'i', role: 'agent', profile: 'backend', sessionId: 'sess-i', state: 'interrupted' });
+    registry.registerRestored({ slug: 'i', role: 'agent', profile: 'developer', sessionId: 'sess-i', state: 'interrupted' });
     expect(await w.wake('i', 'work')).toEqual({ ok: false, code: 'agent.notDormant' }); // work never restarts an interrupted agent
-    registry.registerDormant({ slug: 'n', role: 'agent', profile: 'backend' });
+    registry.registerDormant({ slug: 'n', role: 'agent', profile: 'developer' });
     expect(await w.wake('n', 'user')).toEqual({ ok: false, code: 'agent.noSession' });
     worktree = false;
     expect(await w.wake('a', 'user')).toEqual({ ok: false, code: 'agent.noWorktree' });
@@ -41,7 +41,7 @@ describe('WakeService', () => {
     expect(launched).toEqual([]);
   });
   it('the main may wake an interrupted agent', async () => {
-    registry.registerRestored({ slug: 'i', role: 'agent', profile: 'backend', sessionId: 'sess-i', state: 'interrupted' });
+    registry.registerRestored({ slug: 'i', role: 'agent', profile: 'developer', sessionId: 'sess-i', state: 'interrupted' });
     expect((await make().wake('i', 'main')).ok).toBe(true);
   });
   it('a launch that fails is reported as wakeFailed', async () => {

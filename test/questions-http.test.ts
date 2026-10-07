@@ -6,7 +6,7 @@ autoClose();
 async function withAgent() {
   const s = await bootServer();
   s.setLimits({ global: 9, perProject: 9 });
-  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
+  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
   await modEvent(s, 'fix-login', 'session.start');
   await modEvent(s, 'fix-login', 'turn.start');
   return s;
@@ -39,7 +39,7 @@ it('a long-poll in flight is released as soon as the user answers', async () => 
 });
 it("answers need the UI token; another session cannot read someone else's question", async () => {
   const s = await withAgent();
-  await ui(s, '/api/agents', 'POST', { slug: 'other-job', profile: 'backend' });
+  await ui(s, '/api/agents', 'POST', { slug: 'other-job', profile: 'developer' });
   const { id } = (await ask(s)).body;
   expect((await mod(s, 'fix-login', `/api/queue/${id}/answer`, 'POST', { answer: 'x' })).status).toBe(401);
   expect((await mod(s, 'other-job', `/v1/questions/${id}?wait=1`)).body).toEqual({ answered: false, gone: true });

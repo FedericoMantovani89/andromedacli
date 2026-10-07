@@ -49,7 +49,7 @@ try {
   await sleep(4000);
 
   // 1. The main finds the deferred tools by their full name, starts an agent, and the goal reaches it through the inbox
-  await type('modtest', 'Use the console tool to start an agent named hello-agent with profile backend and the goal: reply with the single word hello-from-agent and nothing else. Then tell me it was started.');
+  await type('modtest', 'Use the console tool to start an agent named hello-agent with profile developer and the goal: reply with the single word hello-from-agent and nothing else. Then tell me it was started.');
   rec('main called spawn_agent: the agent appears in the console', await until(async () => ((await ui('/api/state')).agents as { slug: string }[]).some((a) => a.slug === 'hello-agent'), 240000));
   const agentWorked = await until(async () => (await answers('hello-agent')).includes('hello-from-agent'), 240000);
   rec('the agent received its goal from the inbox, worked, and its answer reached the read store', agentWorked, agentWorked ? '' : `reading: ${(await answers('hello-agent')).slice(0, 200)}`);
@@ -66,7 +66,7 @@ try {
   rec('the answer reached the waiting main tool call', colorOk, colorOk ? '' : (await answers('modtest')).slice(-300));
 
   // 3. An agent's native AskUserQuestion is intercepted and goes through the same queue
-  await type('modtest', 'Start an agent named fruit-agent with profile backend and the goal: use the AskUserQuestion tool to ask which fruit I prefer, Apple or Pear, then reply with exactly: fruit=<the answer you received>.');
+  await type('modtest', 'Start an agent named fruit-agent with profile developer and the goal: use the AskUserQuestion tool to ask which fruit I prefer, Apple or Pear, then reply with exactly: fruit=<the answer you received>.');
   let fid = '';
   rec('the agent question appears in the console queue', await until(async () => { const q = (await ui('/api/state')).queue as { id: string; from: string }[]; fid = q.find((x) => x.from === 'fruit-agent')?.id ?? ''; return fid !== ''; }, 300000));
   if (fid) await ui(`/api/queue/${fid}/answer`, 'POST', { answer: 'Pear' });
@@ -83,7 +83,7 @@ try {
     console.log(`INFO  main terminal tail: ${JSON.stringify((await snapshot('modtest')).slice(-700))}`);
   }
   // 5. An agent's permission prompt (a Bash redirect is not pre-approved) is routed to the console queue; the answer is the verdict
-  await type('modtest', 'Start an agent named file-agent with profile backend and the goal: use the Bash tool to run exactly this command: echo permtest > permtest.txt then reply with exactly result=ok if it ran, or result=denied if the tool was refused.');
+  await type('modtest', 'Start an agent named file-agent with profile developer and the goal: use the Bash tool to run exactly this command: echo permtest > permtest.txt then reply with exactly result=ok if it ran, or result=denied if the tool was refused.');
   let pid = '';
   const pending = async (from: string) => ((await ui('/api/state')).queue as { id: string; from: string; kind: string; tool?: string; detail?: string }[]).find((x) => x.from === from && x.kind === 'permission');
   rec('the agent permission request appears in the console queue (not stuck in its terminal)', await until(async () => { const p = await pending('file-agent'); pid = p?.id ?? ''; return Boolean(p); }, 300000));
@@ -93,7 +93,7 @@ try {
   const allowed = await until(async () => (await answers('file-agent')).includes('result=ok'), 240000);
   rec('Allow from the console lets the tool run', allowed, allowed ? '' : (await answers('file-agent')).slice(-300));
 
-  await type('modtest', 'Start an agent named deny-agent with profile backend and the goal: use the Bash tool to run exactly this command: echo denytest > denytest.txt then reply with exactly result=ok if it ran, or result=denied if the tool was refused.');
+  await type('modtest', 'Start an agent named deny-agent with profile developer and the goal: use the Bash tool to run exactly this command: echo denytest > denytest.txt then reply with exactly result=ok if it ran, or result=denied if the tool was refused.');
   let did = '';
   rec('a second permission request arrives', await until(async () => { const p = await pending('deny-agent'); did = p?.id ?? ''; return Boolean(p); }, 300000));
   if (did) await ui(`/api/queue/${did}/answer`, 'POST', { answer: 'deny' });

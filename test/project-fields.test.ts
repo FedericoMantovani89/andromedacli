@@ -12,23 +12,23 @@ autoClose();
 const repos: TestRepo[] = [];
 afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 
-const KNOWN = ['backend', 'dba', 'frontend', 'reviewer', 'recovery'];
+const KNOWN = ['developer', 'reviewer', 'recovery'];
 const newStore = (): ProjectStore => { const s = new ProjectStore(mkdtempSync(join(tmpdir(), 'pf-'))); s.init('shop-api'); return s; };
 const put = (s: Running, body: unknown) => ui(s, '/api/project', 'PUT', body);
 const spawn = (s: Running, name: string, extra: Record<string, unknown> = {}) =>
-  mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'g', ...extra });
+  mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'g', ...extra });
 
 it('setFields stores, replaces and clears every field, and a bad one changes nothing', () => {
   const s = newStore();
-  s.setFields({ buildCommand: ' make ', lintCommand: 'make lint', profiles: ['backend'], model: 'opus', agentTokens: 5000, maxActive: 2, docs: ['README.md'], secretPatterns: ['*.vault'] }, KNOWN);
-  expect(s.project).toMatchObject({ buildCommand: 'make', lintCommand: 'make lint', profiles: ['backend'], model: 'opus', agentTokens: 5000, maxActive: 2, docs: ['README.md'], secretPatterns: ['*.vault'] });
+  s.setFields({ buildCommand: ' make ', lintCommand: 'make lint', profiles: ['developer'], model: 'opus', agentTokens: 5000, maxActive: 2, docs: ['README.md'], secretPatterns: ['*.vault'] }, KNOWN);
+  expect(s.project).toMatchObject({ buildCommand: 'make', lintCommand: 'make lint', profiles: ['developer'], model: 'opus', agentTokens: 5000, maxActive: 2, docs: ['README.md'], secretPatterns: ['*.vault'] });
   s.setFields({ model: 'haiku', docs: [], lintCommand: '' }, KNOWN);
   expect(s.project.model).toBe('haiku');
   expect(s.project.docs).toBeUndefined();
   expect(s.project.lintCommand).toBeUndefined();
   expect(s.project.buildCommand).toBe('make'); // not mentioned: kept
   const bad: Record<string, unknown>[] = [
-    { buildCommand: 'a\nb' }, { buildCommand: 'x'.repeat(501) }, { profiles: ['nonsense'] }, { profiles: 'backend' }, { model: 'x&calc' },
+    { buildCommand: 'a\nb' }, { buildCommand: 'x'.repeat(501) }, { profiles: ['nonsense'] }, { profiles: 'developer' }, { model: 'x&calc' },
     { agentTokens: 999 }, { agentTokens: 100_000_001 }, { agentTokens: 1.5 }, { maxActive: 0 }, { maxActive: 65 },
     { docs: Array.from({ length: 21 }, (_, i) => `f${i}.md`) }, { docs: ['x'.repeat(201)] }, { secretPatterns: [5] },
   ];
@@ -64,16 +64,18 @@ it('PUT /api/project sets and echoes the new fields, clears them, and validates 
 
 it('the project profiles are what the picker shows and what spawn accepts; an internal spawn is exempt', async () => {
   const s = await bootServer();
-  expect((await state(s)).profiles).toEqual(KNOWN);
-  expect((await put(s, { profiles: ['backend'] })).status).toBe(200);
-  expect((await state(s)).profiles).toEqual(['backend']);
-  const refused = await ui(s, '/api/agents', 'POST', { slug: 'ui-work', profile: 'frontend' });
+  expect((await state(s)).profiles).toEqual(['developer']); // reviewer and recovery are started by the console, not picked
+  expect((await ui(s, '/api/profiles/other-prof', 'PUT', { name: 'other-prof', description: 'd', model: '', budgetTokens: null, readOnly: false, body: 'B' })).status).toBe(200);
+  expect((await state(s)).profiles).toEqual(['developer', 'other-prof']);
+  expect((await put(s, { profiles: ['developer'] })).status).toBe(200);
+  expect((await state(s)).profiles).toEqual(['developer']);
+  const refused = await ui(s, '/api/agents', 'POST', { slug: 'ui-work', profile: 'other-prof' });
   expect(refused.status).toBe(422);
   expect(refused.body.code).toBe('profile.invalid');
-  expect((await spawn(s, 'ui-work', { profile: 'frontend' })).body).toMatchObject({ status: 'error', code: 'profile.invalid' });
-  expect((await ui(s, '/api/agents', 'POST', { slug: 'api-work', profile: 'backend' })).status).toBe(201);
+  expect((await spawn(s, 'ui-work', { profile: 'other-prof' })).body).toMatchObject({ status: 'error', code: 'profile.invalid' });
+  expect((await ui(s, '/api/agents', 'POST', { slug: 'api-work', profile: 'developer' })).status).toBe(201);
   await put(s, { profiles: [] }); // clears: everything is offered again
-  expect((await state(s)).profiles).toEqual(KNOWN);
+  expect((await state(s)).profiles).toEqual(['developer', 'other-prof']);
 });
 
 it('model: the request beats the project; the project is used when nothing else names one', async () => {
@@ -109,14 +111,14 @@ it('budget: the profile beats the project default, which beats the configured on
   const t = makeRepo({ remote: true });
   repos.push(t);
   mkdirSync(join(t.repo, '.andromedacli', 'profiles'), { recursive: true });
-  writeFileSync(join(t.repo, '.andromedacli', 'profiles', 'dba.md'), '---\nname: dba\ndescription: no budget of its own\n---\nBODY');
+  writeFileSync(join(t.repo, '.andromedacli', 'profiles', 'no-budget.md'), '---\nname: no-budget\ndescription: no budget of its own\n---\nBODY');
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
   await put(s, { agentTokens: 5000 });
   const limitOf = (slug: string): number => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', `${slug}.json`), 'utf8')).budget?.limit;
-  expect((await spawn(s, 'project-default', { profile: 'dba' })).body.status).toBe('started');
+  expect((await spawn(s, 'project-default', { profile: 'no-budget' })).body.status).toBe('started');
   await until(() => { try { return limitOf('project-default') !== undefined; } catch { return false; } });
   expect(limitOf('project-default')).toBe(5000);
-  expect((await spawn(s, 'profile-wins')).body.status).toBe('started'); // the shipped backend profile sets 400000
+  expect((await spawn(s, 'profile-wins')).body.status).toBe('started'); // the shipped developer profile sets 400000
   await until(() => { try { return limitOf('profile-wins') !== undefined; } catch { return false; } });
   expect(limitOf('profile-wins')).toBe(400000);
   expect(worktreePathFor(t.repo, 'project-default')).toBeTruthy();

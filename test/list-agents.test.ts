@@ -4,7 +4,7 @@ import { autoClose, bootServer, mod, modEvent, ui, until, state } from './helper
 autoClose();
 
 const spawn = (s: Awaited<ReturnType<typeof bootServer>>, name: string, goal: string) =>
-  mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal });
+  mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal });
 const list = async (s: Awaited<ReturnType<typeof bootServer>>, as: string) => (await mod(s, as, '/v1/tools/list_agents', 'POST', {})).body.agents;
 
 it('main and agents see the same list: everyone of the project with profile, state and goal', async () => {
@@ -15,7 +15,7 @@ it('main and agents see the same list: everyone of the project with profile, sta
   expect(fromMain).toEqual(fromAgent);
   expect(fromMain).toEqual([
     { slug: 'shop-api', profile: 'main', role: 'main', state: 'starting' },
-    { slug: 'fix-login-timeout', profile: 'backend', role: 'agent', state: 'starting', goal: 'Fix the login timeout' },
+    { slug: 'fix-login-timeout', profile: 'developer', role: 'agent', state: 'starting', goal: 'Fix the login timeout' },
   ]);
 });
 it('a queued agent shows its position', async () => {

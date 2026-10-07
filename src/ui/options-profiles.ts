@@ -2,6 +2,7 @@ import type { ApiError } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k, t } from './i18n-client';
 import { errorText } from './new-agent';
+import { loadModelSelect } from './model-select';
 
 /** What `GET /api/profiles` returns for one profile (the user's layer, plus where the version in force comes from). */
 interface ProfileRow {
@@ -121,33 +122,7 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
     description.value = existing?.description ?? '';
     const model = el('select');
     model.name = 'profileModel';
-    const def = el('option');
-    def.value = '';
-    bindText(def, 'options.models.default');
-    model.append(def);
-    const wantedModel = existing?.model ?? '';
-    const setModels = (ids: { id: string; label: string; alias?: true }[]): void => {
-      for (const m of ids) {
-        if (m.alias) continue; // aliases are not offered, as in Options, Models
-        const o = el('option');
-        o.value = m.id;
-        o.textContent = m.label;
-        model.append(o);
-      }
-      if (wantedModel !== '' && ![...model.options].some((o) => o.value === wantedModel)) { // a model the catalog does not list stays, it is the profile's own
-        const o = el('option');
-        o.value = wantedModel;
-        o.textContent = wantedModel;
-        model.append(o);
-      }
-      model.value = wantedModel;
-    };
-    setModels([]);
-    void api<{ models: { id: string; label: string; alias?: true }[] }>('/api/models').then((res) => {
-      if (res.status !== 200) return;
-      model.replaceChildren(def);
-      setModels(res.body.models);
-    });
+    loadModelSelect(model, existing?.model ?? '', k('options.models.default'));
     const budget = el('input');
     budget.name = 'profileBudget';
     budget.type = 'number';

@@ -28,7 +28,7 @@ async function boot(o: { commit?: boolean; remote?: boolean; afterWorktree?: (sl
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true }, ...o.config }, afterWorktreeCreated: o.afterWorktree });
   return { s, t };
 }
-const spawnTool = (s: Running, name: string, goal = 'make it work') => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal });
+const spawnTool = (s: Running, name: string, goal = 'make it work') => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal });
 const snapshot = async (s: Running, slug: string): Promise<string> => (await ui(s, `/api/debug/snapshot/${slug}`)).body.text;
 const cwdOf = async (s: Running, slug: string): Promise<string> => {
   await until(async () => /CWD [^\r\n]+[\r\n]/.test(await snapshot(s, slug)));
@@ -64,7 +64,7 @@ it('a project folder that is not a repository is refused with git.notRepo, and w
   scratch.push(plain);
   const s = await bootServer({ projectRoot: plain, config: { git: { worktrees: true } } });
   expect((await spawnTool(s, 'fix-login')).body).toMatchObject({ status: 'error', code: 'git.notRepo' });
-  const viaUi = await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
+  const viaUi = await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
   expect(viaUi.status).toBe(422);
   expect(viaUi.body.code).toBe('git.notRepo');
   expect((await state(s)).agents).toEqual([]);

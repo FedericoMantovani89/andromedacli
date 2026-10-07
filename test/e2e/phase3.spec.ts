@@ -53,7 +53,7 @@ async function boot(o: { config?: Record<string, unknown>; testCommand?: string 
   const asMod = (slug: string, path: string, method = 'GET', body?: unknown) => call(s.sessionTokenFor(slug), path, method, body);
   const asUi = (path: string, method = 'GET', body?: unknown) => call(s.token, path, method, body);
   const event = (slug: string, type: string, data?: unknown) => asMod(slug, '/v1/events', 'POST', { type, sessionId: `sess-${slug}`, data });
-  const spawn = (name: string, goal = 'Do the work') => asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal });
+  const spawn = (name: string, goal = 'Do the work') => asMod('shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal });
   const tool = (slug: string, name: string, body: unknown) => asMod(slug, `/v1/tools/${name}`, 'POST', body);
   const guard = (slug: string, toolName: string, input: unknown) => asMod(slug, '/v1/guard', 'POST', { tool: toolName, input });
   const snapshot = async (slug: string): Promise<string> => (await asUi(`/api/debug/snapshot/${slug}`)).json.text;

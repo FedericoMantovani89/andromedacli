@@ -5,7 +5,7 @@ import type { SessionInfo, StateMessage } from '../src/shared/protocol';
 
 const params = (el: Element) => JSON.parse((el as HTMLElement).dataset.i18nParams ?? '{}');
 const byKey = (root: HTMLElement, key: string): HTMLElement | undefined => [...root.querySelectorAll<HTMLElement>('[data-i18n]')].find((e) => e.dataset.i18n === key);
-const info = (slug: string, state: SessionInfo['state'], status: SessionInfo['status'] = 'running'): SessionInfo => ({ slug, state, status, role: 'agent', profile: 'backend' });
+const info = (slug: string, state: SessionInfo['state'], status: SessionInfo['status'] = 'running'): SessionInfo => ({ slug, state, status, role: 'agent', profile: 'developer' });
 const make = (extra: Partial<StateMessage> = {}): StateMessage => ({ main: info('main', 'idle'), agents: [], ...extra } as unknown as StateMessage);
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });

@@ -3,10 +3,9 @@
   "id": "backend-java",
   "name": { "en": "Backend Java", "it": "Backend Java" },
   "description": {
-    "en": "Java service (Spring, JPA) with a backend and a database role; Maven or Gradle is detected from the project.",
-    "it": "Servizio Java (Spring, JPA) con un ruolo backend e uno database; Maven o Gradle sono rilevati dal progetto."
+    "en": "Java service (Spring, JPA); Maven or Gradle is detected from the project.",
+    "it": "Servizio Java (Spring, JPA); Maven o Gradle sono rilevati dal progetto."
   },
-  "profiles": ["backend", "dba"],
   "commands": { "build": "mvn -q -DskipTests package", "test": "mvn test" },
   "git": { "squash": true },
   "docs": ["README.md", "CHANGELOG.md"],

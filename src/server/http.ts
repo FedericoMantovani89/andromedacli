@@ -104,6 +104,8 @@ export interface Context extends V1Context {
   /** The budget thresholds and the default token limit, read at each launch. */
   readonly budgetConfig: Config['budget'];
   readonly guardMode: Config['guard']['mode'];
+  /** The test command the project's own files suggest (pom.xml, build.gradle, package.json); used while none is saved. */
+  detectedTestCommand(): string | undefined;
   /** A test seam: runs after an agent's worktree exists and before its process starts (a throw simulates a failed start). */
   afterWorktreeCreated?: (slug: string) => void | Promise<void>;
   getPrereq(): PrereqResult[] | null;
@@ -144,6 +146,11 @@ const STATIC: Record<string, { file: string; type: string }> = {
   '/xterm.css': { file: 'xterm.css', type: 'text/css; charset=utf-8' },
 };
 
+/** The profiles the new-agent menu offers: the project's own list (or all), only those that exist, without the two roles the console starts itself. */
+function pickableProfiles(offered: readonly string[] | undefined, existing: readonly string[]): string[] {
+  return (offered ?? existing).filter((n) => existing.includes(n) && n !== 'reviewer' && n !== 'recovery');
+}
+
 export function buildState(ctx: Context): StateMessage {
   const status = (slug: string): SessionInfo['status'] => {
     const p = ctx.ptys.status(slug);
@@ -179,8 +186,10 @@ export function buildState(ctx: Context): StateMessage {
     .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let squash: boolean | undefined;
+  let model: string | undefined;
+  let maxActive: number | undefined;
   let offeredProfiles: string[] | undefined;
-  try { ({ testCommand, squash, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
+  try { ({ testCommand, squash, model, maxActive, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
   const repos = ctx.repos();
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
@@ -191,7 +200,7 @@ export function buildState(ctx: Context): StateMessage {
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles')),
+    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
     queue: ctx.questions.pending(),
     ...(ctx.projects ? { projects: ctx.projects.list() } : {}),

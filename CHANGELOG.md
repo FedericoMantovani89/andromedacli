@@ -8,6 +8,8 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- Options, Project: while the test command is empty the console uses the one the project suggests (npm test from a package.json with a test script, mvn test or gradle test); the field shows it as a placeholder and says where it comes from. Switches with a longer explanation (squash, worktrees) have it in an (i) tooltip instead of a line below, and the template menu is called Template.
+- Shipped profiles are now `developer` (general), `reviewer` and `recovery`; `backend`, `dba` and `frontend` are gone, and so are the profiles of the Java and web templates (the project's CLAUDE.md says how it is built). The new-agent menu lists only profiles to pick by hand (not `reviewer`/`recovery`); a template's profile list is checked for its shape only. The build and lint command fields are gone from Options, Project (the console never used them).
 - Options: the Names tab is gone (it only listed fixed rules; the new-agent form already says why a name is refused).
 - Options: the panel has a visible scrollbar and a shadow at the edge that still has content behind it, so a long tab shows there is more below.
 - Options, Budget and limits: the token budget, the alert/restriction/stop levels and the usage-limit levels are horizontal sliders with the value in a read-only box at the right. Levels that must stay in order stop at their neighbour and are sent as one request; the footnote now says which settings apply to new agents.

@@ -29,7 +29,7 @@ const queue = async (s: Running): Promise<any[]> => (await ui(s, '/api/state')).
 
 /** Spawn, work, deliver, review (pass), merge: the whole pipeline up to "merged". */
 async function mergedTicket(s: Running, t: TestRepo, slug: string, file: string): Promise<void> {
-  expect((await tool(s, 'shop-api', 'spawn_agent', { name: slug, profile: 'backend', goal: `Work of ${slug}` })).body.status).toBe('started');
+  expect((await tool(s, 'shop-api', 'spawn_agent', { name: slug, profile: 'developer', goal: `Work of ${slug}` })).body.status).toBe('started');
   await tool(s, slug, 'checklist_set', { items: ITEMS });
   const wt = worktreePathFor(t.repo, slug);
   writeFileSync(join(wt, file), `${slug}\n`);

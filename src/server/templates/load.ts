@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { PROFILES } from '../../shared/protocol';
 import { isValidProjectField, isValidTestCommand } from '../project-store';
 
 /** Template ids are folder names: the slug rule (no separators, no traversal). */
@@ -62,7 +61,7 @@ export function validateTemplate(raw: unknown, folderId: string): { ok: true; da
   if (!description) return { ok: false, reason: 'description needs at least an "en" text' };
   let profiles: string[] | undefined;
   if (raw.profiles !== undefined) {
-    if (!isValidProjectField('profiles', raw.profiles, PROFILES)) return { ok: false, reason: 'profiles must be a list of known profile names' };
+    if (!isValidProjectField('profiles', raw.profiles)) return { ok: false, reason: 'profiles must be a list of profile names' };
     profiles = raw.profiles as string[];
   }
   const commands: TemplateData['commands'] = {};
@@ -83,13 +82,13 @@ export function validateTemplate(raw: unknown, folderId: string): { ok: true; da
       git.squash = raw.git.squash;
     }
     if (raw.git.secretPatterns !== undefined) {
-      if (!isValidProjectField('secretPatterns', raw.git.secretPatterns, PROFILES)) return { ok: false, reason: 'git.secretPatterns must be a list of short texts' };
+      if (!isValidProjectField('secretPatterns', raw.git.secretPatterns)) return { ok: false, reason: 'git.secretPatterns must be a list of short texts' };
       git.secretPatterns = raw.git.secretPatterns as string[];
     }
   }
   let docs: string[] = [];
   if (raw.docs !== undefined) {
-    if (!isValidProjectField('docs', raw.docs, PROFILES)) return { ok: false, reason: 'docs must be a list of at most 20 short paths' };
+    if (!isValidProjectField('docs', raw.docs)) return { ok: false, reason: 'docs must be a list of at most 20 short paths' };
     docs = raw.docs as string[];
   }
   const defaults: TemplateData['defaults'] = {};
@@ -98,7 +97,7 @@ export function validateTemplate(raw: unknown, folderId: string): { ok: true; da
     for (const key of ['model', 'agentTokens', 'maxActive'] as const) {
       const v = raw.defaults[key];
       if (v === undefined) continue;
-      if (!isValidProjectField(key, v, PROFILES)) return { ok: false, reason: `defaults.${key} is not valid` };
+      if (!isValidProjectField(key, v)) return { ok: false, reason: `defaults.${key} is not valid` };
       (defaults as Record<string, unknown>)[key] = v;
     }
   }

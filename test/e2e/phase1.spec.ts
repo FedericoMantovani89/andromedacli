@@ -57,7 +57,7 @@ try {
     const typed = 'abcdefghijklmnopqrst';
     const typing = page.keyboard.type(typed, { delay: 100 }); // starts without any click: main owns the keyboard at open
     await sleep(150);
-    for (const slug of ['one-job', 'two-job', 'three-job']) { await post('/api/agents', { slug, profile: 'backend' }); await sleep(150); }
+    for (const slug of ['one-job', 'two-job', 'three-job']) { await post('/api/agents', { slug, profile: 'developer' }); await sleep(150); }
     await typing;
     await page.keyboard.press('Enter');
     check('typed text reached main intact', await until(async () => (await snapshot('shop-api')).includes(`ECHO:${typed}`)), await snapshot('shop-api'));
@@ -102,8 +102,8 @@ try {
     check('generic slug rejected with the translated message',
       await until(async () => (await again.locator('.form-error').innerText()).includes('"agent-1" is too generic')));
     check('rejected slug did not create a panel', (await again.locator(panel('agent-1')).count()) === 0);
-    const dup1 = await post('/api/agents', { slug: 'fix-login', profile: 'dba' });
-    const dup2 = await post('/api/agents', { slug: 'fix-login', profile: 'dba' });
+    const dup1 = await post('/api/agents', { slug: 'fix-login', profile: 'developer' });
+    const dup2 = await post('/api/agents', { slug: 'fix-login', profile: 'developer' });
     check('duplicate slug rejected', dup1.status === 201 && dup2.status === 422 && dup2.body.code === 'slug.duplicate');
 
     // 5. i18n switch at runtime, no navigation
@@ -138,13 +138,13 @@ try {
   // 8. With more than 4 agents (bars), a state update must not move the node the user is typing in (reviewer finding)
   {
     const { s, post } = await boot({ configured: true });
-    for (const slug of ['one-job', 'two-job', 'three-job', 'four-job', 'five-job', 'six-job']) await post('/api/agents', { slug, profile: 'backend' });
+    for (const slug of ['one-job', 'two-job', 'three-job', 'four-job', 'five-job', 'six-job']) await post('/api/agents', { slug, profile: 'developer' });
     const page = await open(`${s.url}/?token=${s.token}`);
     check('agents beyond 4 collapse to bars', await until(async () => (await page.locator('.bar').count()) === 2));
     await page.click('#new-agent-btn');
     const slugInput = page.locator('input[name="slug"]');
     await slugInput.pressSequentially('hello', { delay: 60 });
-    await post('/api/agents', { slug: 'seven-job', profile: 'backend' }); // state broadcast while typing
+    await post('/api/agents', { slug: 'seven-job', profile: 'developer' }); // state broadcast while typing
     await until(async () => (await page.locator('.bar').count()) === 3);
     await slugInput.pressSequentially('world', { delay: 60 });
     check('typing in the new-agent form survives a state update with bars present', (await slugInput.inputValue()) === 'helloworld', await slugInput.inputValue());
@@ -169,7 +169,7 @@ try {
     await page.keyboard.press('Enter');
     check('after the wizard closes the keyboard is back in main', await until(async () => (await snapshot('shop-api')).includes('ECHO:yyy')));
     check('queue shows the real count (nothing is waiting)', (await page.locator('#queue-btn').innerText()) === 'Queue (0)', await page.locator('#queue-btn').innerText());
-    for (const slug of ['one-job', 'two-job']) await post('/api/agents', { slug, profile: 'backend' });
+    for (const slug of ['one-job', 'two-job']) await post('/api/agents', { slug, profile: 'developer' });
     // "Agents active/max" since Phase 5 (SPEC 16.7): two agents are active, the main session is not counted
     check('status bar counts agents without the main session', await until(async () => /\bAgents 2\/\d+\b/.test(await page.locator('#statusbar').innerText())), await page.locator('#statusbar').innerText());
     await page.close();
