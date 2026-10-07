@@ -1,9 +1,10 @@
 import type { ApiError, PrereqResult, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { errorText } from './new-agent';
-import { bindText, k, language, t } from './i18n-client';
+import { bindText, k, language, setLanguage, setTitle, t } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
 import { openInstallDialog } from './install-dialog';
+import { openRestartDialog } from './restart-dialog';
 import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
 import { openSaveTemplateDialog } from './new-project';
@@ -42,6 +43,8 @@ interface Env {
   error: HTMLElement;
   fail(res: { status: number; body: unknown }): boolean;
   getState(): StateMessage | undefined;
+  /** Remembers a change until Save: one request per key, the last one wins. Nothing is sent before Save. */
+  stage(key: string, run: () => Promise<{ status: number; body: unknown }>): void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
@@ -74,18 +77,16 @@ const setPath = (obj: Record<string, unknown>, path: string, value: unknown): vo
 const toPatch = (path: string, value: unknown): Record<string, unknown> =>
   path.split('.').reduceRight<unknown>((acc, p) => ({ [p]: acc }), value) as Record<string, unknown>;
 
-/** Saves one config entry; on success the cached config follows, on failure the caller puts the field back. */
-async function saveEntry(env: Env, path: string, value: unknown): Promise<boolean> {
-  const res = await api<ApiError>('/api/config', { method: 'PUT', body: toPatch(path, value) });
-  if (env.fail(res)) return false;
+/** Stages one config entry (sent by Save); the cached config follows at once so a tab built again shows the pending value. */
+function saveEntry(env: Env, path: string, value: unknown): void {
   if (env.options) setPath(env.options.config, path, value);
-  return true;
+  env.stage(`config:${path}`, () => api<ApiError>('/api/config', { method: 'PUT', body: toPatch(path, value) }));
 }
 
 type FieldKind = 'number' | 'text' | 'bool' | 'lines';
 interface FieldDef { path: string; label: string; kind: FieldKind; help?: string }
 
-/** One editable entry: saves on change through PUT /api/config, shows the server's error and reverts the field when it is refused. */
+/** One editable entry: a change is staged for Save (PUT /api/config); a value that is not a number is refused at once. */
 function createField(env: Env, def: FieldDef): HTMLElement {
   const row = el('label', def.kind === 'bool' ? 'settings-switch' : 'options-field');
   const text = el('span');
@@ -96,11 +97,7 @@ function createField(env: Env, def: FieldDef): HTMLElement {
     box.type = 'checkbox';
     box.name = def.path;
     box.checked = current === true;
-    let saved = box.checked;
-    box.addEventListener('change', () => {
-      const wanted = box.checked;
-      void saveEntry(env, def.path, wanted).then((ok) => { if (ok) saved = wanted; else box.checked = saved; });
-    });
+    box.addEventListener('change', () => saveEntry(env, def.path, box.checked));
     row.append(box, text);
   } else if (def.kind === 'lines') {
     const area = el('textarea');
@@ -108,10 +105,10 @@ function createField(env: Env, def: FieldDef): HTMLElement {
     area.rows = 5;
     const show = (v: unknown): string => (Array.isArray(v) ? v.join('\n') : '');
     area.value = show(current);
-    let saved = area.value;
     area.addEventListener('change', () => {
       const wanted = area.value.split('\n').map((l) => l.trim()).filter((l) => l !== '');
-      void saveEntry(env, def.path, wanted).then((ok) => { if (ok) saved = area.value = wanted.join('\n'); else area.value = saved; });
+      area.value = wanted.join('\n');
+      saveEntry(env, def.path, wanted);
     });
     row.append(text, area);
   } else {
@@ -129,7 +126,8 @@ function createField(env: Env, def: FieldDef): HTMLElement {
         input.value = saved;
         return;
       }
-      void saveEntry(env, def.path, wanted).then((ok) => { if (ok) saved = input.value = String(wanted); else input.value = saved; });
+      saved = input.value = String(wanted);
+      saveEntry(env, def.path, wanted);
     });
     row.append(text, input);
   }
@@ -260,10 +258,7 @@ function guardTab(env: Env): HTMLElement {
   const warning = el('p', 'settings-warning');
   bindText(warning, 'settings.bypass.warning');
   bypass.addEventListener('change', () => {
-    const wanted = bypass.checked;
-    void api<ApiError>('/api/config', { method: 'PUT', body: { agents: { bypassPermissions: wanted } } }).then((res) => {
-      if (env.fail(res)) bypass.checked = !wanted; // not saved: the switch must not show a state that is not real
-    });
+    saveEntry(env, 'agents.bypassPermissions', bypass.checked);
   });
 
   const guardRow = el('label');
@@ -278,14 +273,7 @@ function guardTab(env: Env): HTMLElement {
     guard.append(o);
   }
   guard.value = state?.settings.guardMode ?? 'enforce';
-  let savedMode = guard.value;
-  guard.addEventListener('change', () => {
-    const wanted = guard.value;
-    void api<ApiError>('/api/config', { method: 'PUT', body: { guard: { mode: wanted } } }).then((res) => {
-      if (env.fail(res)) guard.value = savedMode;
-      else savedMode = wanted;
-    });
-  });
+  guard.addEventListener('change', () => saveEntry(env, 'guard.mode', guard.value));
   guardRow.append(guardText, guard);
   box.append(bypassRow, warning, guardRow, note(k('settings.appliesToNew')));
   return box;
@@ -304,9 +292,7 @@ function projectsTab(env: Env): HTMLElement {
   squashRow.append(squash, squashText);
   squash.addEventListener('change', () => {
     const wanted = squash.checked;
-    void api<ApiError>('/api/project', { method: 'PUT', body: { squash: wanted } }).then((res) => {
-      if (env.fail(res)) squash.checked = !wanted;
-    });
+    env.stage('project:squash', () => api<ApiError>('/api/project', { method: 'PUT', body: { squash: wanted } }));
   });
 
   const testForm = el('form', 'settings-test');
@@ -318,14 +304,12 @@ function projectsTab(env: Env): HTMLElement {
   test.autocomplete = 'off';
   test.value = state?.project.testCommand ?? '';
   testLabel.append(testText, test);
-  const save = el('button');
-  save.type = 'submit';
-  bindText(save, 'common.save');
-  testForm.addEventListener('submit', (ev) => {
-    ev.preventDefault();
-    void api<ApiError>('/api/project', { method: 'PUT', body: { testCommand: test.value } }).then((res) => { env.fail(res); });
+  testForm.addEventListener('submit', (ev) => ev.preventDefault());
+  test.addEventListener('change', () => {
+    const wanted = test.value;
+    env.stage('project:testCommand', () => api<ApiError>('/api/project', { method: 'PUT', body: { testCommand: wanted } }));
   });
-  testForm.append(testLabel, save, note(k('settings.testCommand.help')));
+  testForm.append(testLabel, note(k('settings.testCommand.help')));
   box.append(squashRow, note(k('settings.squash.help')), testForm);
 
   // Fields of the project: always shown (a project made from the generic template carries none yet, and this is where they are set).
@@ -341,12 +325,9 @@ function projectsTab(env: Env): HTMLElement {
     input.name = key;
     if (kind === 'number') input.type = 'number';
     input.value = String(project[key] ?? '');
-    let saved = input.value;
     input.addEventListener('change', () => {
       const wanted = kind === 'number' ? (input.value.trim() === '' ? null : Number(input.value)) : input.value;
-      void api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }).then((res) => {
-        if (env.fail(res)) input.value = saved; else saved = input.value;
-      });
+      env.stage(`project:${key}`, () => api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }));
     });
     row.append(span, input);
     box.append(row);
@@ -443,7 +424,7 @@ function languageTab(env: Env): HTMLElement {
   const text = el('span');
   bindText(text, 'settings.language');
   const select = createLanguageSelect(env.state?.language ?? 'en', env.state?.languages ?? [], (value) => {
-    void api('/api/config', { method: 'PUT', body: { language: value } });
+    env.stage('config:language', () => api<ApiError>('/api/config', { method: 'PUT', body: { language: value } }));
   });
   row.append(text, select);
   return row;
@@ -457,24 +438,27 @@ function prereqTab(env: Env): HTMLElement {
   return box;
 }
 
-/** The agent model menu: Default, the aliases, then the catalog; a saved choice that left the catalog stays selected with a warning. */
+/** The agent model menu: Default, then the catalog's real models; a saved choice that left the catalog stays selected with a warning. */
 function modelsTab(env: Env): HTMLElement {
-  const box = el('div', 'settings-agents');
+  const box = el('div', 'settings-agents options-models');
   const bad = unavailable(env);
   if (bad) { box.append(bad); return box; }
-  const row = el('label', 'options-field');
+  const head = el('div', 'options-field-head');
   const text = el('span');
   bindText(text, 'options.models.agent');
+  const updated = el('span', 'settings-note');
+  head.append(text, updated);
   const select = el('select');
   select.name = 'models.agent';
-  const refresh = el('button');
+  const refresh = el('button', 'icon-btn icon-refresh');
   refresh.type = 'button';
   refresh.name = 'refreshModels';
-  bindText(refresh, 'options.models.refresh');
-  const source = el('p', 'settings-note');
+  setTitle(refresh, k('options.models.refresh'));
+  const pick = el('div', 'options-select-row');
+  pick.append(select, refresh);
   const missing = el('p', 'settings-warning');
   missing.hidden = true;
-  let saved = String(getPath(env.options!.config, 'models.agent') ?? '');
+  let wantedModel = String(getPath(env.options!.config, 'models.agent') ?? '');
 
   const render = (list: ModelList): void => {
     select.replaceChildren();
@@ -484,42 +468,55 @@ function modelsTab(env: Env): HTMLElement {
     select.append(def);
     const ids = new Set<string>();
     for (const m of list.models) {
+      if (m.alias) continue; // aliases are not offered: only real model ids
       const o = el('option');
       o.value = m.id;
-      o.textContent = m.alias ? `${m.label} (${t('options.models.alias')})` : m.label;
+      o.textContent = m.label;
       select.append(o);
       ids.add(m.id);
     }
-    if (list.current !== '' && !ids.has(list.current)) { // kept selected: the choice is the user's, even if the catalog dropped it
+    const current = wantedModel;
+    if (current !== '' && !ids.has(current)) { // kept selected: the choice is the user's, even if the catalog dropped it
       const o = el('option');
-      o.value = list.current;
-      o.textContent = list.current;
+      o.value = current;
+      o.textContent = current;
       select.append(o);
     }
-    select.value = list.current;
-    bindText(source, `options.models.source.${list.source}`, { updated: list.updated ?? t('common.notAvailable') });
-    missing.hidden = !list.missing;
-    if (list.missing) bindText(missing, 'options.models.missing', { model: list.current });
+    select.value = current;
+    bindText(updated, 'options.models.updated', { updated: list.updated ?? t('common.notAvailable') });
+    missing.hidden = !(list.missing && current === list.current);
+    if (!missing.hidden) bindText(missing, 'options.models.missing', { model: current });
   };
   const load = (path: string, method: string): void => {
     void api<ModelList>(path, { method }).then((res) => { if (res.status === 200) render(res.body); else env.fail(res); });
   };
   select.addEventListener('change', () => {
-    const wanted = select.value;
-    void saveEntry(env, 'models.agent', wanted).then((ok) => {
-      if (ok) { saved = wanted; load('/api/models', 'GET'); } else select.value = saved;
-    });
+    wantedModel = select.value;
+    saveEntry(env, 'models.agent', wantedModel);
+    missing.hidden = true;
   });
   refresh.addEventListener('click', () => load('/api/models/refresh', 'POST'));
-  row.append(text, select);
-  box.append(
-    row, refresh, source, missing,
-    fields(env, [
-      { path: 'models.catalogUrl', label: k('options.models.catalogUrl'), kind: 'text', help: k('options.models.catalogUrl.help') },
-      { path: 'models.cacheHours', label: k('options.models.cacheHours'), kind: 'number' },
-    ]),
-    note(k('settings.appliesToNew')),
-  );
+
+  const urlLabel = el('label', 'options-field');
+  const urlHead = el('span', 'options-field-head');
+  const urlText = el('span');
+  bindText(urlText, 'options.models.catalogUrl');
+  const info = el('span', 'info-icon');
+  setTitle(info, k('options.models.catalogUrl.help'));
+  info.tabIndex = 0;
+  urlHead.append(urlText, info);
+  const url = el('input');
+  url.name = 'models.catalogUrl';
+  url.autocomplete = 'off';
+  url.value = String(getPath(env.options!.config, 'models.catalogUrl') ?? '');
+  url.addEventListener('change', () => saveEntry(env, 'models.catalogUrl', url.value.trim()));
+  urlLabel.append(urlHead, url);
+
+  const foot = note(k('settings.appliesToNew'));
+  foot.classList.add('options-footnote');
+  const agentRow = el('div', 'options-field');
+  agentRow.append(head, pick);
+  box.append(agentRow, missing, urlLabel, foot);
   load('/api/models', 'GET');
   return box;
 }
@@ -599,17 +596,27 @@ function pluginsTab(env: Env): HTMLElement {
   return box;
 }
 
+/** Settings Claude reads only when a session starts: a changed one asks for a restart after Save. */
+const RESTART_PATHS = ['agents.bypassPermissions', 'guard.mode', 'models.agent'] as const;
+
 const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
   models: modelsTab, profiles: profilesTab, budget: budgetTab, names: namesTab, projects: projectsTab, git: gitTab, guard: guardTab, mod: modTab,
   notifications: (env) => {
     const box = el('div');
-    if (env.state) renderNotificationsTab(box, env.state);
+    if (env.state) renderNotificationsTab(box, env.state, env.stage);
     return box;
   },
   language: languageTab, prerequisites: prereqTab, plugins: pluginsTab, server: serverTab,
 };
 
-/** Opens the tabbed Options dialog (SPEC 5.8). Every editable entry saves when it changes and goes back when the server refuses it. */
+/** Where a restart-relevant setting is when the options payload has no value for it (the guard tab reads the state, not the config). */
+function getRestartDefault(path: (typeof RESTART_PATHS)[number], state: StateMessage | undefined): unknown {
+  if (path === 'agents.bypassPermissions') return state?.settings.bypassPermissions ?? false;
+  if (path === 'guard.mode') return state?.settings.guardMode ?? 'enforce';
+  return '';
+}
+
+/** Opens the tabbed Options dialog (SPEC 5.8). Changes are staged while editing; Save sends them and closes, X discards them. */
 export async function openOptions(getState: () => StateMessage | undefined, first: OptionTab = 'models'): Promise<void> {
   const overlay = document.getElementById('overlay')!;
   const loaded = await api<OptionsPayload>('/api/options').catch(() => ({ status: 0, body: null }));
@@ -618,6 +625,8 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   const title = el('h2');
   bindText(title, 'settings.title');
   const error = el('div', 'form-error');
+  const pending = new Map<string, () => Promise<{ status: number; body: unknown }>>();
+  const startLanguage = getState()?.language;
   const env: Env = {
     state: getState(), options: loaded.status === 200 ? (loaded.body as OptionsPayload) : null, error, getState,
     fail: (res) => {
@@ -625,17 +634,22 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
       error.textContent = errorText(res.body as ApiError);
       return true;
     },
+    stage: (key, run) => { pending.delete(key); pending.set(key, run); },
   };
   const tabs = el('div', 'options-tabs');
   tabs.setAttribute('role', 'tablist');
   const panel = el('div', 'options-panel');
   panel.setAttribute('role', 'tabpanel');
   const buttons = new Map<OptionTab, HTMLButtonElement>();
+  const built = new Map<OptionTab, HTMLElement>(); // a tab keeps its fields while another is shown, so staged edits are not lost
+  const LIVE: readonly OptionTab[] = ['prerequisites', 'plugins']; // read-only views rebuilt on every visit
   const show = (tab: OptionTab): void => {
     for (const [id, b] of buttons) { b.setAttribute('aria-selected', String(id === tab)); b.classList.toggle('selected', id === tab); }
     error.textContent = '';
     env.state = getState() ?? env.state; // the dialog may stay open while projects and settings change
-    panel.replaceChildren(BUILDERS[tab](env));
+    let view = built.get(tab);
+    if (!view || LIVE.includes(tab)) { view = BUILDERS[tab](env); built.set(tab, view); }
+    panel.replaceChildren(view);
   };
   for (const id of OPTION_TABS) {
     const b = el('button', 'options-tab');
@@ -647,10 +661,38 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
     buttons.set(id, b);
     tabs.append(b);
   }
-  const close = el('button');
-  bindText(close, 'common.close');
-  close.addEventListener('click', closeOverlay);
-  dialog.append(title, tabs, panel, error, close);
+  const x = el('button', 'icon-btn dialog-x');
+  x.type = 'button';
+  x.name = 'closeOptions';
+  setTitle(x, 'common.close');
+  x.addEventListener('click', () => {
+    const lang = startLanguage;
+    closeOverlay();
+    if (lang !== undefined && lang !== language()) void setLanguage(lang); // a language previewed but not saved goes back
+  });
+  const save = el('button');
+  save.type = 'button';
+  save.name = 'saveOptions';
+  const readNow = (): unknown[] => RESTART_PATHS.map((p) => getPath(env.options?.config, p) ?? getRestartDefault(p, getState()));
+  const before = readNow();
+  bindText(save, 'common.save');
+  save.addEventListener('click', () => {
+    save.disabled = true;
+    void (async () => {
+      for (const [key, run] of [...pending]) {
+        const res = await run().catch(() => ({ status: 0, body: { code: 'network' } }));
+        if (env.fail(res)) { save.disabled = false; return; } // stays open with what was refused still staged
+        pending.delete(key);
+      }
+      // The guard and bypass tabs are built from the state, the others from the config: the staged value is in the config either way.
+      const after = readNow();
+      const settings = after.some((v, i) => JSON.stringify(v) !== JSON.stringify(before[i]));
+      const programs = getState()?.prereq?.some((r) => r.status === 'restart') === true;
+      if (settings || programs) openRestartDialog({ settings, programs });
+      else closeOverlay();
+    })();
+  });
+  dialog.append(title, x, tabs, panel, error, save);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
   show(first);

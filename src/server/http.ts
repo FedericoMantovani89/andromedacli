@@ -39,7 +39,7 @@ import type { LoopService } from './budget/loop-service';
 import type { Ledger } from './budget/ledger';
 import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
-import { handleProjectsRoute, type ProjectsApi } from './projects-api';
+import { handleProjectsRoute, ProjectError, type ProjectsApi } from './projects-api';
 
 /** Finds the project a request or socket asked for with `?project=<name>`; no name means the first project; undefined when it is not open. */
 export type ProjectResolver = (name?: string) => Context | undefined;
@@ -252,6 +252,16 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
 
     // Opening and closing projects are not about one project; every other route below is, and takes it from `?project=` (absent: the first).
     if ((req.method === 'POST' && path === '/api/projects') || (req.method === 'DELETE' && /^\/api\/projects\/[^/]+$/.test(path))) return handleProjectsRoute(host, req, res, path);
+    // The sessions of every project start again with the settings saved so far (Options asks after a change they only read at launch).
+    if (req.method === 'POST' && path === '/api/restart') {
+      try {
+        await host.projects.restart();
+        return send(res, 200, {});
+      } catch (e) {
+        if (e instanceof ProjectError) return fail(res, e.httpStatus, e.code, e.params);
+        return fail(res, 500, 'internal');
+      }
+    }
     // What the console knows without any project: the welcome screen asks this before anything else.
     if (req.method === 'GET' && path === '/api/host') return send(res, 200, host.info());
     if (req.method === 'POST' && path === '/api/pick-folder') {

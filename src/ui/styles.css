@@ -289,3 +289,21 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .form-actions { justify-content: flex-start; }
 /* A rule that sets `display` would otherwise win over the hidden attribute. */
 [hidden] { display: none !important; }
+
+/* Options dialog: close X, icon buttons, the info tooltip icon and the footnote. */
+.options-dialog { position: relative; }
+.options-dialog > .dialog-x { position: absolute; grid-area: auto; top: 12px; right: 14px; margin: 0; z-index: 1; justify-self: auto; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0 !important; font-size: 18px; line-height: 1; }
+.dialog-x::before { content: "\00d7"; font-size: 22px; }
+.icon-refresh { color: var(--ok, #4cc38a); }
+.icon-refresh::before { content: "\21bb"; font-size: 18px; }
+.options-select-row { display: flex; gap: 8px; align-items: center; }
+.options-select-row select { flex: 1 1 auto; min-width: 0; }
+.options-field-head { display: flex; align-items: baseline; gap: 10px; }
+.info-icon { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 6px; border: 1px solid var(--muted); border-radius: 50%;
+  color: var(--muted); font-size: 10px; font-style: italic; font-weight: 600; cursor: help; }
+.info-icon::before { content: "i"; }
+.info-icon:hover, .info-icon:focus { color: var(--text); border-color: var(--text); }
+.options-panel:has(> .options-models) { grid-template-rows: minmax(0, 1fr); }
+.options-models { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.options-footnote { margin-top: auto; font-size: 11.5px; max-width: none; }

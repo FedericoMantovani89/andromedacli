@@ -6,9 +6,9 @@ import { errorText } from './new-agent';
 
 /**
  * The Notifications tab (SPEC 20.4, 22.2): which events notify, quiet hours, sound, grouping, the browser fallback, a test toast and
- * whether a toast can be shown at all. Every change is saved at once through PUT /api/config and applies to the next event.
+ * whether a toast can be shown at all. Changes are staged and sent by the dialog's Save through PUT /api/config; they apply to the next event.
  */
-export function renderNotificationsTab(container: HTMLElement, state: StateMessage): void {
+export function renderNotificationsTab(container: HTMLElement, state: StateMessage, stage: (key: string, run: () => Promise<{ status: number; body: unknown }>) => void): void {
   const config: NotificationsConfig = structuredClone(state.notifications?.config ?? DEFAULT_NOTIFICATIONS);
   container.replaceChildren();
   const box = document.createElement('div');
@@ -16,13 +16,16 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   const error = document.createElement('div');
   error.className = 'form-error';
 
-  /** Saves one part of the settings; `undo` puts the control back when the server refuses (a switch must not show what is not real). */
-  const save = (patch: Record<string, unknown>, undo: () => void): void => {
-    void api<ApiError>('/api/config', { method: 'PUT', body: { notifications: patch } }).then((res) => {
-      if (res.status === 200) { error.textContent = ''; return; }
-      error.textContent = errorText(res.body);
-      undo();
-    });
+  /** Stages one part of the settings for the dialog's Save; a later change of the same setting replaces it. */
+  const save = (patch: Record<string, unknown>): void => {
+    const path: string[] = [];
+    for (let cur: unknown = patch; typeof cur === 'object' && cur !== null; ) {
+      const [key, next] = Object.entries(cur)[0] ?? [];
+      if (key === undefined) break;
+      path.push(key);
+      cur = next;
+    }
+    stage(`notifications:${path.join('.')}`, () => api<ApiError>('/api/config', { method: 'PUT', body: { notifications: patch } }));
   };
 
   // One switch per event type.
@@ -42,7 +45,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
     input.addEventListener('change', () => {
       const wanted = input.checked;
       config.enabled[type as NotifyType] = wanted;
-      save({ enabled: { [type]: wanted } }, () => { input.checked = !wanted; config.enabled[type as NotifyType] = !wanted; });
+      save({ enabled: { [type]: wanted } });
     });
     row.append(input, text);
     box.append(row);
@@ -60,7 +63,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   quietRow.append(quiet, quietText);
   quiet.addEventListener('change', () => {
     const wanted = quiet.checked;
-    save({ quietHours: { enabled: wanted } }, () => { quiet.checked = !wanted; });
+    save({ quietHours: { enabled: wanted } });
   });
   const times = document.createElement('div');
   times.className = 'settings-switch';
@@ -77,7 +80,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
     input.addEventListener('change', () => {
       const wanted = input.value;
       if (wanted === '') { input.value = saved; return; } // a cleared time is not a time
-      save({ quietHours: { [name]: wanted } }, () => { input.value = saved; });
+      save({ quietHours: { [name]: wanted } });
       saved = wanted;
     });
     label.append(text, input);
@@ -96,7 +99,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   soundRow.append(soundInput, soundText);
   soundInput.addEventListener('change', () => {
     const wanted = soundInput.checked;
-    save({ sound: wanted }, () => { soundInput.checked = !wanted; });
+    save({ sound: wanted });
   });
 
   const groupLabel = document.createElement('label');
@@ -112,8 +115,8 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   let savedGroup = group.value;
   group.addEventListener('change', () => {
     const wanted = Number(group.value);
-    const was = savedGroup;
-    save({ groupSeconds: wanted }, () => { group.value = was; });
+    if (!Number.isFinite(wanted) || wanted < 1 || wanted > 60) { group.value = savedGroup; return; } // the server's range, refused at once
+    save({ groupSeconds: wanted });
     savedGroup = String(wanted);
   });
   groupLabel.append(groupText, group);
@@ -136,7 +139,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
         try { granted = typeof Notification !== 'undefined' && (Notification.permission === 'granted' || (await Notification.requestPermission()) === 'granted'); } catch { granted = false; }
         if (!granted) { browser.checked = false; return; }
       }
-      save({ browserFallback: wanted }, () => { browser.checked = !wanted; });
+      save({ browserFallback: wanted });
     })();
   });
   const browserHelp = document.createElement('p');

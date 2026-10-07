@@ -32,6 +32,8 @@ export interface ProjectsApi {
   add(o: AddProjectOptions): Promise<{ name: string }>;
   /** `purge`: also takes the project back to "never opened" (worktrees, its branches, `.andromedacli`). */
   close(name: string, purge?: boolean): Promise<void>;
+  /** Ends every session of every open project and starts them again (main resumes its session, agents that were running are woken), with the settings and PATH of this moment. The console itself stays up. */
+  restart(): Promise<void>;
 }
 
 /** A project name: what `projectNameFromDir` makes (lowercase ASCII and dashes, 3 to 40 characters). */

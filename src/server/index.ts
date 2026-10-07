@@ -53,6 +53,7 @@ import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
+import { refreshProcessPath } from './prereq/path-refresh';
 import { NullNotifier, ToastNotifier, type Notifier } from './notify/notifier';
 import { Presence } from './notify/presence';
 import { NotificationService, realNotifyClock, type NotifyClock } from './notify/service';
@@ -1125,11 +1126,40 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     ws.broadcastState();
   });
 
+  /**
+   * One project at a time: the agents that have a process are noted, the project closes (the sessions end, the next start finds them
+   * dormant), opens again (its main resumes its session) and the noted agents are woken, so everything runs with the settings and the
+   * PATH of now. The console, its port and its token stay.
+   */
+  const restartSessions = (): Promise<void> => exclusive(async () => {
+    if (closing) throw new ProjectError('project.badRoot', 409);
+    await refreshProcessPath();
+    for (const old of [...runtimes]) {
+      const running = old.ctx.registry.list().filter((a) => a.role === 'agent' && old.ctx.ptys.status(a.slug) === 'running').map((a) => a.slug);
+      try { await old.close(); } catch { /* the sessions were killed as far as they could be */ }
+      let rt: ProjectRuntime;
+      try {
+        rt = await createProjectRuntime(shared, { projectRoot: old.root, projectName: old.name });
+      } catch (e) {
+        runtimes.splice(runtimes.indexOf(old), 1); // closed and not reopened: leaving it listed would answer requests with a dead runtime
+        persistProjects();
+        ws.broadcastState();
+        throw e;
+      }
+      runtimes[runtimes.indexOf(old)] = rt;
+      rt.start();
+      for (const slug of running) await rt.ctx.wake.wake(slug, 'user'); // a refusal (no session yet, frozen quota) leaves it dormant
+    }
+    ws.broadcastState();
+    void shared.refreshPrereq().catch(() => undefined); // a program installed meanwhile is "restart" until the new PATH is seen
+  });
+
   shared.projectsApi = {
     list: () => runtimes.map((r) => r.summary()),
     contexts: () => runtimes.map((r) => r.ctx),
     add: addProject,
     close: closeProject,
+    restart: restartSessions,
   };
 
   // The CLI's project first, then the remembered ones whose folder still exists (a missing one is skipped and reported once).

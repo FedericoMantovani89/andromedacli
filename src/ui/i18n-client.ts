@@ -75,8 +75,16 @@ export function setPlaceholder(el: HTMLInputElement, key: string): void {
   el.placeholder = t(key);
 }
 
+/** Sets an element's tooltip and accessible name from a key and remembers it for language changes. */
+export function setTitle(el: HTMLElement, key: string): void {
+  el.dataset.i18nTitle = key;
+  el.title = t(key);
+  el.setAttribute('aria-label', el.title);
+}
+
 export function retranslate(root: ParentNode = document): void {
   for (const el of root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder!);
+  for (const el of root.querySelectorAll<HTMLElement>('[data-i18n-title]')) { el.title = t(el.dataset.i18nTitle!); el.setAttribute('aria-label', el.title); }
   for (const el of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const params = el.dataset.i18nParams ? (JSON.parse(el.dataset.i18nParams) as Record<string, string | number>) : undefined;
     el.textContent = t(el.dataset.i18n!, params);

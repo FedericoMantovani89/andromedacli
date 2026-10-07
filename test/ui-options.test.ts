@@ -24,7 +24,7 @@ beforeEach(() => {
     if (init?.method === 'PUT') { puts.push(JSON.parse(init.body ?? 'null')); return json(putStatus, putStatus === 200 ? {} : { code: 'config.invalid', params: { path: 'x' } }); }
     if (init?.method === 'POST') { posts.push(url); return json(200, url === '/api/prereq/recheck' ? [{ id: 'git', status: 'ok', version: '2.50', required: true }] : { ok: true }); }
     if (url === '/api/prereq/git/install') return json(200, { id: 'git', action: 'install', display: 'winget install --id Git.Git -e --source winget' });
-    if (url === '/api/options') return json(200, options);
+    if (url === '/api/options') return json(200, structuredClone(options)); // a fresh copy: staged edits change the object they are given
     if (url === '/api/models') return json(200, { models: [{ id: 'opus', label: 'opus', alias: true }], source: 'shipped', current: '', missing: false });
     if (url === '/api/plugins') return json(200, { source: 'shipped', plugins: [] });
     return json(404, null);
@@ -73,34 +73,72 @@ describe('options dialog', () => {
     expect(document.querySelector('select[name="template"]')).not.toBeNull();
     expect(document.querySelector('button[name="applyTemplate"]')).not.toBeNull();
   });
-  it('a saved field sends only its own entry', async () => {
+  const clickSave = async (): Promise<void> => { document.querySelector<HTMLElement>('button[name="saveOptions"]')!.click(); await flush(); await flush(); };
+  it('a changed field is staged, and Save sends only its own entry and closes the dialog', async () => {
     await openOptions(() => state);
     document.querySelector<HTMLElement>('.options-tab[data-tab="git"]')!.click();
     const input = document.querySelector<HTMLInputElement>('input[name="git.testTimeoutMinutes"]')!;
     input.value = '30';
     input.dispatchEvent(new Event('change'));
     await flush();
+    expect(puts).toEqual([]);
+    await clickSave();
     expect(puts).toEqual([{ git: { testTimeoutMinutes: 30 } }]);
-    expect(input.value).toBe('30');
+    expect(document.getElementById('overlay')!.hidden).toBe(true);
   });
-  it('a refused save reverts the field and shows the error', async () => {
+  it('an edit survives a visit to another tab', async () => {
+    await openOptions(() => state);
+    document.querySelector<HTMLElement>('.options-tab[data-tab="git"]')!.click();
+    const input = document.querySelector<HTMLInputElement>('input[name="git.testTimeoutMinutes"]')!;
+    input.value = '30';
+    input.dispatchEvent(new Event('change'));
+    document.querySelector<HTMLElement>('.options-tab[data-tab="budget"]')!.click();
+    document.querySelector<HTMLElement>('.options-tab[data-tab="git"]')!.click();
+    expect(document.querySelector<HTMLInputElement>('input[name="git.testTimeoutMinutes"]')!.value).toBe('30');
+  });
+  it('a refused save shows the error, keeps the dialog open and keeps what was typed', async () => {
     await openOptions(() => state);
     document.querySelector<HTMLElement>('.options-tab[data-tab="budget"]')!.click();
     const input = document.querySelector<HTMLInputElement>('input[name="budget.alertPercent"]')!;
     putStatus = 422;
     input.value = '150';
     input.dispatchEvent(new Event('change'));
-    await flush();
-    expect(input.value).toBe('80');
+    await clickSave();
+    expect(input.value).toBe('150');
     expect(document.querySelector('.form-error')!.textContent).not.toBe('');
+    expect(document.getElementById('overlay')!.hidden).toBe(false);
   });
-  it('a refused bypass switch goes back to off', async () => {
+  it('the X closes the dialog without sending anything', async () => {
     await openOptions(() => state, 'guard');
     const box = document.querySelector<HTMLInputElement>('input[name="bypass"]')!;
-    putStatus = 422;
     box.checked = true;
     box.dispatchEvent(new Event('change'));
+    document.querySelector<HTMLElement>('button[name="closeOptions"]')!.click();
     await flush();
-    expect(box.checked).toBe(false);
+    expect(puts).toEqual([]);
+    expect(document.getElementById('overlay')!.hidden).toBe(true);
+  });
+  it('changing the bypass switch asks to restart after Save; a plain setting does not', async () => {
+    await openOptions(() => state, 'guard');
+    const box = document.querySelector<HTMLInputElement>('input[name="bypass"]')!;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await clickSave();
+    expect(puts).toEqual([{ agents: { bypassPermissions: true } }]);
+    expect(document.querySelector('.restart-dialog')).not.toBeNull();
+    document.querySelector<HTMLElement>('button[name="restartNo"]')!.click();
+    expect(document.getElementById('overlay')!.hidden).toBe(true);
+    await openOptions(() => state, 'git');
+    const input = document.querySelector<HTMLInputElement>('input[name="git.testTimeoutMinutes"]')!;
+    input.value = '20';
+    input.dispatchEvent(new Event('change'));
+    await clickSave();
+    expect(document.querySelector('.restart-dialog')).toBeNull();
+  });
+  it('the models menu offers Default and real models only, never an alias', async () => {
+    await openOptions(() => state, 'models');
+    await flush();
+    await flush();
+    expect([...document.querySelectorAll<HTMLOptionElement>('select[name="models.agent"] option')].map((o) => o.value)).toEqual(['']);
   });
 });

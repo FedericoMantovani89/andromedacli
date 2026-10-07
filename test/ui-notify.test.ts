@@ -7,6 +7,12 @@ import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES } from '../src/shared/notify';
 import type { QueueItem, StateMessage } from '../src/shared/protocol';
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+type Run = () => Promise<{ status: number; body: unknown }>;
+/** A stand-in for the dialog's staging: keeps the last request of each key, like the real one. */
+const staging = (): { stage: (key: string, run: Run) => void; staged: Map<string, Run> } => {
+  const staged = new Map<string, Run>();
+  return { staged, stage: (key, run) => { staged.delete(key); staged.set(key, run); } };
+};
 const stateWith = (notifications?: StateMessage['notifications']): StateMessage => ({ notifications } as StateMessage);
 
 function mockFetch(status = 200, body: unknown = {}) {
@@ -23,7 +29,7 @@ describe('Notifications tab', () => {
   it('shows one switch per event type with the saved values, quiet hours, sound, grouping and the test button', () => {
     const c = document.createElement('div');
     const config = { ...DEFAULT_NOTIFICATIONS, enabled: { ...DEFAULT_NOTIFICATIONS.enabled, budget: false } };
-    renderNotificationsTab(c, stateWith({ toast: 'ok', config }));
+    renderNotificationsTab(c, stateWith({ toast: 'ok', config }), staging().stage);
     for (const type of NOTIFY_TYPES) expect(c.querySelector(`input[name="type-${type}"]`)).not.toBeNull();
     expect((c.querySelector('input[name="type-budget"]') as HTMLInputElement).checked).toBe(false);
     expect((c.querySelector('input[name="type-question"]') as HTMLInputElement).checked).toBe(true);
@@ -34,37 +40,38 @@ describe('Notifications tab', () => {
   });
   it('unknown toast status is shown as n/a, never as ok', () => {
     const c = document.createElement('div');
-    renderNotificationsTab(c, stateWith(undefined));
+    renderNotificationsTab(c, stateWith(undefined), staging().stage);
     expect(c.querySelector('.settings-toast-status')!.getAttribute('data-i18n')).toBe('settings.notifications.toast.unknown');
   });
-  it('a change is saved at once with only that entry', async () => {
+  it('a change is staged, not sent, and carries only that entry', async () => {
     const calls = mockFetch();
+    const { stage, staged } = staging();
     const c = document.createElement('div');
-    renderNotificationsTab(c, stateWith({ toast: 'ok', config: DEFAULT_NOTIFICATIONS }));
+    renderNotificationsTab(c, stateWith({ toast: 'ok', config: DEFAULT_NOTIFICATIONS }), stage);
     const box = c.querySelector('input[name="type-question"]') as HTMLInputElement;
     box.checked = false;
     box.dispatchEvent(new Event('change'));
     await flush();
+    expect(calls).toHaveLength(0);
+    expect([...staged.keys()]).toEqual(['notifications:enabled.question']);
+    await [...staged.values()][0]!();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.path).toBe('/api/config');
     expect(calls[0]!.init.method).toBe('PUT');
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ notifications: { enabled: { question: false } } });
   });
-  it('a refused save puts the switch back', async () => {
-    mockFetch(422, { code: 'config.invalid', params: { path: 'notifications.sound' } });
+  it('changing the same setting twice keeps only the last one', () => {
+    const { stage, staged } = staging();
     const c = document.createElement('div');
-    renderNotificationsTab(c, stateWith({ toast: 'ok', config: DEFAULT_NOTIFICATIONS }));
+    renderNotificationsTab(c, stateWith({ toast: 'ok', config: DEFAULT_NOTIFICATIONS }), stage);
     const sound = c.querySelector('input[name="sound"]') as HTMLInputElement;
-    sound.checked = false;
-    sound.dispatchEvent(new Event('change'));
-    await flush();
-    expect(sound.checked).toBe(true);
-    expect(c.querySelector('.form-error')!.textContent).not.toBe('');
+    for (const v of [false, true]) { sound.checked = v; sound.dispatchEvent(new Event('change')); }
+    expect(staged.size).toBe(1);
   });
   it('the test button posts to the test route', async () => {
     const calls = mockFetch(200, { ok: true });
     const c = document.createElement('div');
-    renderNotificationsTab(c, stateWith({ toast: 'unknown', config: DEFAULT_NOTIFICATIONS }));
+    renderNotificationsTab(c, stateWith({ toast: 'unknown', config: DEFAULT_NOTIFICATIONS }), staging().stage);
     (c.querySelector('button[name="testToast"]') as HTMLButtonElement).click();
     await flush();
     expect(calls[0]!.path).toBe('/api/notifications/test');

@@ -239,6 +239,7 @@ try {
     await page.click('.options-tab[data-tab="projects"]');
     check('the squash switch starts on', await page.locator('input[name="squash"]').isChecked());
     await page.uncheck('input[name="squash"]');
+    await page.click('button[name="saveOptions"]');
     check('turning it off is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'project.json'), 'utf8')).squash === false));
     await page.close();
     await s.close();

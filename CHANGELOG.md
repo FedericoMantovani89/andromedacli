@@ -8,9 +8,12 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- After Save in Options, a Yes/No question offers to restart the sessions when a setting Claude reads only at launch changed (bypass, guard mode, agent model) or a program installed since is not on the PATH of the running console. Yes (`POST /api/restart`) ends and starts again every project's sessions (the main resumes its conversation, the agents that were running are resumed), refreshes the PATH from the system on Windows, and loads the page again from the splash; the console, its port and token stay.
 - The divider between main and the agents can be dragged (20-80%) to widen or narrow either side; double-click resets to half; the position is remembered in the browser.
 
 ### Changed
+- Options: changes in every tab are staged and applied by one Save button (which closes the dialog); a top-right X closes without saving. A refused change shows its error and the dialog stays open. Tabs keep their edits while another tab is shown.
+- Options, Models: aliases are no longer listed; the catalog date sits next to the label; Refresh is a green round-arrow button beside the menu; the catalog address has an (i) tooltip; the cache time field is gone (fixed 6 hours, Refresh forces); the "applies to new agents" note is a footnote.
 - Choosing a folder in the new-project dialog (Browse or typing it) fills the project name from the folder name; a name the user typed is kept. A rule makes the `hidden` attribute win even over a class that sets `display` (the name field of the dialog had been showing when it should not).
 - First-start wizard: one heading (the step name, with a quiet "First start · step n of m" line above it), no Skip button, Back on the left, the recheck button in the middle and Next on the right; the last step is an optional Git step (offering `git init`) shown only when the chosen folder is not a repository, replacing the "First project" step. The prerequisites recheck button is centred in Options too.
 - The language list no longer has a "browser language" entry (only languages that have a message file); a saved "auto" shows English. The first-start wizard has a Back button, on the left, from the second step on.
