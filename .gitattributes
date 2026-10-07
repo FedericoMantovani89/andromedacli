@@ -1,0 +1,7 @@
+# Text files are LF in the repository and in the working tree (no CRLF conversion on Windows); Windows scripts stay CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
