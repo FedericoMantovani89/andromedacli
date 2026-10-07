@@ -6,7 +6,7 @@ import { PtyManager } from './pty/pty-manager';
 import { ProjectStore } from './project-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
-import { GENERIC_WORDS, SLUG_MAX, SLUG_MIN, validateSlug } from '../shared/slug';
+import { validateSlug } from '../shared/slug';
 import { type HostInfo, type ProjectTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
 import { applyConfigPatch, loadConfig } from './config';
 import type { PickFolderResult } from './pick-folder';
@@ -394,7 +394,6 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       return send(res, 200, {
         config, errors, paths: { configDir: dir, profilesDir, templatesDir: join(dir, 'templates') }, server: { port: ctx.getPort() },
         profiles: listProfileNames(ctx.projectRoot, profilesDir).map((name) => ({ name, source: loadProfile(name, ctx.projectRoot, profilesDir)?.source ?? null })),
-        names: { minLength: SLUG_MIN, maxLength: SLUG_MAX, banned: GENERIC_WORDS },
       });
     }
     // Profiles (Options, Profiles): the user's own files in the config folder; a shipped name is edited as a copy and restored by removing it.

@@ -17,7 +17,6 @@ interface OptionsPayload {
   paths: { configDir: string; profilesDir: string; templatesDir: string };
   server: { port: number };
   profiles: { name: string; source: 'project' | 'user' | 'shipped' | null }[];
-  names: { minLength: number; maxLength: number; banned: string[] };
 }
 type ConfigView = Record<string, unknown>;
 
@@ -35,7 +34,7 @@ interface PluginRow {
 interface PluginList { source: string; updated?: string; plugins: PluginRow[] }
 
 /** Every tab of the dialog, in order. Only options that exist today are here (no providers, snapshots, Rizzo Flow...). */
-export const OPTION_TABS = ['models', 'profiles', 'budget', 'names', 'projects', 'git', 'guard', 'mod', 'notifications', 'language', 'prerequisites', 'plugins', 'server'] as const;
+export const OPTION_TABS = ['models', 'profiles', 'budget', 'projects', 'git', 'guard', 'mod', 'notifications', 'language', 'prerequisites', 'plugins', 'server'] as const;
 export type OptionTab = (typeof OPTION_TABS)[number];
 
 interface Env {
@@ -459,15 +458,6 @@ function profilesTab(env: Env): HTMLElement {
   return box;
 }
 
-function namesTab(env: Env): HTMLElement {
-  const box = el('div', 'settings-agents');
-  const bad = unavailable(env);
-  if (bad) { box.append(bad); return box; }
-  const n = env.options!.names;
-  box.append(note(k('options.names.length'), { min: n.minLength, max: n.maxLength }), note(k('options.names.banned'), { words: n.banned.join(', ') }));
-  return box;
-}
-
 function modTab(env: Env): HTMLElement {
   const box = el('div', 'settings-agents');
   const bad = unavailable(env);
@@ -667,7 +657,7 @@ function pluginsTab(env: Env): HTMLElement {
 const RESTART_PATHS = ['agents.bypassPermissions', 'guard.mode', 'models.agent'] as const;
 
 const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
-  models: modelsTab, profiles: profilesTab, budget: budgetTab, names: namesTab, projects: projectsTab, git: gitTab, guard: guardTab, mod: modTab,
+  models: modelsTab, profiles: profilesTab, budget: budgetTab, projects: projectsTab, git: gitTab, guard: guardTab, mod: modTab,
   notifications: (env) => {
     const box = el('div');
     if (env.state) renderNotificationsTab(box, env.state, env.stage);

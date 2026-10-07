@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- Options: the Names tab is gone (it only listed fixed rules; the new-agent form already says why a name is refused).
 - Options: the panel has a visible scrollbar and a shadow at the edge that still has content behind it, so a long tab shows there is more below.
 - Options, Budget and limits: the token budget, the alert/restriction/stop levels and the usage-limit levels are horizontal sliders with the value in a read-only box at the right. Levels that must stay in order stop at their neighbour and are sent as one request; the footnote now says which settings apply to new agents.
 - Options, Profiles: profiles can be created, edited and deleted from the dialog (files in the config folder, all fields: name, description, model, token budget, read only, instructions). A shipped profile is edited as a copy and restored one by one or all at once; a profile only the project has stays read only here. New routes `GET /api/profiles`, `PUT|DELETE /api/profiles/<name>`, `POST /api/profiles/restore`; the new-agent menu lists every profile.
