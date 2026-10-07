@@ -188,12 +188,19 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .settings-test { display: grid; gap: 4px; }
 .settings-test label { display: grid; gap: 2px; }
 .prereq-row { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 10px; align-items: center; }
-.prereq-ok { color: var(--ok); } .prereq-outdated { color: var(--warn); }
+.prereq-ok { color: var(--ok); } .prereq-outdated, .prereq-restart { color: var(--warn); }
 .prereq-missing, .prereq-error { color: var(--bad); }
 .form-actions { justify-content: flex-end; flex-direction: row-reverse; margin-top: 4px; }
 .form-actions button[type="submit"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .form-actions button[type="submit"]:hover { filter: brightness(1.08); }
 .form-actions button[disabled] { opacity: .5; cursor: default; }
+.form-actions.wizard-actions { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; flex-direction: unset; }
+.wizard-actions > :first-child { justify-self: start; }
+.wizard-actions > :last-child { justify-self: end; }
+.prereq-recheck { display: flex; justify-content: center; margin-top: 10px; }
+.wizard-head { display: grid; gap: 2px; margin-bottom: 10px; }
+.wizard-eyebrow { font-size: 11.5px; font-variant-caps: all-small-caps; letter-spacing: .08em; color: var(--muted); }
+.wizard-body { margin: 6px 0 12px; }
 .new-project-form .browse-folder { height: 33px; }
 .new-project-form .folder-row { align-items: end; }
 .folder-row { display: flex; gap: 8px; align-items: end; }
@@ -274,3 +281,5 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .prereq-row { grid-template-columns: minmax(0, 1fr) 6.5rem 6.5rem 7rem 7rem; padding: 5px 0; border-bottom: 1px solid var(--seam); }
 .prereq-row > button { justify-self: end; }
 .form-actions { justify-content: flex-start; }
+/* A rule that sets `display` would otherwise win over the hidden attribute. */
+[hidden] { display: none !important; }

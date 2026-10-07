@@ -8,6 +8,11 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- Choosing a folder in the new-project dialog (Browse or typing it) fills the project name from the folder name; a name the user typed is kept. A rule makes the `hidden` attribute win even over a class that sets `display` (the name field of the dialog had been showing when it should not).
+- First-start wizard: one heading (the step name, with a quiet "First start · step n of m" line above it), no Skip button, Back on the left, the recheck button in the middle and Next on the right; the last step is an optional Git step (offering `git init`) shown only when the chosen folder is not a repository, replacing the "First project" step. The prerequisites recheck button is centred in Options too.
+- The language list no longer has a "browser language" entry (only languages that have a message file); a saved "auto" shows English. The first-start wizard has a Back button, on the left, from the second step on.
+- The prerequisite check tells "installed, restart the console" (status `restart`) for a tool that is not on this process's PATH but answers `--version` at the fixed place the installer puts it (Windows gives a program the PATH it started with, so the GitHub CLI installed from the dialog was shown as missing). Nothing reads the registry or other programs' environment.
+- The default language is English (it was "auto", the browser's); "auto" is still a choice in the language list.
 - The console never starts git on its own: a new folder is only created (no `git init`). Options, Git tab: shows whether git is installed (with the install command and the consent dialog when it is missing) and a "Start a git repository here" button (`POST /api/projects/git-init`: `git init -b main` and an empty first commit) for a project folder that is not a repository.
 - Options, Project tab: a template picker with "Apply template" (`POST /api/projects/apply-template`): the profiles, main.md and rules.md of the template replace the files of the same name, the commands already set stay; the build, lint, model and agent-limit fields are always shown.
 - The first-start wizard's project step shows only the folder (no name) and points to Options, Git when it is not a repository; its last button opens the one-field new-project dialog.

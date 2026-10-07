@@ -39,6 +39,7 @@ describe('the Browse button of the new-project dialog', () => {
     await tick(); await tick();
     expect(calls.some((c) => c.path === '/api/pick-folder' && c.method === 'POST')).toBe(true);
     expect(field('folder').value).toBe('D:\\work\\Shop API');
+    expect(field('name').value).toBe('shop-api'); // proposed from the chosen folder
     expect(calls.some((c) => c.path === `/api/projects/detect?root=${encodeURIComponent('D:\\work\\Shop API')}`)).toBe(true);
   });
 
@@ -100,12 +101,12 @@ describe('the new-project dialog asks only for the folder', () => {
   const submit = (): void => { document.querySelector<HTMLFormElement>('#overlay form')!.dispatchEvent(new Event('submit', { cancelable: true })); };
   const posted = (): unknown => calls.find((c) => c.path === '/api/projects' && c.method === 'POST')!.body;
 
-  it('has no template, command or name field, and sends the folder with auto', async () => {
+  it('has no template or command field (the name is proposed from the folder), and sends the folder with auto', async () => {
     openNewProjectDialog(() => undefined);
     await tick();
     expect(document.querySelector('#overlay select')).toBeNull();
     for (const n of ['create', 'build', 'test', 'lint']) expect(field(n)).toBeNull();
-    expect(field('name').closest('label')!.hidden).toBe(true);
+    expect(field('name').closest('label')!.hidden).toBe(false);
     field('folder').value = 'D:\\work\\shop-api';
     submit();
     await tick(); await tick(); await tick();
@@ -131,7 +132,7 @@ describe('the new-project dialog asks only for the folder', () => {
     expect(posted()).toMatchObject({ create: true, auto: true });
   });
 
-  it('a refused name (taken or unusable) shows the name field, proposed from the folder', async () => {
+  it('a refused name (taken or unusable) keeps the name field filled from the folder and moves the cursor to it', async () => {
     created = { status: 409, body: { code: 'project.duplicate' } };
     openNewProjectDialog(() => undefined);
     await tick();

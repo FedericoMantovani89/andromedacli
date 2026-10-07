@@ -5,30 +5,31 @@ import { openInstallDialog } from './install-dialog';
 import { bindText, k, languageName, resolveLanguage, setLanguage } from './i18n-client';
 
 /**
- * Language selector: "auto" plus every language the server has a bundle for (a new messages_xx file is enough).
+ * Language selector: every language the server has a bundle for (a new messages_xx file is enough). There is no "browser language"
+ * entry: a browser in a language with no bundle would get English anyway, and the user's choice must be one that exists.
  * Applies at runtime without a reload and saves the choice (SPEC 5.9, 22.2).
  */
 export function createLanguageSelect(current: string, languages: readonly string[], onChange?: (value: string) => void): HTMLSelectElement {
   const select = document.createElement('select');
-  const auto = document.createElement('option');
-  auto.value = 'auto';
-  bindText(auto, 'settings.language.auto');
-  select.append(auto);
   for (const code of languages) {
     const o = document.createElement('option');
     o.value = code;
     o.textContent = languageName(code); // language names are shown in their own language
     select.append(o);
   }
-  select.value = current;
+  // A saved "auto" (an older configuration) or a language whose bundle is gone shows English.
+  select.value = languages.includes(current) ? current : languages.includes('en') ? 'en' : (languages[0] ?? '');
   select.addEventListener('change', () => {
     void setLanguage(resolveLanguage(select.value, languages)).then(() => onChange?.(select.value));
   });
   return select;
 }
 
-/** Table of required tools with their status and a "check again" button (SPEC 29.3). */
-export function renderPrereqTable(container: HTMLElement, results: PrereqResult[] | null): void {
+/**
+ * Table of required tools with their status and a "check again" button (SPEC 29.3). The button goes under the table, centred, or into
+ * `recheckHost` when the caller has a place for it (the wizard puts it between Back and Next).
+ */
+export function renderPrereqTable(container: HTMLElement, results: PrereqResult[] | null, recheckHost?: HTMLElement): void {
   container.replaceChildren();
   for (const r of results ?? []) {
     const row = document.createElement('div');
@@ -51,7 +52,7 @@ export function renderPrereqTable(container: HTMLElement, results: PrereqResult[
       action.addEventListener('click', () => {
         openInstallDialog(r.id, () => {
           void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => {
-            if (res.status === 200) renderPrereqTable(container, res.body);
+            if (res.status === 200) renderPrereqTable(container, res.body, recheckHost);
           });
         });
       });
@@ -63,10 +64,14 @@ export function renderPrereqTable(container: HTMLElement, results: PrereqResult[
   bindText(again, 'prereq.recheck');
   again.addEventListener('click', () => {
     void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => {
-      if (res.status === 200) renderPrereqTable(container, res.body);
+      if (res.status === 200) renderPrereqTable(container, res.body, recheckHost);
     });
   });
-  container.append(again);
+  if (recheckHost) { recheckHost.replaceChildren(again); return; }
+  const centre = document.createElement('div');
+  centre.className = 'prereq-recheck';
+  centre.append(again);
+  container.append(centre);
 }
 
 export function closeOverlay(): void {

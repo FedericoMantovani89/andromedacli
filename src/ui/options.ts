@@ -4,6 +4,7 @@ import { errorText } from './new-agent';
 import { bindText, k, language, t } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
 import { openInstallDialog } from './install-dialog';
+import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
 import { openSaveTemplateDialog } from './new-project';
 
@@ -228,41 +229,11 @@ function gitToolSection(env: Env): HTMLElement {
   return box;
 }
 
-/** What the project folder is for git, and the button that makes it a repository when it is not one (nothing starts git on its own). */
-function gitProjectSection(env: Env): HTMLElement {
-  const box = el('div', 'options-git-project');
-  box.append(heading(k('options.git.project')));
-  const state = env.state;
-  const message = el('p', 'settings-note');
-  box.append(message);
-  if (!state) { bindText(message, 'common.notAvailable'); return box; }
-  if (state.projectIsRepo) {
-    if (state.repos.includes('')) bindText(message, 'options.git.isRepo');
-    else bindText(message, 'options.git.holdsRepos', { repos: state.repos.join(', ') });
-    return box;
-  }
-  bindText(message, 'options.git.notRepo');
-  const init = el('button');
-  init.type = 'button';
-  init.name = 'gitInit';
-  bindText(init, 'options.git.init');
-  init.addEventListener('click', () => {
-    init.disabled = true;
-    void api<ApiError>('/api/projects/git-init', { method: 'POST' }).then((res) => {
-      if (env.fail(res)) { init.disabled = false; return; }
-      bindText(message, 'options.git.init.done');
-      init.hidden = true;
-    });
-  });
-  box.append(init, note(k('options.git.init.help')));
-  return box;
-}
-
 function gitTab(env: Env): HTMLElement {
   const box = el('div', 'settings-agents');
   const bad = unavailable(env);
   if (bad) { box.append(bad); return box; }
-  box.append(gitToolSection(env), gitProjectSection(env));
+  box.append(gitToolSection(env), renderGitProject(env.state, env.fail, heading(k('options.git.project'))));
   box.append(
     fields(env, [
       { path: 'git.worktrees', label: k('options.git.worktrees'), kind: 'bool', help: k('options.git.worktrees.help') },
@@ -471,7 +442,7 @@ function languageTab(env: Env): HTMLElement {
   const row = el('label');
   const text = el('span');
   bindText(text, 'settings.language');
-  const select = createLanguageSelect(env.state?.language ?? 'auto', env.state?.languages ?? [], (value) => {
+  const select = createLanguageSelect(env.state?.language ?? 'en', env.state?.languages ?? [], (value) => {
     void api('/api/config', { method: 'PUT', body: { language: value } });
   });
   row.append(text, select);

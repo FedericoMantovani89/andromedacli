@@ -163,7 +163,7 @@ try {
     await page.keyboard.press('Enter');
     await sleep(500);
     check('keys typed behind the first-start wizard do not reach main', !(await snapshot('shop-api')).includes('ECHO:zzz'));
-    for (let i = 0; i < 3; i++) await page.click('.dialog .form-actions button:nth-child(2)');
+    for (let i = 0; i < 3 && !(await page.locator('#overlay').isHidden()); i++) await page.click('.dialog .wizard-next');
     await until(async () => await page.locator('#overlay').isHidden());
     await page.keyboard.type('yyy');
     await page.keyboard.press('Enter');
@@ -179,13 +179,13 @@ try {
     await s.close();
   }
 
-  // First-start wizard: skippable, never loops
+  // First-start wizard: Next through every step, never loops
   {
     const { s } = await boot({ configured: false });
     const page = await open(`${s.url}/?token=${s.token}`);
-    check('wizard appears on first start', await until(async () => (await page.locator('.dialog h2').first().innerText().catch(() => '')) === 'First start'));
-    for (let i = 0; i < 3; i++) await page.click('.dialog .form-actions button:nth-child(2)');
-    check('wizard closes after skipping every step', await until(async () => await page.locator('#overlay').isHidden()));
+    check('wizard appears on first start', await until(async () => (await page.locator('.dialog .wizard-eyebrow').first().innerText().catch(() => '')).toLowerCase().includes('first start')));
+    for (let i = 0; i < 3 && !(await page.locator('#overlay').isHidden()); i++) await page.click('.dialog .wizard-next');
+    check('wizard closes after the last step', await until(async () => await page.locator('#overlay').isHidden()));
     await page.reload();
     await sleep(1200);
     check('wizard does not come back after a reload', await page.locator('#overlay').isHidden());
@@ -210,7 +210,7 @@ try {
     const run = () => { try { execFileSync(process.execPath, [tsx, join(root, 'scripts', 'check-i18n.ts')], { cwd: root, stdio: 'pipe' }); return 0; } catch { return 1; } };
     check('i18n check passes on the shipped bundles', run() === 0);
     try {
-      writeFileSync(itFile, original.split('\n').filter((l) => !l.startsWith('common.skip=')).join('\n'));
+      writeFileSync(itFile, original.split('\n').filter((l) => !l.startsWith('common.next=')).join('\n'));
       check('i18n check fails when a key is missing in a language', run() === 1);
     } finally {
       writeFileSync(itFile, original);

@@ -1,6 +1,9 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
-export type CheckStatus = 'ok' | 'outdated' | 'missing' | 'error' | 'not_required';
+/** `restart`: installed where the installer puts it, but this process does not see it (Windows gives a program the PATH it started with). */
+export type CheckStatus = 'ok' | 'outdated' | 'missing' | 'error' | 'not_required' | 'restart';
 export interface CheckResult {
   id: 'node' | 'git' | 'claude' | 'gh';
   required: boolean;
@@ -49,8 +52,27 @@ export const defaultRunner: Runner = async (cmd, args, timeoutMs) => {
   }
 };
 
+/**
+ * Where the shipped installers (winget) put a tool on Windows, a fixed list: used only to tell "not installed" from "installed, but this
+ * console started before it was and cannot see it". Nothing is read from the registry or the environment of other programs.
+ */
+export function installLocations(id: CheckResult['id'], env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string[] {
+  if (platform !== 'win32') return [];
+  const programFiles = env.ProgramFiles ?? 'C:/Program Files';
+  const programFilesX86 = env['ProgramFiles(x86)'] ?? 'C:/Program Files (x86)';
+  const local = env.LOCALAPPDATA;
+  const userPrograms = local ? [local] : [];
+  switch (id) {
+    case 'node': return [join(programFiles, 'nodejs', 'node.exe')];
+    case 'git': return [join(programFiles, 'Git', 'cmd', 'git.exe'), join(programFilesX86, 'Git', 'cmd', 'git.exe'), ...userPrograms.map((l) => join(l, 'Programs', 'Git', 'cmd', 'git.exe'))];
+    case 'gh': return [join(programFiles, 'GitHub CLI', 'gh.exe'), ...userPrograms.map((l) => join(l, 'Programs', 'GitHub CLI', 'gh.exe'))];
+    default: return []; // claude: the command is the user's own (an npm shim, a custom path)
+  }
+}
+
 async function check(
   run: Runner, id: CheckResult['id'], cmd: string, args: string[], minimum?: string, required = true,
+  locate: (id: CheckResult['id']) => string[] = installLocations, exists: (p: string) => boolean = existsSync,
 ): Promise<CheckResult> {
   const base = { id, required } as const;
   try {
@@ -65,19 +87,31 @@ async function check(
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     // Never a false "ok": a check that cannot produce a result says "error" with the reason (P7).
-    if (code === 'ENOENT') return { ...base, status: 'missing' };
+    if (code === 'ENOENT') {
+      // Not on the PATH of this process. Run `--version` where the installer puts it: if it answers, it is installed and a restart shows it.
+      for (const where of locate(id).filter(exists)) {
+        try {
+          const r = await run(where, args, CHECK_TIMEOUT_MS);
+          const version = r.code === 0 ? parseVersion(r.stdout) : undefined;
+          if (version) return { ...base, status: 'restart', version, message: where };
+        } catch { /* not runnable there: keep looking */ }
+      }
+      return { ...base, status: 'missing' };
+    }
     return { ...base, status: 'error', message: e instanceof Error ? e.message : String(e) };
   }
 }
 
 /** Read-only prerequisite checks (SPEC 29.3), all in parallel. The Claude check runs the command the console will really launch. */
-export function runChecks(run: Runner = defaultRunner, o: { claudeCommand?: string[] } = {}): Promise<CheckResult[]> {
+export function runChecks(run: Runner = defaultRunner, o: { claudeCommand?: string[]; locate?: (id: CheckResult['id']) => string[]; exists?: (p: string) => boolean } = {}): Promise<CheckResult[]> {
   const [claudeCmd, ...claudeArgs] = o.claudeCommand && o.claudeCommand.length > 0 ? o.claudeCommand : ['claude'];
+  // An injected runner (tests) never looks at the real disk for installer locations.
+  const locate = o.locate ?? (run === defaultRunner ? installLocations : () => []);
   return Promise.all([
-    check(run, 'node', 'node', ['--version'], MINIMUM.node),
-    check(run, 'git', 'git', ['--version']),
+    check(run, 'node', 'node', ['--version'], MINIMUM.node, true, locate, o.exists),
+    check(run, 'git', 'git', ['--version'], undefined, true, locate, o.exists),
     check(run, 'claude', claudeCmd!, [...claudeArgs, '--version'], MINIMUM.claude),
     // Optional (the GitHub CLI is only for pull requests): missing never blocks anything.
-    check(run, 'gh', 'gh', ['--version'], undefined, false),
+    check(run, 'gh', 'gh', ['--version'], undefined, false, locate, o.exists),
   ]);
 }

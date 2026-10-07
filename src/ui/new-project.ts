@@ -67,8 +67,8 @@ function showDialog(...children: HTMLElement[]): void {
 
 /**
  * The new-project dialog (SPEC 21, 29.2): only the folder. The console reads what the folder holds to pick the template and the
- * commands (changed later in Options); a folder that does not exist yet is created with a git repository. The name comes from the
- * folder: its field appears only when that name is refused. Create makes the project through `POST /api/projects`.
+ * commands (changed later in Options); a folder that does not exist yet is created (git is a choice made later, in Options). The name is
+ * proposed from the folder when it is chosen or typed, and can be changed. Create makes the project through `POST /api/projects`.
  */
 export function openNewProjectDialog(_getState: () => StateMessage | undefined, onCreated?: (name: string) => void): void {
   const form = document.createElement('form');
@@ -78,8 +78,9 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
 
   const folder = textInput('folder');
   const name = textInput('name');
+  let nameEdited = false; // a name the user typed is never replaced by the one proposed from the folder
+  name.addEventListener('input', () => { nameEdited = true; });
   const nameRow = field(k('projects.new.name'), name);
-  nameRow.hidden = true;
   const note = document.createElement('p');
   note.className = 'settings-note create-note';
   const error = document.createElement('div');
@@ -92,6 +93,7 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
     return (await api<unknown>(`/api/projects/detect?root=${encodeURIComponent(root)}`)).status === 422;
   };
   const check = async (): Promise<void> => {
+    if (!nameEdited) name.value = nameFromFolder(folder.value);
     note.replaceChildren();
     if (folder.value.trim() !== '' && await missing()) bindText(note, 'projects.new.willCreate');
   };
@@ -110,7 +112,7 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
     void api<{ status: string; path?: string } | ApiError>('/api/pick-folder', { method: 'POST', body: {} }).then(async (res) => {
       if (res.status !== 200) { error.textContent = errorText(res.body as ApiError); return; }
       const out = res.body as { status: string; path?: string };
-      if (out.status === 'picked' && out.path) { folder.value = out.path; await check(); }
+      if (out.status === 'picked' && out.path) { folder.value = out.path; await check(); focusElementFromUser(name, 'user'); }
       else if (out.status === 'unavailable') bindText(browseNote, 'folder.unavailable');
     }).finally(() => { browse.disabled = false; });
   });
@@ -129,7 +131,6 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
       error.textContent = errorText(res.body as ApiError);
       if (code === 'project.duplicate' || code === 'project.badName') {
         // The name of the folder is taken or not usable: ask for another one.
-        nameRow.hidden = false;
         if (name.value.trim() === '') name.value = nameFromFolder(folder.value);
         focusElementFromUser(name, 'user');
       }
@@ -139,7 +140,7 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
   const folderRow = document.createElement('div');
   folderRow.className = 'folder-row';
   folderRow.append(field(k('projects.new.folder'), folder), browse);
-  form.append(title, folderRow, browseNote, note, nameRow, error, box);
+  form.append(title, folderRow, browseNote, nameRow, note, error, box);
   showDialog(form);
   focusElementFromUser(folder, 'user'); // the user just clicked "new project": the cursor may go into the first field
 }

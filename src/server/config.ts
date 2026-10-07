@@ -36,7 +36,7 @@ export interface ConfigError { path: string; code: 'config.invalid' | 'config.un
 
 export const DEFAULT_CONFIG: Config = {
   schema: 1,
-  language: 'auto',
+  language: 'en',
   agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerProject: 3 },
   claude: { command: ['claude'] },
   mod: { enabled: true },

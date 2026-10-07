@@ -45,7 +45,7 @@ export interface SessionInfo {
 export interface PrereqResult {
   id: 'node' | 'git' | 'claude' | 'gh';
   required: boolean;
-  status: 'ok' | 'outdated' | 'missing' | 'error' | 'not_required';
+  status: 'ok' | 'outdated' | 'missing' | 'error' | 'not_required' | 'restart';
   version?: string;
   message?: string;
 }
