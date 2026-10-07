@@ -2,9 +2,8 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, ui, until, type Running } from './helpers';
-import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
+import { gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 import { git } from '../src/server/git/git';
-import { worktreePathFor } from '../src/server/git/worktree';
 
 vi.setConfig({ testTimeout: 120_000 });
 process.env.CONSOLE_TEST = '1';
@@ -18,9 +17,9 @@ const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implem
 async function boot(config: Record<string, unknown> = {}): Promise<{ s: Running; t: TestRepo }> {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true }, ...config } });
-  s.setLimits({ global: 20, perPlan: 20 });
-  const file = join(t.repo, '.console', 'plan.json');
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true }, ...config } });
+  s.setLimits({ global: 20, perProject: 20 });
+  const file = join(t.repo, '.console', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   return { s, t };
 }
@@ -76,7 +75,7 @@ it('a merged ticket becomes one confirmation in the queue; Reject touches nothin
   const q = await queue(s);
   expect(q).toHaveLength(1);
   expect(q[0]).toMatchObject({ kind: 'confirm', from: '@console', options: ['approve', 'reject'] });
-  expect(q[0].payload).toMatchObject({ plan: 'shop-api', branch: 'main' });
+  expect(q[0].payload).toMatchObject({ project: 'shop-api', branch: 'main' });
   expect(q[0].payload.tickets[0]).toMatchObject({ slug: 'fix-login' });
   expect(q[0].payload.tickets[0].report).toContain('## Objective');
   expect(q[0].payload.files.map((f: any) => f.path).sort()).toEqual(['README.md', 'login.js']);
@@ -91,8 +90,8 @@ it('a merged ticket becomes one confirmation in the queue; Reject touches nothin
   expect((await tool(s, 'shop-api', 'propose_release')).body).toMatchObject({ status: 'asked' });
   const again = (await queue(s))[0];
   expect((await ui(s, `/api/queue/${again.id}/answer`, 'POST', { answer: 'approve' })).status).toBe(200);
-  await until(() => gitSync(t.remote, 'rev-parse', 'main') === gitSync(t.repo, 'rev-parse', 'plan/shop-api'), 30_000);
-  expect(gitSync(t.repo, 'rev-parse', 'main')).toBe(gitSync(t.repo, 'rev-parse', 'plan/shop-api'));
+  await until(() => gitSync(t.remote, 'rev-parse', 'main') === gitSync(t.repo, 'rev-parse', 'project/shop-api'), 30_000);
+  expect(gitSync(t.repo, 'rev-parse', 'main')).toBe(gitSync(t.repo, 'rev-parse', 'project/shop-api'));
   expect(existsSync(join(t.repo, 'login.js'))).toBe(true);
   await until(async () => (await inbox(s, 'shop-api')).join('\n').includes('released'), 10_000);
   expect(existsSync(join(t.repo, '.git', 'console-hooks', 'release-token'))).toBe(false);

@@ -30,7 +30,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 15000): Promise<b
   while (Date.now() - t < ms) { if (await f()) return true; await sleep(50); }
   return false;
 }
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo.worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.console', 'worktrees', slug);
 const wipCommits = (wt: string): string[] => gitSync(wt, 'log', '--format=%s').split('\n').filter((l) => l.startsWith('wip:'));
 const classesOf = async (loc: ReturnType<Page['locator']>): Promise<string[]> => ((await loc.getAttribute('class')) ?? '').split(/\s+/);
 
@@ -81,12 +81,12 @@ async function boot(o: { config?: Record<string, unknown>; sleepClock?: SleepClo
   onCleanup(rmTemp(projectsDir));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', ...o.config }));
   const s = await startServer({
-    port: 0, planRoot: t.repo, configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null, projectsDir,
+    port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null, projectsDir,
     ...(o.sleepClock ? { sleepClock: o.sleepClock } : {}),
   });
   onCleanup(async () => { await s.close(); console.log('(server closed)'); });
   // Room for every agent, reviewer and recovery a scenario starts: the active-agent limit is not what these scenarios test.
-  s.setLimits({ global: 20, perPlan: 20 });
+  s.setLimits({ global: 20, perProject: 20 });
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
       method, headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
@@ -391,8 +391,8 @@ scenario('limit', async () => {
 // ask again; the delivered author's branch is not moved by a WIP commit
 scenario('limit-reviewer', async () => {
   const { s, t, event, tool, spawn, inbox, agentOf, ticketFile } = await boot();
-  const planFile = join(t.repo, '.console', 'plan.json');
-  writeFileSync(planFile, JSON.stringify({ ...JSON.parse(readFileSync(planFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
+  const projectFile = join(t.repo, '.console', 'project.json');
+  writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   const page = await open(`${s.url}/?token=${s.token}`);
   await until(async () => (await page.locator(`${panel('shop-api')} .xterm`).count()) > 0);
   const started = await spawn('rev-t', 'Add a helper', 400_000);
@@ -437,7 +437,7 @@ scenario('weekly', async () => {
   await page.keyboard.press('Alt+Q');
   const item = page.locator('#drawer .queue-weekly');
   await check('the queue shows one weekly item', await until(async () => (await item.count()) === 1));
-  await check('it lists the choices', /wait until the reset.*fewer agents or a cheaper model.*stop the plans/s.test(await item.innerText()), () => item.innerText());
+  await check('it lists the choices', /wait until the reset.*fewer agents or a cheaper model.*stop the projects/s.test(await item.innerText()), () => item.innerText());
   const answers = await item.locator('button').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.answer));
   await check('with one button', JSON.stringify(answers) === JSON.stringify(['ok']), () => JSON.stringify(answers));
   await event('shop-api', 'quota', { rateLimits: [{ kind: 'seven_day', percentUsed: 100, resetsAt }] });

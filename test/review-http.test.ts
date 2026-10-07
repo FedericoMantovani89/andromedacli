@@ -2,8 +2,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, modEvent, ui, until, type Running } from './helpers';
-import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
-import { worktreePathFor } from '../src/server/git/worktree';
+import { gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 
 vi.setConfig({ testTimeout: 90_000 });
 process.env.CONSOLE_TEST = '1';
@@ -18,9 +17,9 @@ const NOTES = [{ severity: 'high', where: 'src/math.js:3', text: 'negative input
 async function boot(o: { afterWorktree?: (slug: string) => void | Promise<void> } = {}): Promise<{ s: Running; t: TestRepo }> {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true } }, afterWorktreeCreated: o.afterWorktree });
-  s.setLimits({ global: 20, perPlan: 20 }); // fake agents never report events, so they stay active and would hold the slots
-  const file = join(t.repo, '.console', 'plan.json');
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } }, afterWorktreeCreated: o.afterWorktree });
+  s.setLimits({ global: 20, perProject: 20 }); // fake agents never report events, so they stay active and would hold the slots
+  const file = join(t.repo, '.console', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   return { s, t };
 }
@@ -100,7 +99,7 @@ it('request_review starts a read-only reviewer in a detached checkout of the del
   // the reviewer's first message names the ticket, the diff command and the verdict tool
   const goal = (await inbox(s, 'review-fix-login')).join('\n');
   expect(goal).toContain('fix-login');
-  expect(goal).toContain('git diff plan/shop-api...HEAD');
+  expect(goal).toContain('git diff project/shop-api...HEAD');
   expect(goal).toContain('mcp__console-mod__review_verdict');
   expect(await tool(s, 'shop-api', 'request_review', { name: 'fix-login' })).toMatchObject({ body: { status: 'refused', code: 'not_delivered' } });
 });
@@ -111,7 +110,7 @@ it('the reviewer has the verdict tool and the guard keeps it read-only; it has n
   const guard = (tl: string, input: unknown) => mod(s, 'review-fix-login', '/v1/guard', 'POST', { tool: tl, input });
   expect((await guard('Write', { file_path: 'notes.md' })).body).toMatchObject({ decision: 'deny', rule: 'readonly.write' });
   expect((await guard('Bash', { command: 'echo x > f.txt' })).body).toMatchObject({ decision: 'deny', rule: 'readonly.write' });
-  expect((await guard('Bash', { command: 'git diff plan/shop-api...HEAD' })).body).toEqual({ decision: 'allow' });
+  expect((await guard('Bash', { command: 'git diff project/shop-api...HEAD' })).body).toEqual({ decision: 'allow' });
   expect((await guard('Read', { file_path: 'math.js' })).body).toEqual({ decision: 'allow' });
   for (const name of ['checklist_set', 'step_done', 'report_blocked', 'spawn_agent', 'request_review', 'ticket_report']) expect((await tool(s, 'review-fix-login', name, {})).status, name).toBe(403);
   expect((await tool(s, 'review-fix-login', 'list_agents')).status).toBe(200);
@@ -168,7 +167,7 @@ it('after two rework rounds the third failure puts a decision in the user\'s que
 it('red tests on the delivered commit never reach a reviewer: the console sends the ticket back', async () => {
   const { s, t } = await boot();
   await deliverTicket(s, t);
-  const file = join(t.repo, '.console', 'plan.json');
+  const file = join(t.repo, '.console', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "console.log(\'1 failing\'); process.exit(1)"' }));
   const r = await tool(s, 'shop-api', 'request_review', { name: 'fix-login' });
   expect(r.body).toEqual({ status: 'ok', result: 'sent_back', round: 1 });
@@ -176,7 +175,7 @@ it('red tests on the delivered commit never reach a reviewer: the console sends 
   expect((await inbox(s, 'fix-login')).find((m) => m.startsWith('Message from the main'))).toContain('1 failing');
 });
 
-it('the whole pipeline: delivered, reviewed, approved, merged into the plan branch, sessions ended and folders removed', async () => {
+it('the whole pipeline: delivered, reviewed, approved, merged into the project branch, sessions ended and folders removed', async () => {
   const { s, t } = await boot();
   await deliverTicket(s, t);
   expect((await tool(s, 'shop-api', 'merge_ticket', { name: 'fix-login' })).body).toMatchObject({ status: 'refused', code: 'not_approved' });
@@ -186,18 +185,18 @@ it('the whole pipeline: delivered, reviewed, approved, merged into the plan bran
   await until(async () => (await agentsOf(s)).find((a) => a.slug === 'review-fix-login')?.state === 'finished', 20_000);
   await until(() => !existsSync(worktreePathFor(t.repo, 'review-fix-login')), 20_000);
   expect((await tool(s, 'shop-api', 'merge_ticket', {})).body).toEqual({ status: 'error', code: 'bad_request' });
-  const before = Number(gitSync(t.repo, 'rev-list', '--count', 'plan/shop-api'));
+  const before = Number(gitSync(t.repo, 'rev-list', '--count', 'project/shop-api'));
   const r = await tool(s, 'shop-api', 'merge_ticket', { name: 'fix-login' });
   expect(r.body).toMatchObject({ status: 'merged' });
-  expect(Number(gitSync(t.repo, 'rev-list', '--count', 'plan/shop-api'))).toBe(before + 1);
-  expect(gitSync(t.repo, 'show', 'plan/shop-api:math.js')).toBe('module.exports = {};');
-  expect(gitSync(t.repo, 'log', '-1', '--format=%s', 'plan/shop-api')).toBe('ticket fix-login: Fix the login so negative ids are rejected');
-  expect(ticketFile(t, 'fix-login')).toMatchObject({ status: 'merged', mergedSha: gitSync(t.repo, 'rev-parse', 'plan/shop-api') });
+  expect(Number(gitSync(t.repo, 'rev-list', '--count', 'project/shop-api'))).toBe(before + 1);
+  expect(gitSync(t.repo, 'show', 'project/shop-api:math.js')).toBe('module.exports = {};');
+  expect(gitSync(t.repo, 'log', '-1', '--format=%s', 'project/shop-api')).toBe('ticket fix-login: Fix the login so negative ids are rejected');
+  expect(ticketFile(t, 'fix-login')).toMatchObject({ status: 'merged', mergedSha: gitSync(t.repo, 'rev-parse', 'project/shop-api') });
   await until(async () => (await agentsOf(s)).find((a) => a.slug === 'fix-login')?.state === 'finished', 20_000);
   expect(existsSync(worktreePathFor(t.repo, 'fix-login'))).toBe(false);
   expect(gitSync(t.repo, 'branch', '--list', 'agent/*')).toBe('');
   expect((await inbox(s, 'shop-api')).join('\n')).toMatch(/fix-login.*merged/);
-  // a new agent starts from the updated plan branch
+  // a new agent starts from the updated project branch
   await tool(s, 'shop-api', 'spawn_agent', { name: 'second-job', profile: 'backend', goal: 'next thing' });
   await until(() => existsSync(join(worktreePathFor(t.repo, 'second-job'), 'math.js')));
 });
@@ -280,7 +279,7 @@ it('a reviewer that waits in the queue and then fails to start gives the ticket 
   let failReviewers = false;
   const { s, t } = await boot({ afterWorktree: (slug) => { if (failReviewers && slug.startsWith('review-')) throw new Error('no worktree for you'); } });
   await deliverTicket(s, t);
-  s.setLimits({ global: 1, perPlan: 1 }); // the author still counts as active: the reviewer has to wait
+  s.setLimits({ global: 1, perProject: 1 }); // the author still counts as active: the reviewer has to wait
   failReviewers = true;
   const r = await tool(s, 'shop-api', 'request_review', { name: 'fix-login' });
   expect(r.body).toMatchObject({ status: 'ok', result: 'in_review', reviewer: 'review-fix-login' });
@@ -292,7 +291,7 @@ it('a reviewer that waits in the queue and then fails to start gives the ticket 
   await until(() => ticketFile(t, 'fix-login').status === 'delivered', 30_000);
   expect((await inbox(s, 'shop-api')).join('\n')).toMatch(/ended without a verdict|could not start/);
   failReviewers = false;
-  s.setLimits({ global: 20, perPlan: 20 });
+  s.setLimits({ global: 20, perProject: 20 });
   expect((await tool(s, 'shop-api', 'request_review', { name: 'fix-login' })).body).toMatchObject({ status: 'ok', reviewer: 'review-fix-login-r2' });
 });
 

@@ -14,16 +14,16 @@ it('the five shipped profiles exist and parse', () => {
     expect(p!.body.length).toBeGreaterThan(20);
   }
 });
-it('the plan profile overrides the user profile, which overrides the shipped one', () => {
-  const plan = tmp(), user = tmp();
+it('the project profile overrides the user profile, which overrides the shipped one', () => {
+  const project = tmp(), user = tmp();
   mkdirSync(join(user), { recursive: true });
   writeFileSync(join(user, 'backend.md'), '---\nname: backend\ndescription: user version\n---\nUSER BODY');
-  expect(loadProfile('backend', plan, user)!.description).toBe('user version');
-  mkdirSync(join(plan, '.console', 'profiles'), { recursive: true });
-  writeFileSync(join(plan, '.console', 'profiles', 'backend.md'), '---\nname: backend\ndescription: plan version\n---\nPLAN BODY');
-  const p = loadProfile('backend', plan, user)!;
-  expect(p.description).toBe('plan version');
-  expect(p.body).toBe('PLAN BODY');
+  expect(loadProfile('backend', project, user)!.description).toBe('user version');
+  mkdirSync(join(project, '.console', 'profiles'), { recursive: true });
+  writeFileSync(join(project, '.console', 'profiles', 'backend.md'), '---\nname: backend\ndescription: project version\n---\nPROJECT BODY');
+  const p = loadProfile('backend', project, user)!;
+  expect(p.description).toBe('project version');
+  expect(p.body).toBe('PROJECT BODY');
 });
 it('keeps console: keys out of the prompt body and reads model', () => {
   const user = tmp();
@@ -39,19 +39,19 @@ it('rejects unknown names and path traversal', () => {
 });
 it('the main prompt names every console tool by full name and says how to load them', () => {
   const dir = tmp();
-  const file = renderMainPrompt({ plan: 'shop-api', workLanguage: 'Italian', outDir: dir });
+  const file = renderMainPrompt({ project: 'shop-api', workLanguage: 'Italian', outDir: dir });
   const text = readFileSync(file, 'utf8');
   for (const t of ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user']) expect(text).toContain(t);
   expect(text).toContain('ToolSearch');
   expect(text).toContain('select:');
   expect(text).toContain('Italian');
   expect(text).toContain('shop-api');
-  expect(text).not.toMatch(/\{plan\}|\{workLanguage\}/);
+  expect(text).not.toMatch(/\{project\}|\{workLanguage\}/);
 });
 it('the agent prompt carries the profile, the agent identity, and the messages-are-information rule', () => {
   const dir = tmp();
   const profile = loadProfile('backend', tmp(), tmp())!;
-  const file = renderAgentPrompt({ profile, slug: 'fix-login', plan: 'shop-api', outDir: dir });
+  const file = renderAgentPrompt({ profile, slug: 'fix-login', project: 'shop-api', outDir: dir });
   expect(existsSync(file)).toBe(true);
   const text = readFileSync(file, 'utf8');
   expect(text).toContain(profile.body.slice(0, 30));
@@ -87,11 +87,11 @@ it('read_only needs an explicit true inside the console block, and the body neve
 });
 
 it('the main prompt teaches the review and merge flow with full tool names, and never to push', () => {
-  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'Italian', outDir: tmp() }), 'utf8');
+  const text = readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'Italian', outDir: tmp() }), 'utf8');
   for (const t of ['ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release']) expect(text, t).toContain(`mcp__console-mod__${t}`);
   expect(text).toMatch(/PASSED/);
   expect(text).toMatch(/never push/i);
-  expect(text).not.toContain('{plan}');
+  expect(text).not.toContain('{project}');
 });
 it('the reviewer profile says what the verdict is and that nothing may be changed', () => {
   const p = loadProfile('reviewer', tmp(), tmp())!;
@@ -102,15 +102,15 @@ it('the reviewer profile says what the verdict is and that nothing may be change
 it('a re-opened ticket and a merge conflict are explained to the author, and the reviewer prompt replaces the author rules', () => {
   const dir = tmp();
   const profile = loadProfile('backend', tmp(), tmp())!;
-  const author = readFileSync(renderAgentPrompt({ profile, slug: 'fix-login', plan: 'shop-api', outDir: dir, git: { worktree: 'D:/w/x', branch: 'agent/shop-api/fix-login' } }), 'utf8');
+  const author = readFileSync(renderAgentPrompt({ profile, slug: 'fix-login', project: 'shop-api', outDir: dir, git: { worktree: 'D:/w/x', branch: 'agent/shop-api/fix-login' } }), 'utf8');
   expect(author).toMatch(/message from the main/i);
   expect(author).toMatch(/conflict markers/i);
   expect(author).toContain('step_done');
-  const reviewer = readFileSync(renderAgentPrompt({ profile: loadProfile('reviewer', tmp(), tmp())!, slug: 'review-fix-login', plan: 'shop-api', outDir: dir, git: { worktree: 'D:/w/r', branch: 'review/review-fix-login' }, review: true }), 'utf8');
+  const reviewer = readFileSync(renderAgentPrompt({ profile: loadProfile('reviewer', tmp(), tmp())!, slug: 'review-fix-login', project: 'shop-api', outDir: dir, git: { worktree: 'D:/w/r', branch: 'review/review-fix-login' }, review: true }), 'utf8');
   expect(reviewer).toContain('review_verdict');
   expect(reviewer).not.toContain('checklist_set');
   expect(reviewer).not.toContain('step_done');
-  expect(reviewer).toContain('git diff plan/shop-api...HEAD');
+  expect(reviewer).toContain('git diff project/shop-api...HEAD');
 });
 
 it('console.budget_tokens is read as a number; anything else leaves it undefined', () => {
@@ -135,40 +135,40 @@ it('the recovery profile names its three jobs and the exact report call, and sta
 });
 it('a recovery prompt has the read-only recovery rules, not the author or reviewer ones', () => {
   const dir = tmp();
-  const text = readFileSync(renderAgentPrompt({ profile: loadProfile('recovery', tmp(), tmp())!, slug: 'recover-fix-login', plan: 'shop-api', outDir: dir, git: { worktree: 'D:/w/rc', branch: 'recovery/recover-fix-login' }, recovery: true }), 'utf8');
+  const text = readFileSync(renderAgentPrompt({ profile: loadProfile('recovery', tmp(), tmp())!, slug: 'recover-fix-login', project: 'shop-api', outDir: dir, git: { worktree: 'D:/w/rc', branch: 'recovery/recover-fix-login' }, recovery: true }), 'utf8');
   expect(text).toContain('D:/w/rc');
   expect(text).toMatch(/read-only/i);
   expect(text).toMatch(/detached/i);
-  expect(text).toContain('git diff plan/shop-api...HEAD');
+  expect(text).toContain('git diff project/shop-api...HEAD');
   expect(text).toContain('recovery_report');
   expect(text).not.toContain('checklist_set');
   expect(text).not.toContain('step_done');
   expect(text).not.toContain('review_verdict');
 });
 it('the main prompt explains what to do after a stop, and that a spend is the user\'s decision', () => {
-  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
+  const text = readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
   expect(text).toContain('mcp__console-mod__start_recovery');
   expect(text).toContain('select:mcp__console-mod__start_recovery');
   expect(text).toMatch(/raise_budget[^\n]*user/i);
 });
 it('the main prompt names resume_agent by its full name, says to load it first and never to resume everything at once', () => {
-  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
+  const text = readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
   expect(text).toContain('select:mcp__console-mod__resume_agent');
   expect(text).toMatch(/only what the user still wants, never everything at once/);
 });
 it('the main prompt does not promise a queue decision after a loop stop (only a budget stop creates one)', () => {
-  const text = readFileSync(renderMainPrompt({ plan: 'shop-api', workLanguage: 'Italian', outDir: tmp() }), 'utf8');
+  const text = readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'Italian', outDir: tmp() }), 'utf8');
   expect(text).not.toContain('You are told, and the user gets a decision in the queue.');
   expect(text).toMatch(/after a loop stop the next move is yours/);
 });
 
 it('the main prompt lists the repositories only when there are several, and says to pass repo', () => {
   const out = tmp();
-  const many = readFileSync(renderMainPrompt({ plan: 'p', workLanguage: 'English', outDir: out, repos: ['abc-be', 'abc-fe'] }), 'utf8');
+  const many = readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out, repos: ['abc-be', 'abc-fe'] }), 'utf8');
   expect(many).toContain('abc-be, abc-fe');
   expect(many).toMatch(/"repo" to spawn_agent/);
   for (const repos of [[''], ['only'], undefined]) {
-    const one = readFileSync(renderMainPrompt({ plan: 'q', workLanguage: 'English', outDir: out, ...(repos ? { repos } : {}) }), 'utf8');
+    const one = readFileSync(renderMainPrompt({ project: 'q', workLanguage: 'English', outDir: out, ...(repos ? { repos } : {}) }), 'utf8');
     expect(one).not.toMatch(/several git repositories/);
   }
 });

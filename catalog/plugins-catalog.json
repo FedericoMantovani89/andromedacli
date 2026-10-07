@@ -100,8 +100,8 @@
       "id": "code-review@claude-plugins-official",
       "category": "review",
       "summary": {
-        "en": "Pull request review with several agents in parallel. Not the console's default review flow: it needs a pull request and uses a lot of quota. Only if a plan uses pull requests.",
-        "it": "Review di PR con più agenti in parallelo. Non è il flusso di review predefinito della console: richiede una PR e consuma molta quota. Solo se un piano usa le PR."
+        "en": "Pull request review with several agents in parallel. Not the console's default review flow: it needs a pull request and uses a lot of quota. Only if a project uses pull requests.",
+        "it": "Review di PR con più agenti in parallelo. Non è il flusso di review predefinito della console: richiede una PR e consuma molta quota. Solo se un progetto usa le PR."
       },
       "trust": "official",
       "tier": "on_request",

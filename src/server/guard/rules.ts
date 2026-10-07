@@ -12,7 +12,7 @@ export interface GuardContext {
   readOnly?: boolean;
   /** A session held back by the console. For `loop` only the call with this exact signature is refused; for the others every guarded tool is. */
   restricted?: { reason: 'budget' | 'loop' | 'limit'; signature?: string };
-  worktree: string; repo: string; branch: string; planBranch: string; secretPatterns: string[] }
+  worktree: string; repo: string; branch: string; projectBranch: string; secretPatterns: string[] }
 export interface GuardCall { role: 'main' | 'agent'; tool: string; input: Record<string, unknown> }
 export type GuardDecision = { decision: 'allow' } | { decision: 'deny'; reason: string; rule: string };
 

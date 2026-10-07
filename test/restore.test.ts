@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AgentRegistry } from '../src/server/agents/registry';
 import { renderRestartNotice, restoreAgents } from '../src/server/agents/restore';
-import type { AgentRecord } from '../src/server/plan-store';
+import type { AgentRecord } from '../src/server/project-store';
 import { TicketStore } from '../src/server/tickets/store';
 
 let root: string;
@@ -79,7 +79,7 @@ describe('renderRestartNotice', () => {
 });
 
 describe('restoreAgents: repository', () => {
-  it('a record with a repo keeps it on the restored git info; an old record without one has none (the plan root)', () => {
+  it('a record with a repo keeps it on the restored git info; an old record without one has none (the project root)', () => {
     tickets.setGoal('a', 'g'); tickets.setGoal('b', 'g');
     const withRepo = rec('a', { repo: join(root, 'abc-fe') });
     run([withRepo, rec('b')]);

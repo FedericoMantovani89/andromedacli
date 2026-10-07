@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { gitSync, makeMultiRepo, removeDir, type MultiRepo } from './git-helpers';
-import { ensurePlanWorktree } from '../src/server/git/merge';
+import { ensureProjectWorktree } from '../src/server/git/merge';
 import { installReleaseHook } from '../src/server/git/release-hook';
 import { loadBundles } from '../src/server/i18n-bundles';
 import { createTranslator } from '../src/shared/i18n';
@@ -22,10 +22,10 @@ let asked: { text: string; payload: any; answer: (a: string) => void }[];
 beforeEach(async () => {
   m = makeMultiRepo(['abc-fe', 'abc-be'], { remote: true });
   for (const r of Object.values(m.repos)) await installReleaseHook(r.repo);
-  tickets = new TicketStore(m.root); // the plan folder is NOT a repository
+  tickets = new TicketStore(m.root); // the project folder is NOT a repository
   main = []; asked = [];
   svc = new ReleaseService({
-    tickets, root: m.root, plan: 'p',
+    tickets, root: m.root, project: 'p',
     testCommand: () => undefined, testTimeoutMs: () => 30_000,
     language: () => ({ lang: 'en', t: createTranslator({ lang: 'en', messages: bundles.get('en') ?? {}, fallback: bundles.get('en') }) }),
     notifyMain: (text) => { main.push(text); },
@@ -34,15 +34,15 @@ beforeEach(async () => {
 });
 afterEach(() => removeDir(m.base));
 
-/** What merge_ticket leaves behind in one repo: a commit on its plan branch and a ticket in `merged`. */
+/** What merge_ticket leaves behind in one repo: a commit on its project branch and a ticket in `merged`. */
 async function mergedTicket(slug: string, repoName: string): Promise<void> {
   const repo = m.repos[repoName]!.repo;
-  const plan = await ensurePlanWorktree(repo, 'p');
-  if (!plan.ok) throw new Error(plan.code);
-  writeFileSync(join(plan.path, `${slug}.txt`), `${slug}\n`);
-  gitSync(plan.path, 'add', '-A');
-  gitSync(plan.path, '-c', 'user.name=T', '-c', 'user.email=t@e.x', 'commit', '-q', '-m', `ticket ${slug}: work`);
-  const sha = gitSync(plan.path, 'rev-parse', 'HEAD');
+  const project = await ensureProjectWorktree(repo, 'p');
+  if (!project.ok) throw new Error(project.code);
+  writeFileSync(join(project.path, `${slug}.txt`), `${slug}\n`);
+  gitSync(project.path, 'add', '-A');
+  gitSync(project.path, '-c', 'user.name=T', '-c', 'user.email=t@e.x', 'commit', '-q', '-m', `ticket ${slug}: work`);
+  const sha = gitSync(project.path, 'rev-parse', 'HEAD');
   tickets.setChecklist(slug, [{ n: 1, title: 'Study', done: true, note: `note of ${slug}` }]);
   tickets.setGoal(slug, `Goal of ${slug}`);
   tickets.setRepo(slug, repoName);

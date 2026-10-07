@@ -28,7 +28,7 @@ let timeoutMs: number;
 
 async function setup(remote = true): Promise<void> {
   t = makeRepo({ remote });
-  const w = await createAgentWorktree({ repo: t.repo, plan: 'p', slug: 'a' });
+  const w = await createAgentWorktree({ repo: t.repo, project: 'p', slug: 'a' });
   wt = w.path;
   branch = w.branch;
   await installPushHook({ repo: t.repo, worktree: wt, branch, slug: 'a' });
@@ -37,7 +37,7 @@ async function setup(remote = true): Promise<void> {
   command = PASS;
   timeoutMs = 20_000;
   svc = new StepService({
-    tickets, plan: 'p',
+    tickets, project: 'p',
     worktreeOf: (slug) => (slug === 'a' ? { worktree: wt, branch } : undefined),
     testCommand: () => command, testTimeoutMs: () => timeoutMs, secretPatterns: () => DEFAULT_SECRET_PATTERNS,
     notifyMain: (_slug, text) => { messages.push(text); }, changed: () => {},
@@ -46,7 +46,7 @@ async function setup(remote = true): Promise<void> {
 beforeEach(() => setup());
 afterEach(() => rmSync(t.base, { recursive: true, force: true }));
 
-const commits = (): string[] => gitSync(wt, 'log', '--format=%s', 'plan/p..HEAD').split('\n').filter(Boolean).reverse();
+const commits = (): string[] => gitSync(wt, 'log', '--format=%s', 'project/p..HEAD').split('\n').filter(Boolean).reverse();
 const done = async (n: number, extra: { note?: string; skip?: boolean } = {}): Promise<StepResult> => svc.stepDone('a', { n, ...extra });
 async function closeUpTo(last: number): Promise<void> {
   for (let n = 1; n <= last; n++) {
@@ -96,7 +96,7 @@ describe('stepDone', () => {
     const body = gitSync(wt, 'log', '-1', '--format=%B', 'HEAD~5');
     expect(body).toContain('Agent: a');
     expect(body).toContain('Ticket: a');
-    expect(body).toContain('Piano: p');
+    expect(body).toContain('Progetto: p');
     expect(readFileSync(join(wt, 'validated.txt'), 'utf8').toLowerCase()).toBe(wt.toLowerCase());
     expect(branchesOf(t.remote)).toContain('agent/p/a');
     expect(tickets.progress('a')).toMatchObject({ done: 6, total: 6, status: 'delivered' });
@@ -292,7 +292,7 @@ describe('crash recovery (SPEC 24 Phase 3)', () => {
     await closeUpTo(3);
     // the console dies: everything in memory is gone, a new one starts on the same files
     const reborn = new StepService({
-      tickets: new TicketStore(t.repo), plan: 'p', worktreeOf: (slug) => (slug === 'a' ? { worktree: wt, branch } : undefined),
+      tickets: new TicketStore(t.repo), project: 'p', worktreeOf: (slug) => (slug === 'a' ? { worktree: wt, branch } : undefined),
       testCommand: () => command, testTimeoutMs: () => timeoutMs, secretPatterns: () => DEFAULT_SECRET_PATTERNS,
       notifyMain: (_s, text) => { messages.push(text); }, changed: () => {},
     });
@@ -306,7 +306,7 @@ describe('crash recovery (SPEC 24 Phase 3)', () => {
     await svc.checklistSet('a', ITEMS);
     await closeUpTo(2);
     const { commitStep } = await import('../src/server/git/commit');
-    const made = await commitStep({ worktree: wt, n: 3, total: 6, title: 'Implement a', slug: 'a', plan: 'p', secretPatterns: DEFAULT_SECRET_PATTERNS });
+    const made = await commitStep({ worktree: wt, n: 3, total: 6, title: 'Implement a', slug: 'a', project: 'p', secretPatterns: DEFAULT_SECRET_PATTERNS });
     expect(made.ok).toBe(true);
     expect(tickets.progress('a')?.done).toBe(2); // the process died before markDone
     const r = await done(3, { note: 'a decent note for this step' });
@@ -333,7 +333,7 @@ describe('stepClosed (the loop handling learns whether the step was progress)', 
   it('says skipped for a skipped step and empty for a commit that changed no file', async () => {
     const closed: { slug: string; skipped: boolean; empty: boolean }[] = [];
     svc = new StepService({
-      tickets, plan: 'p',
+      tickets, project: 'p',
       worktreeOf: (slug) => (slug === 'a' ? { worktree: wt, branch } : undefined),
       testCommand: () => command, testTimeoutMs: () => timeoutMs, secretPatterns: () => DEFAULT_SECRET_PATTERNS,
       notifyMain: () => {}, changed: () => {},

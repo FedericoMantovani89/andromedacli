@@ -2,58 +2,58 @@ import { it, expect } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PlanStore } from '../src/server/plan-store';
+import { ProjectStore } from '../src/server/project-store';
 
-const repo = () => mkdtempSync(join(tmpdir(), 'plan-'));
-it('init creates plan.json and an empty agents.json', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
-  expect(existsSync(join(root, '.console', 'plan.json'))).toBe(true);
+const repo = () => mkdtempSync(join(tmpdir(), 'project-'));
+it('init creates project.json and an empty agents.json', () => {
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
+  expect(existsSync(join(root, '.console', 'project.json'))).toBe(true);
   expect(existsSync(join(root, '.console', 'state', 'agents.json'))).toBe(true);
-  expect(s.plan.name).toBe('shop-api');
+  expect(s.project.name).toBe('shop-api');
   expect(s.listAgents()).toEqual([]);
 });
 it('persists agents across a restart', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
   s.addAgent({ slug: 'fix-login', profile: 'backend' });
-  const again = new PlanStore(root);
-  expect(again.plan.name).toBe('shop-api');
+  const again = new ProjectStore(root);
+  expect(again.project.name).toBe('shop-api');
   expect(again.listAgents().map((a) => [a.slug, a.profile])).toEqual([['fix-login', 'backend']]);
 });
 it('rejects a duplicate slug', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
   s.addAgent({ slug: 'fix-login', profile: 'backend' });
   expect(() => s.addAgent({ slug: 'fix-login', profile: 'dba' })).toThrow('slug.duplicate');
 });
 it('init is idempotent and keeps the original creation date', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api'); const created = s.plan.createdAt;
-  new PlanStore(root).init('shop-api');
-  expect(new PlanStore(root).plan.createdAt).toBe(created);
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api'); const created = s.project.createdAt;
+  new ProjectStore(root).init('shop-api');
+  expect(new ProjectStore(root).project.createdAt).toBe(created);
 });
 
-it('keeps a test command in plan.json, trims it, and clears it with an empty string', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
-  expect(s.plan.testCommand).toBeUndefined();
+it('keeps a test command in project.json, trims it, and clears it with an empty string', () => {
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
+  expect(s.project.testCommand).toBeUndefined();
   s.setTestCommand('  npx vitest run  ');
-  expect(new PlanStore(root).plan.testCommand).toBe('npx vitest run');
-  expect(new PlanStore(root).plan.name).toBe('shop-api');
+  expect(new ProjectStore(root).project.testCommand).toBe('npx vitest run');
+  expect(new ProjectStore(root).project.name).toBe('shop-api');
   s.setTestCommand('');
-  expect(new PlanStore(root).plan.testCommand).toBeUndefined();
+  expect(new ProjectStore(root).project.testCommand).toBeUndefined();
 });
 it('rejects a test command that is too long or not a string', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
-  expect(() => s.setTestCommand('x'.repeat(501))).toThrow('plan.testCommandInvalid');
-  expect(() => s.setTestCommand(5 as unknown as string)).toThrow('plan.testCommandInvalid');
-  expect(() => s.setTestCommand('a\nb')).toThrow('plan.testCommandInvalid');
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
+  expect(() => s.setTestCommand('x'.repeat(501))).toThrow('project.testCommandInvalid');
+  expect(() => s.setTestCommand(5 as unknown as string)).toThrow('project.testCommandInvalid');
+  expect(() => s.setTestCommand('a\nb')).toThrow('project.testCommandInvalid');
 });
 
-it('squash is on unless the plan says false, and the choice is kept next to the other options', () => {
-  const root = repo(); const s = new PlanStore(root); s.init('shop-api');
-  expect(s.plan.squash).toBeUndefined();
+it('squash is on unless the project says false, and the choice is kept next to the other options', () => {
+  const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
+  expect(s.project.squash).toBeUndefined();
   s.setSquash(false);
-  expect(new PlanStore(root).plan.squash).toBe(false);
+  expect(new ProjectStore(root).project.squash).toBe(false);
   s.setTestCommand('npm test');
-  expect(new PlanStore(root).plan).toMatchObject({ name: 'shop-api', squash: false, testCommand: 'npm test' });
+  expect(new ProjectStore(root).project).toMatchObject({ name: 'shop-api', squash: false, testCommand: 'npm test' });
   s.setSquash(true);
-  expect(new PlanStore(root).plan.squash).toBe(true);
-  expect(() => s.setSquash('yes' as unknown as boolean)).toThrow('plan.squashInvalid');
+  expect(new ProjectStore(root).project.squash).toBe(true);
+  expect(() => s.setSquash('yes' as unknown as boolean)).toThrow('project.squashInvalid');
 });

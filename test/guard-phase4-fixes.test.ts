@@ -18,7 +18,7 @@ beforeAll(() => {
   mkdirSync(join(R, '.git', 'hooks'), { recursive: true });
   writeFileSync(join(R, '.git', 'HEAD'), 'ref: refs/heads/main\n');
   mkdirSync(W, { recursive: true });
-  ctx = { worktree: W, repo: R, branch: 'agent/p/a', planBranch: 'plan/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
+  ctx = { worktree: W, repo: R, branch: 'agent/p/a', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -33,7 +33,7 @@ const MAIN_DENY: [string, Call][] = [
   ['a plain wildcard refspec', sh('git push origin "*:*"')],
   ['a wildcard for tags', sh('git push --no-verify origin "refs/t*:refs/t*"')],
   ['--no-verify on a plain push', sh('git push --no-verify')],
-  ['--no-verify to a plan branch', sh('git push --no-verify origin plan/x')],
+  ['--no-verify to a project branch', sh('git push --no-verify origin project/x')],
   ['--no-verify --all', sh('git push --no-verify --all')],
   ['hooksPath through -c', sh('git -c core.hooksPath=/dev/null push origin HEAD')],
   ['hooksPath through config', sh('git config core.hooksPath /nowhere')],
@@ -58,7 +58,7 @@ describe('the main cannot get around the pre-push hook', () => {
     expect(main({ tool: 'Write', input: { file_path: join(R, '.git', 'console-hooks', 'release-token') } }).decision).toBe('deny');
   });
   it('ordinary work of the main is still allowed', () => {
-    for (const c of ['git status', 'git commit -m x', 'git checkout plan/x', 'git push origin plan/x', 'git push origin HEAD:plan/x', 'git config user.name x', 'git merge x', 'git log --oneline']) {
+    for (const c of ['git status', 'git commit -m x', 'git checkout project/x', 'git push origin project/x', 'git push origin HEAD:project/x', 'git config user.name x', 'git merge x', 'git log --oneline']) {
       expect(main(sh(c)), c).toEqual({ decision: 'allow' });
     }
     expect(main({ tool: 'Write', input: { file_path: join(R, 'notes.md') } })).toEqual({ decision: 'allow' });
@@ -98,7 +98,7 @@ const RO_ALLOW: [string, string][] = [
   ['git log with a > in the format', 'git log --format="%h>%s"'],
   ['git stash list', 'git stash list'],
   ['git stash show', 'git stash show -p'],
-  ['git diff', 'git diff plan/p...HEAD'],
+  ['git diff', 'git diff project/p...HEAD'],
   ['git log -p', 'git log -p -n 3'],
   ['find without actions', 'find . -name "*.ts"'],
   ['npm test', 'npm test'],

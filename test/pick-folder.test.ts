@@ -78,7 +78,7 @@ it('POST /api/pick-folder needs the token and returns what the picker says; busy
   expect(busy.body.code).toBe('folder.pickBusy');
 });
 
-it('works with no plan open (the welcome screen has no plan)', async () => {
-  const s = await bootServer({ noPlan: true, pickFolder: async () => ({ status: 'picked', path: 'D:\\work\\y' }) });
+it('works with no project open (the welcome screen has no project)', async () => {
+  const s = await bootServer({ noProject: true, pickFolder: async () => ({ status: 'picked', path: 'D:\\work\\y' }) });
   expect((await ui(s, '/api/pick-folder', 'POST', {})).body).toEqual({ status: 'picked', path: 'D:\\work\\y' });
 });

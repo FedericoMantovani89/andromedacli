@@ -25,7 +25,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 15000): Promise<b
   return false;
 }
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo.worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.console', 'worktrees', slug);
 const gitFails = (cwd: string, ...args: string[]): boolean => {
   try { execFileSync('git', args, { cwd, stdio: 'ignore' }); return false; } catch { return true; }
 };
@@ -37,10 +37,10 @@ async function boot(o: { config?: Record<string, unknown>; testCommand?: string 
   const configFile = join(configDir, 'config.json');
   writeFileSync(configFile, JSON.stringify({ schema: 1, language: 'en', ...o.config }));
   const s = await startServer({
-    port: 0, planRoot: t.repo, configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null,
+    port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null,
   });
-  const planFile = join(t.repo, '.console', 'plan.json');
-  writeFileSync(planFile, JSON.stringify({ ...JSON.parse(readFileSync(planFile, 'utf8')), testCommand: o.testCommand ?? `node -e "require('fs').writeFileSync('validated.txt','ran')"` }));
+  const projectFile = join(t.repo, '.console', 'project.json');
+  writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: o.testCommand ?? `node -e "require('fs').writeFileSync('validated.txt','ran')"` }));
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
       method, headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
@@ -84,7 +84,7 @@ try {
     check('spawn in a repository starts the agent', started.json.status === 'started', JSON.stringify(started.json));
     const wt = worktreeOf(t, 'fix-login-timeout');
     const branches = gitSync(t.repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');
-    check('the plan branch and the agent branch exist', branches.includes('plan/shop-api') && branches.includes('agent/shop-api/fix-login-timeout'), branches.join(','));
+    check('the project branch and the agent branch exist', branches.includes('project/shop-api') && branches.includes('agent/shop-api/fix-login-timeout'), branches.join(','));
     check('the worktree is a sibling folder of the repository', existsSync(wt));
     check('the per-worktree pre-push hook is installed', gitSync(wt, 'config', '--worktree', '--get', 'core.hooksPath').includes('console-hooks'));
     check('the process runs inside the worktree', await until(async () => (await snapshot('fix-login-timeout')).toLowerCase().includes(`cwd ${wt}`.toLowerCase())), await snapshot('fix-login-timeout'));
@@ -120,15 +120,15 @@ try {
       if (r.json.status !== 'closed') { check(`step ${n} closes`, false, JSON.stringify(r.json)); break; }
       if (n < 6) check(`progress shows ${n}/6`, await until(async () => (await progress()) === `${n}/6`), await progress());
     }
-    const subjects = gitSync(wt, 'log', '--format=%s', 'plan/shop-api..HEAD').split('\n').reverse();
+    const subjects = gitSync(wt, 'log', '--format=%s', 'project/shop-api..HEAD').split('\n').reverse();
     check('one commit per step with the spec messages', JSON.stringify(subjects) === JSON.stringify(ITEMS.map((x, i) => `step ${i + 1}/6: ${x}`)), subjects.join(' | '));
     const body = gitSync(wt, 'log', '-1', '--format=%B', 'HEAD');
-    check('the commit carries the Agent, Ticket and Piano trailers', body.includes('Agent: fix-login-timeout') && body.includes('Ticket: fix-login-timeout') && body.includes('Piano: shop-api'), body);
+    check('the commit carries the Agent, Ticket and Progetto trailers', body.includes('Agent: fix-login-timeout') && body.includes('Ticket: fix-login-timeout') && body.includes('Progetto: shop-api'), body);
     check('the validation really ran in the worktree (marker file)', existsSync(join(wt, 'validated.txt')));
     check('the branch reached the remote', branchesOf(t.remote).includes('agent/shop-api/fix-login-timeout'), branchesOf(t.remote).join(','));
     const inbox = (await asMod('shop-api', '/v1/inbox')).json.messages.map((m: any) => m.text as string);
     check('the main was told the ticket is delivered', inbox.some((x: string) => /delivered/.test(x) && x.includes('agent/shop-api/fix-login-timeout')), inbox.join(' | '));
-    check('the agent never ran git commit: every commit is the console\'s', gitSync(wt, 'log', '--format=%an', 'plan/shop-api..HEAD').split('\n').length === 6);
+    check('the agent never ran git commit: every commit is the console\'s', gitSync(wt, 'log', '--format=%an', 'project/shop-api..HEAD').split('\n').length === 6);
     await page.close();
     await s.close();
   }
@@ -143,7 +143,7 @@ try {
     writeFileSync(join(wt, '.env'), 'TOKEN=abc\n');
     const r = await tool('fix-login-timeout', 'step_done', { n: 2 });
     check('a staged .env refuses the step and names the file', r.json.status === 'refused' && r.json.code === 'secrets' && r.json.files?.length === 1 && r.json.files[0] === '.env', JSON.stringify(r.json));
-    check('nothing was committed or left staged', gitSync(wt, 'log', '--format=%s', 'plan/shop-api..HEAD').split('\n').length === 1 && gitSync(wt, 'diff', '--cached', '--name-only') === '');
+    check('nothing was committed or left staged', gitSync(wt, 'log', '--format=%s', 'project/shop-api..HEAD').split('\n').length === 1 && gitSync(wt, 'diff', '--cached', '--name-only') === '');
     await s.close();
   }
 
@@ -155,7 +155,7 @@ try {
     await tool('fix-login-timeout', 'checklist_set', { items: ITEMS });
     await tool('fix-login-timeout', 'step_done', { n: 1, note: 'found it all in src' });
     check('another ref is refused', gitFails(wt, 'push', 'origin', 'HEAD:refs/heads/other'));
-    check('the plan branch is refused', gitFails(wt, 'push', 'origin', 'HEAD:refs/heads/plan/shop-api'));
+    check('the project branch is refused', gitFails(wt, 'push', 'origin', 'HEAD:refs/heads/project/shop-api'));
     check('main is refused', gitFails(wt, 'push', 'origin', 'HEAD:refs/heads/main'));
     check('its own branch is accepted', !gitFails(wt, 'push', 'origin', 'HEAD'));
     gitSync(wt, '-c', 'user.name=T', '-c', 'user.email=t@e.x', 'commit', '--amend', '--allow-empty', '-m', 'rewritten');
@@ -219,7 +219,7 @@ try {
   // 7. A queued agent gets its worktree only when it starts
   {
     const { s, t, spawn, event } = await boot();
-    s.setLimits({ global: 1, perPlan: 1 });
+    s.setLimits({ global: 1, perProject: 1 });
     await spawn('first-job');
     const second = await spawn('second-job');
     check('the second agent is queued', second.json.status === 'queued', JSON.stringify(second.json));
@@ -244,10 +244,10 @@ try {
     check('the switch is saved in config.json', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).agents?.bypassPermissions === true));
     await page.selectOption('select[name="guardMode"]', 'shadow');
     check('the guard mode is saved', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).guard?.mode === 'shadow'));
-    await page.click('.options-tab[data-tab="plans"]');
+    await page.click('.options-tab[data-tab="projects"]');
     await page.fill('input[name="testCommand"]', 'npx vitest run');
     await page.click('.settings-test button[type="submit"]');
-    check('the test command is saved in the plan', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'plan.json'), 'utf8')).testCommand === 'npx vitest run'));
+    check('the test command is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'project.json'), 'utf8')).testCommand === 'npx vitest run'));
     await spawn('second-job');
     check('the agent started before the change has no bypass', !s.lastLaunchArgs('first-job')!.includes('--dangerously-skip-permissions'));
     check('the agent started after it has', s.lastLaunchArgs('second-job')!.includes('--dangerously-skip-permissions'));

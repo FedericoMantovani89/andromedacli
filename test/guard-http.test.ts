@@ -2,8 +2,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, req, ui, type Running } from './helpers';
-import { makeRepo, type TestRepo, removeDir } from './git-helpers';
-import { worktreePathFor } from '../src/server/git/worktree';
+import { makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
 vi.setConfig({ testTimeout: 60_000 });
@@ -15,7 +14,7 @@ autoClose();
 async function boot(config: Record<string, unknown> = {}): Promise<{ s: Running; t: TestRepo }> {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true }, ...config } });
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true }, ...config } });
   return { s, t };
 }
 const spawn = async (s: Running, name: string): Promise<void> => {
@@ -57,14 +56,14 @@ it('who is asking comes from the session token, never from the body', async () =
   const r = await mod(s, 'first-job', '/v1/guard', 'POST', { tool: 'Write', input: { file_path: other }, slug: 'second-job', role: 'main', worktree: worktreePathFor(t.repo, 'second-job') });
   expect(r.body.decision).toBe('deny');
 });
-it('the main has fewer rules and works in the plan folder', async () => {
+it('the main has fewer rules and works in the project folder', async () => {
   const { s, t } = await boot();
   expect((await guard(s, 'shop-api', 'Bash', { command: 'git commit -m x' })).body.decision).toBe('allow');
   expect((await guard(s, 'shop-api', 'Write', { file_path: join(t.repo, 'README.md') })).body.decision).toBe('allow');
   expect((await guard(s, 'shop-api', 'Bash', { command: 'git push --force' })).body).toMatchObject({ decision: 'deny', rule: 'git.force' });
   expect((await guard(s, 'shop-api', 'Bash', { command: 'git push origin main' })).body).toMatchObject({ decision: 'deny', rule: 'git.protected-ref' });
 });
-it('without worktrees an agent shares the plan folder and is judged against it', async () => {
+it('without worktrees an agent shares the project folder and is judged against it', async () => {
   const s = await bootServer();
   await spawn(s, 'first-job');
   expect((await guard(s, 'first-job', 'Bash', { command: 'git push' })).body.decision).toBe('deny');

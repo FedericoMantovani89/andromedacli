@@ -8,7 +8,7 @@ import type { Runner } from '../src/server/prereq/checks';
 const goodRunner: Runner = async (cmd) => ({
   code: 0, stdout: cmd === 'node' ? 'v24.15.0' : cmd === 'git' ? 'git version 2.53.0' : '2.1.289 (Claude Code)',
 });
-const dirs = () => ({ configDir: mkdtempSync(join(tmpdir(), 'doc-cfg-')), planRoot: mkdtempSync(join(tmpdir(), 'doc-plan-')) });
+const dirs = () => ({ configDir: mkdtempSync(join(tmpdir(), 'doc-cfg-')), projectRoot: mkdtempSync(join(tmpdir(), 'doc-project-')) });
 const byId = (r: Awaited<ReturnType<typeof runDoctor>>, id: string) => r.checks.find((c) => c.id === id);
 
 it('reports ok when everything works, including the live security self-test', async () => {

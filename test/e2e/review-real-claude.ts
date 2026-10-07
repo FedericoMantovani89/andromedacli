@@ -52,8 +52,8 @@ async function until(f: () => Promise<boolean> | boolean, ms: number): Promise<b
 }
 
 const started = Date.now();
-const s = await startServer({ port: 0, planRoot: repo, configDir, planName: 'revreal' });
-writeFileSync(join(repo, '.console', 'plan.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, '.console', 'plan.json'), 'utf8')), testCommand: 'node --test' }));
+const s = await startServer({ port: 0, projectRoot: repo, configDir, projectName: 'revreal' });
+writeFileSync(join(repo, '.console', 'project.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, '.console', 'project.json'), 'utf8')), testCommand: 'node --test' }));
 const ui = async (path: string, method = 'GET', body?: unknown) => {
   const r = await fetch(`${s.url}${path}`, {
     method, headers: { authorization: `Bearer ${s.token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined,
@@ -133,7 +133,7 @@ try {
   if (!reviewed) { await diagnose('no verdict', ['revreal', 'add-average']); throw new Error('no verdict'); }
   const real = ticket('add-average').verdicts.find((v: any) => String(v.reviewer).startsWith('review-'));
   console.log(`INFO  reviewer verdict: pass=${real.pass} reviewer=${real.reviewer} notes=${JSON.stringify(real.notes).slice(0, 400)}`);
-  rec('the reviewer changed no file', !existsSync(join(scratch, 'my repo.worktrees', real.reviewer)) || git(join(scratch, 'my repo.worktrees', real.reviewer), 'status', '--porcelain', '--untracked-files=no') === '');
+  rec('the reviewer changed no file', !existsSync(join(scratch, 'my repo', '.console', 'worktrees', real.reviewer)) || git(join(scratch, 'my repo', '.console', 'worktrees', real.reviewer), 'status', '--porcelain', '--untracked-files=no') === '');
 
   // ---- 5. Merge: the main does it by itself when the review passed (a failed review reworks; after the rounds the user decides) ----
   const deadline = Date.now() + 900_000;
@@ -145,17 +145,17 @@ try {
     await sleep(3000);
   }
   const merged = ['merged', 'released'].includes(ticket('add-average')?.status);
-  rec('the main merged the approved ticket into the plan branch by itself', merged, String(ticket('add-average')?.status));
+  rec('the main merged the approved ticket into the project branch by itself', merged, String(ticket('add-average')?.status));
   if (!merged) { await diagnose('not merged', ['revreal']); throw new Error('not merged'); }
-  const planLog = git(repo, 'log', '--format=%s', 'plan/revreal');
-  rec('the plan branch has one squash commit for the ticket', planLog.split('\n')[0]!.startsWith('ticket add-average:'), planLog.split('\n')[0]);
-  rec('the author session ended and its folder is gone', await until(async () => !existsSync(join(scratch, 'my repo.worktrees', 'add-average')) && (((await ui('/api/state')).agents as any[]).find((a) => a.slug === 'add-average')?.state === 'finished'), 60_000));
+  const projectLog = git(repo, 'log', '--format=%s', 'project/revreal');
+  rec('the project branch has one squash commit for the ticket', projectLog.split('\n')[0]!.startsWith('ticket add-average:'), projectLog.split('\n')[0]);
+  rec('the author session ended and its folder is gone', await until(async () => !existsSync(join(scratch, 'my repo', '.console', 'worktrees', 'add-average')) && (((await ui('/api/state')).agents as any[]).find((a) => a.slug === 'add-average')?.state === 'finished'), 60_000));
   let emptyList = '';
-  try { emptyList = execFileSync('node', ['-e', "console.log(String(require('./src/stats').average([])))"], { cwd: join(scratch, 'my repo.worktrees', '.plan'), encoding: 'utf8' }).trim(); } catch { /* reported below */ }
+  try { emptyList = execFileSync('node', ['-e', "console.log(String(require('./src/stats').average([])))"], { cwd: join(scratch, 'my repo', '.console', 'worktrees', '.project'), encoding: 'utf8' }).trim(); } catch { /* reported below */ }
   rec('the merged code does what the main\'s note asked: average([]) is 0', emptyList === '0', emptyList);
   let testsPass = true;
-  try { execFileSync('node', ['--test'], { cwd: join(scratch, 'my repo.worktrees', '.plan'), stdio: 'ignore' }); } catch { testsPass = false; }
-  rec('the plan branch passes its tests', testsPass);
+  try { execFileSync('node', ['--test'], { cwd: join(scratch, 'my repo', '.console', 'worktrees', '.project'), stdio: 'ignore' }); } catch { testsPass = false; }
+  rec('the project branch passes its tests', testsPass);
 
   // ---- 6. Release: the main proposes, the user approves from the queue, the console pushes ----
   await type('revreal', 'Now call propose_release so the user can approve the release to origin/main.');
@@ -166,7 +166,7 @@ try {
     rec('it carries the ticket, its report and the test result', q.payload.tickets.some((t: any) => t.slug === 'add-average' && /Objective|Obiettivo/.test(t.report)) && q.payload.tests?.ok === true);
     const remoteBefore = git(remote, 'rev-parse', 'main');
     await ui(`/api/queue/${q.id}/answer`, 'POST', { answer: 'approve' });
-    rec('Approve moved origin/main to the plan tip', await until(() => git(remote, 'rev-parse', 'main') === git(repo, 'rev-parse', 'plan/revreal') && git(remote, 'rev-parse', 'main') !== remoteBefore, 120_000));
+    rec('Approve moved origin/main to the project tip', await until(() => git(remote, 'rev-parse', 'main') === git(repo, 'rev-parse', 'project/revreal') && git(remote, 'rev-parse', 'main') !== remoteBefore, 120_000));
     rec('the ticket is released', await until(() => ticket('add-average')?.status === 'released', 60_000));
   }
 

@@ -57,7 +57,7 @@ export type StartResult =
 
 export interface InstallServiceOptions {
   table?: readonly InstallEntry[];
-  /** Console-wide manager that owns the utility terminals (never a plan's agents). */
+  /** Console-wide manager that owns the utility terminals (never a project's agents). */
   ptys: PtyManager;
   /** Where the console's own files are: the install runs from there. */
   cwd: string;

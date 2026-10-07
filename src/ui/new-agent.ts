@@ -45,7 +45,7 @@ export function createNewAgentControl(getProfiles: () => readonly string[], afte
     }
     profileLabel.append(profileText, profile);
 
-    // A plan folder that holds several repositories: the agent works in exactly one of them.
+    // A project folder that holds several repositories: the agent works in exactly one of them.
     const repoNames = getRepos().filter((r) => r !== '');
     const repoLabel = document.createElement('label');
     const repo = document.createElement('select');

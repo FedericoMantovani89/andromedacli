@@ -59,7 +59,7 @@ export function removeDir(path: string): void {
 
 export interface MultiRepo { base: string; root: string; repos: Record<string, { repo: string; remote: string }> }
 
-/** A plan folder that is NOT a repository, holding one repo (one commit on `main`, optionally a bare origin) per name. */
+/** A project folder that is NOT a repository, holding one repo (one commit on `main`, optionally a bare origin) per name. */
 export function makeMultiRepo(names: string[], o: { remote?: boolean } = {}): MultiRepo {
   const base = mkdtempSync(join(tmpdir(), 'multi-'));
   const root = join(base, 'abc website');
@@ -86,3 +86,6 @@ export function makeMultiRepo(names: string[], o: { remote?: boolean } = {}): Mu
   }
   return { base, root, repos };
 }
+
+/** Where the server puts an agent's worktree when the project folder is the repository: `<repo>/.console/worktrees/<slug>`. */
+export const worktreePathFor = (repo: string, slug: string): string => join(repo, '.console', 'worktrees', slug);

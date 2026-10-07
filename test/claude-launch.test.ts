@@ -2,7 +2,7 @@ import { it, expect } from 'vitest';
 import { buildClaudeLaunch } from '../src/server/pty/claude-launch';
 
 const base = {
-  command: ['claude'], role: 'main' as const, slug: 'shop-api', plan: 'shop-api',
+  command: ['claude'], role: 'main' as const, slug: 'shop-api', project: 'shop-api',
   url: 'http://127.0.0.1:7391', token: 'T', bypass: false,
   baseEnv: { PATH: 'p', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'x', KEEP: 'y' },
 };
@@ -38,6 +38,13 @@ it('does not wrap an absolute .exe path in cmd.exe (spaces in "Program Files" br
   const l = buildClaudeLaunch({ ...base, command: ['C:/Program Files/nodejs/node.exe', 'fake.cjs'], platform: 'win32' });
   expect(l.file).toBe('C:/Program Files/nodejs/node.exe');
   expect(l.args).toEqual(['fake.cjs']);
+});
+
+it('displayName adds --name, also together with --resume', () => {
+  const l = buildClaudeLaunch({ ...base, displayName: 'demo AndromedaCli', resumeId: 'abc-123', platform: 'linux' });
+  expect(l.args.slice(l.args.indexOf('--name'), l.args.indexOf('--name') + 2)).toEqual(['--name', 'demo AndromedaCli']);
+  expect(l.args).toContain('--resume');
+  expect(buildClaudeLaunch(base).args).not.toContain('--name');
 });
 
 it('resumeId adds --resume and the session id (also through cmd.exe on Windows)', () => {

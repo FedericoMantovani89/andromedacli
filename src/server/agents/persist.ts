@@ -1,5 +1,5 @@
 import type { AgentRegistry } from './registry';
-import type { AgentPatch } from '../plan-store';
+import type { AgentPatch } from '../project-store';
 
 export interface PersistDeps {
   registry: AgentRegistry;

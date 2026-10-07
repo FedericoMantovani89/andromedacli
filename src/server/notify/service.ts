@@ -30,7 +30,7 @@ export interface NotifyDeps {
   clock: NotifyClock;
   /** The translator for server-side texts (interface language; "auto" falls back to English). */
   translate(): Translate;
-  /** The address a click on the toast opens (token and plan included); `itemId` opens the queue on that item. */
+  /** The address a click on the toast opens (token and project included); `itemId` opens the queue on that item. */
   clickUrl(itemId?: string): string;
   isPending(itemId: string): boolean;
   /** The fallback message for the browser (when no toast can be shown). */

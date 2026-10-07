@@ -27,9 +27,9 @@ type SpawnResult = { ok: true } | { ok: false; code: string; detail?: string };
 export interface RecoveryDeps {
   tickets: TicketStore;
   ledger: Ledger;
-  /** The plan folder: with `plan` it scopes the ledger (agent names repeat across plans). */
+  /** The project folder: with `project` it scopes the ledger (agent names repeat across projects). */
   root: string;
-  plan: string;
+  project: string;
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
@@ -37,7 +37,7 @@ export interface RecoveryDeps {
   spawnRecovery(r: { slug: string; ticket: string; sha: string; goal: string; model?: string }): Promise<SpawnResult>;
   /** Starts the new agent that takes the ticket over: `from`'s worktree goes, the new one checks out `from`'s branch. */
   spawnReplacement(r: { slug: string; profile: string; goal: string; model?: string; budget?: number; from: string }): Promise<SpawnResult>;
-  /** Every agent name already used in the plan. */
+  /** Every agent name already used in the project. */
   existingSlugs(): string[];
   notifyMain(text: string): void;
   /** Puts a decision in the user's queue (kind `decision`); `onAnswer` runs with the chosen option code. */
@@ -96,7 +96,7 @@ export function replacementSlugFor(ticket: string, taken: readonly string[]): st
 /**
  * Whether a replacement can start (SPEC 16.5: same branch). With worktrees on it needs the stopped agent's worktree, whose branch it
  * checks out: without it the new agent would start on a NEW branch while its prompt says "same branch", so it is refused. With
- * worktrees off agents share the plan folder and there is nothing to check out.
+ * worktrees off agents share the project folder and there is nothing to check out.
  */
 export function replacementCheckout(worktrees: boolean, old: { worktree: string; branch: string } | undefined): { ok: true } | { ok: false; code: 'no_worktree' } {
   return worktrees && !old ? { ok: false, code: 'no_worktree' } : { ok: true };
@@ -106,17 +106,17 @@ const causeOf = (t: Ticket): 'budget' | 'loop' =>
   t.stopCause === 'loop' ? 'loop' : t.stopCause === 'budget' ? 'budget' : t.status === 'blocked' ? 'loop' : 'budget';
 
 /** What the console knows about a stopped ticket: git, its own test run on the WIP and the ledger. Nothing comes from a model. */
-export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' | 'root' | 'plan' | 'worktreeOf' | 'testCommand' | 'testTimeoutMs'>, slug: string): Promise<RecoveryFacts> {
+export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' | 'root' | 'project' | 'worktreeOf' | 'testCommand' | 'testTimeoutMs'>, slug: string): Promise<RecoveryFacts> {
   const t = d.tickets.get(slug);
   if (!t) throw new Error('ticket.missing');
   const wt = d.worktreeOf(slug);
   if (!wt) throw new Error('no_worktree');
-  const log = await git(wt.worktree, ['log', '-n', '50', '--format=%h %s', `plan/${d.plan}..HEAD`]);
-  const stat = await git(wt.worktree, ['diff', '--stat', `plan/${d.plan}...HEAD`]);
+  const log = await git(wt.worktree, ['log', '-n', '50', '--format=%h %s', `project/${d.project}..HEAD`]);
+  const stat = await git(wt.worktree, ['diff', '--stat', `project/${d.project}...HEAD`]);
   const command = d.testCommand()?.trim();
   const run = command ? await runValidation({ cwd: wt.worktree, command, timeoutMs: d.testTimeoutMs() }) : undefined;
 
-  const entries = d.ledger.entries({ agent: slug, scope: { plan: d.plan, root: d.root } });
+  const entries = d.ledger.entries({ agent: slug, scope: { project: d.project, root: d.root } });
   const heaviestTurns = entries
     .map((e) => ({ turn: e.turn, tokens: budgetTokens(e), tools: [...new Set(e.tools)] }))
     .sort((a, b) => b.tokens - a.tokens || a.turn - b.turn)
@@ -137,11 +137,11 @@ export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' |
 }
 
 /** What the recovery agent is told first (English: it is a prompt, not interface text). */
-export function recoveryGoal(i: { ticket: string; plan: string; attempt: number; sha: string; goal?: string; facts: RecoveryFacts }): string {
+export function recoveryGoal(i: { ticket: string; project: string; attempt: number; sha: string; goal?: string; facts: RecoveryFacts }): string {
   const f = i.facts;
   const tests = f.testsOk === undefined ? 'unknown (no test command, nothing was run)' : f.testsOk ? 'PASSED' : 'FAILED';
   const lines = [
-    `Recover the ticket "${i.ticket}" of the plan "${i.plan}" (recovery attempt ${i.attempt} of ${MAX_RECOVERIES}). Its agent was stopped by ${f.cause === 'budget' ? 'its token budget (budget stop)' : 'the loop detector (a loop block)'}. You are read-only: change nothing, run nothing that writes.`,
+    `Recover the ticket "${i.ticket}" of the project "${i.project}" (recovery attempt ${i.attempt} of ${MAX_RECOVERIES}). Its agent was stopped by ${f.cause === 'budget' ? 'its token budget (budget stop)' : 'the loop detector (a loop block)'}. You are read-only: change nothing, run nothing that writes.`,
     '',
     `Objective the main wrote for the stopped agent:\n${i.goal?.trim() ? i.goal.trim() : '(none recorded)'}`,
     '',
@@ -149,9 +149,9 @@ export function recoveryGoal(i: { ticket: string; plan: string; attempt: number;
     `- stop cause: ${f.cause}`,
     '- checklist:',
     ...(f.checklist.length > 0 ? f.checklist.map((s) => `  ${s.n}. [${s.done ? 'x' : ' '}] ${s.title}`) : ['  (no checklist)']),
-    `- commits on the branch since plan/${i.plan}:`,
+    `- commits on the branch since project/${i.project}:`,
     ...(f.commits.length > 0 ? f.commits.map((c) => `  ${c}`) : ['  (none)']),
-    `- changed files (git diff --stat plan/${i.plan}...HEAD):`,
+    `- changed files (git diff --stat project/${i.project}...HEAD):`,
     ...(f.diffStat ? f.diffStat.split(/\r?\n/).map((l) => `  ${l}`) : ['  (none)']),
     `- the tests, run by the console on the WIP commit ${i.sha.slice(0, 7)}: ${tests}`,
     ...(f.testTail ? ['  last lines of the test output:', ...f.testTail.split(/\r?\n/).map((l) => `  ${l}`)] : []),
@@ -162,7 +162,7 @@ export function recoveryGoal(i: { ticket: string; plan: string; attempt: number;
     ...(f.repeatedTools.length > 0 ? f.repeatedTools.map((r) => `  ${r.tool}: ${r.count} turns`) : ['  (none)']),
     '',
     'Your three jobs:',
-    `1. Verify. Your folder is a checkout of the WIP commit. Compare each closed step with the commits and the code (git log, git show, git diff plan/${i.plan}...HEAD). A step is verified only when its work is really there.`,
+    `1. Verify. Your folder is a checkout of the WIP commit. Compare each closed step with the commits and the code (git log, git show, git diff project/${i.project}...HEAD). A step is verified only when its work is really there.`,
     '2. Diagnose. From the facts above find why the work stopped: a loop, files read again and again, tests failing over and over, a step too big, an ambiguous objective.',
     '3. Remedy. Choose exactly one: split (the remaining work in smaller steps), exclude_paths (heavy files or folders to keep away from), change_model, remove_obstacle (a blocker to remove first, for example a flaky test), raise_budget (only when the work is right but bigger than the budget: the user decides the spend).',
     '',
@@ -182,11 +182,11 @@ const REMEDY_TEXT: Record<Remedy, string> = {
 };
 
 /** What the agent that takes a ticket over is told first: the handover (English: it is a prompt). */
-export function replacementGoal(i: { from: string; plan: string; ticket: Ticket; report?: RecoveryReport; limit?: number }): string {
+export function replacementGoal(i: { from: string; project: string; ticket: Ticket; report?: RecoveryReport; limit?: number }): string {
   const t = i.ticket;
   const done = t.steps.filter((s) => s.done).map((s) => s.n);
   const lines = [
-    `You take over the ticket "${i.from}" of the plan "${i.plan}". Its previous agent was stopped (${causeOf(t) === 'budget' ? 'token budget' : 'loop block'}); you are a new agent with a fresh context, on the same branch, with the same checklist and commits.`,
+    `You take over the ticket "${i.from}" of the project "${i.project}". Its previous agent was stopped (${causeOf(t) === 'budget' ? 'token budget' : 'loop block'}); you are a new agent with a fresh context, on the same branch, with the same checklist and commits.`,
     '',
     `Objective:\n${t.goal?.trim() ? t.goal.trim() : '(none recorded)'}`,
     '',
@@ -211,7 +211,7 @@ export function replacementGoal(i: { from: string; plan: string; ticket: Ticket;
   if (i.limit) lines.push('', `Your token budget is ${i.limit} tokens.`);
   lines.push(
     '',
-    `How to go on: do not start over. Look at the commits (git log plan/${i.plan}..HEAD) and the code, then continue with the first open step and close each step with step_done as before (the console commits). You may call checklist_set to split the open steps into smaller ones; the closed steps must stay as they are.`,
+    `How to go on: do not start over. Look at the commits (git log project/${i.project}..HEAD) and the code, then continue with the first open step and close each step with step_done as before (the console commits). You may call checklist_set to split the open steps into smaller ones; the closed steps must stay as they are.`,
     'Work in small steps and keep away from whatever consumed the previous budget.',
   );
   return lines.join('\n');
@@ -270,7 +270,7 @@ export class RecoveryService {
       const facts = await recoveryFacts(this.d, ticket);
       const attempt = t.recoveries + 1;
       const slug = recoverySlugFor(ticket, this.d.existingSlugs());
-      const goal = recoveryGoal({ ticket, plan: this.d.plan, attempt, sha, goal: t.goal, facts });
+      const goal = recoveryGoal({ ticket, project: this.d.project, attempt, sha, goal: t.goal, facts });
       // Recorded before the start, so a report can never arrive for a recovery the console does not know.
       this.active.set(slug, { ticket, stopStatus: t.status as StopStatus });
       const started = await this.d.spawnRecovery({ slug, ticket, sha, goal });
@@ -401,7 +401,7 @@ export class RecoveryService {
     const t = this.d.tickets.get(from)!;
     const to = replacementSlugFor(from, this.d.existingSlugs());
     const limit = o.limit ?? t.budget?.limit;
-    const goal = replacementGoal({ from, plan: this.d.plan, ticket: t, report: o.report, limit });
+    const goal = replacementGoal({ from, project: this.d.project, ticket: t, report: o.report, limit });
     const profile = this.d.profileOf(from);
     this.d.tickets.rename(from, to);
     this.d.tickets.restart(to);

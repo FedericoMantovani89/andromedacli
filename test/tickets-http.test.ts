@@ -2,8 +2,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, modEvent, mod, req, state, ui, type Running } from './helpers';
-import { branchesOf, gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
-import { worktreePathFor } from '../src/server/git/worktree';
+import { branchesOf, gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 import { AGENT_TOOLS } from '../src/server/agents/spawn';
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
@@ -18,9 +17,9 @@ const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implem
 async function boot(testCommand: string | null = 'node -e "process.exit(0)"'): Promise<{ s: Running; t: TestRepo }> {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true } } });
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
   if (testCommand !== null) {
-    const file = join(t.repo, '.console', 'plan.json');
+    const file = join(t.repo, '.console', 'project.json');
     writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand }));
   }
   return { s, t };
@@ -83,7 +82,7 @@ it('the whole ticket over HTTP: N commits, validation by the console, push, deli
     expect(r.body, `step ${n}`).toMatchObject({ status: 'closed', n, total: 6 });
     if (n < 6) expect((await agentState(s)).progress).toEqual({ done: n, total: 6 });
   }
-  expect(gitSync(wt, 'log', '--format=%s', 'plan/shop-api..HEAD').split('\n').reverse()).toEqual(ITEMS.map((x, i) => `step ${i + 1}/6: ${x}`));
+  expect(gitSync(wt, 'log', '--format=%s', 'project/shop-api..HEAD').split('\n').reverse()).toEqual(ITEMS.map((x, i) => `step ${i + 1}/6: ${x}`));
   expect(branchesOf(t.remote)).toContain('agent/shop-api/fix-login');
   const inbox = (await mod(s, 'shop-api', '/v1/inbox')).body.messages.map((m: any) => m.text);
   expect(inbox.some((x: string) => /delivered/.test(x) && x.includes('agent/shop-api/fix-login'))).toBe(true);
@@ -97,7 +96,7 @@ it('a failing test command refuses the validation step and returns the output ta
   const r = await tool(s, 'fix-login', 'step_done', { n: 5 });
   expect(r.body).toMatchObject({ status: 'refused', code: 'validation_failed' });
   expect(r.body.tail).toContain('boom');
-  expect(gitSync(worktreePathFor(t.repo, 'fix-login'), 'log', '--format=%s', 'plan/shop-api..HEAD').split('\n')).toHaveLength(4);
+  expect(gitSync(worktreePathFor(t.repo, 'fix-login'), 'log', '--format=%s', 'project/shop-api..HEAD').split('\n')).toHaveLength(4);
 });
 it('without a test command the validation step cannot close', async () => {
   const { s } = await boot(null);

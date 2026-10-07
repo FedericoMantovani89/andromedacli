@@ -4,7 +4,7 @@ import { errorText } from './new-agent';
 import { bindText, k, language, t } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
 import { renderNotificationsTab } from './options-notifications';
-import { openSaveTemplateDialog } from './new-plan';
+import { openSaveTemplateDialog } from './new-project';
 
 /** What `GET /api/options` returns (the config is the effective one, defaults filled in). */
 interface OptionsPayload {
@@ -12,7 +12,7 @@ interface OptionsPayload {
   errors: { path: string; code: string }[];
   paths: { configDir: string; profilesDir: string; templatesDir: string };
   server: { port: number };
-  profiles: { name: string; source: 'plan' | 'user' | 'shipped' | null }[];
+  profiles: { name: string; source: 'project' | 'user' | 'shipped' | null }[];
   names: { minLength: number; maxLength: number; banned: string[] };
 }
 type ConfigView = Record<string, unknown>;
@@ -31,7 +31,7 @@ interface PluginRow {
 interface PluginList { source: string; updated?: string; plugins: PluginRow[] }
 
 /** Every tab of the dialog, in order. Only options that exist today are here (no providers, snapshots, Rizzo Flow...). */
-export const OPTION_TABS = ['models', 'profiles', 'budget', 'names', 'plans', 'git', 'guard', 'mod', 'notifications', 'language', 'prerequisites', 'plugins', 'server'] as const;
+export const OPTION_TABS = ['models', 'profiles', 'budget', 'names', 'projects', 'git', 'guard', 'mod', 'notifications', 'language', 'prerequisites', 'plugins', 'server'] as const;
 export type OptionTab = (typeof OPTION_TABS)[number];
 
 interface Env {
@@ -154,7 +154,7 @@ function budgetTab(env: Env): HTMLElement {
   box.append(
     fields(env, [
       { path: 'agents.maxActiveGlobal', label: k('options.agents.maxActiveGlobal'), kind: 'number' },
-      { path: 'agents.maxActivePerPlan', label: k('options.agents.maxActivePerPlan'), kind: 'number' },
+      { path: 'agents.maxActivePerProject', label: k('options.agents.maxActivePerProject'), kind: 'number' },
     ]),
     note(k('options.agents.maxActive.help')),
     heading(k('options.budget.tokens')),
@@ -247,20 +247,20 @@ function guardTab(env: Env): HTMLElement {
   return box;
 }
 
-function plansTab(env: Env): HTMLElement {
+function projectsTab(env: Env): HTMLElement {
   const state = env.state;
   const box = el('div', 'settings-agents');
   const squashRow = el('label', 'settings-switch');
   const squash = el('input');
   squash.type = 'checkbox';
   squash.name = 'squash';
-  squash.checked = state?.plan.squash !== false; // one commit per merged ticket unless the plan says otherwise
+  squash.checked = state?.project.squash !== false; // one commit per merged ticket unless the project says otherwise
   const squashText = el('span');
   bindText(squashText, 'settings.squash');
   squashRow.append(squash, squashText);
   squash.addEventListener('change', () => {
     const wanted = squash.checked;
-    void api<ApiError>('/api/plan', { method: 'PUT', body: { squash: wanted } }).then((res) => {
+    void api<ApiError>('/api/project', { method: 'PUT', body: { squash: wanted } }).then((res) => {
       if (env.fail(res)) squash.checked = !wanted;
     });
   });
@@ -272,36 +272,36 @@ function plansTab(env: Env): HTMLElement {
   const test = el('input');
   test.name = 'testCommand';
   test.autocomplete = 'off';
-  test.value = state?.plan.testCommand ?? '';
+  test.value = state?.project.testCommand ?? '';
   testLabel.append(testText, test);
   const save = el('button');
   save.type = 'submit';
   bindText(save, 'common.save');
   testForm.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    void api<ApiError>('/api/plan', { method: 'PUT', body: { testCommand: test.value } }).then((res) => { env.fail(res); });
+    void api<ApiError>('/api/project', { method: 'PUT', body: { testCommand: test.value } }).then((res) => { env.fail(res); });
   });
   testForm.append(testLabel, save, note(k('settings.testCommand.help')));
   box.append(squashRow, note(k('settings.squash.help')), testForm);
 
-  // Plan fields added by the templates part: shown only when the plan carries them.
-  const plan = (state?.plan ?? {}) as Record<string, unknown>;
+  // Project fields added by the templates part: shown only when the project carries them.
+  const project = (state?.project ?? {}) as Record<string, unknown>;
   for (const [key, label, kind] of [
-    ['buildCommand', k('options.plans.buildCommand'), 'text'], ['lintCommand', k('options.plans.lintCommand'), 'text'],
-    ['model', k('options.plans.model'), 'text'], ['maxActive', k('options.plans.maxActive'), 'number'],
+    ['buildCommand', k('options.projects.buildCommand'), 'text'], ['lintCommand', k('options.projects.lintCommand'), 'text'],
+    ['model', k('options.projects.model'), 'text'], ['maxActive', k('options.projects.maxActive'), 'number'],
   ] as const) {
-    if (!(key in plan)) continue;
+    if (!(key in project)) continue;
     const row = el('label', 'options-field');
     const span = el('span');
     bindText(span, label);
     const input = el('input');
     input.name = key;
     if (kind === 'number') input.type = 'number';
-    input.value = String(plan[key] ?? '');
+    input.value = String(project[key] ?? '');
     let saved = input.value;
     input.addEventListener('change', () => {
       const wanted = kind === 'number' ? Number(input.value) : input.value;
-      void api<ApiError>('/api/plan', { method: 'PUT', body: { [key]: wanted } }).then((res) => {
+      void api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }).then((res) => {
         if (env.fail(res)) input.value = saved; else saved = input.value;
       });
     });
@@ -312,7 +312,7 @@ function plansTab(env: Env): HTMLElement {
   const template = el('button');
   template.type = 'button';
   template.name = 'saveTemplate';
-  bindText(template, 'options.plans.saveTemplate');
+  bindText(template, 'options.projects.saveTemplate');
   template.addEventListener('click', () => openSaveTemplateDialog(env.getState));
   box.append(template);
   return box;
@@ -525,7 +525,7 @@ function pluginsTab(env: Env): HTMLElement {
 }
 
 const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
-  models: modelsTab, profiles: profilesTab, budget: budgetTab, names: namesTab, plans: plansTab, git: gitTab, guard: guardTab, mod: modTab,
+  models: modelsTab, profiles: profilesTab, budget: budgetTab, names: namesTab, projects: projectsTab, git: gitTab, guard: guardTab, mod: modTab,
   notifications: (env) => {
     const box = el('div');
     if (env.state) renderNotificationsTab(box, env.state);
@@ -559,7 +559,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   const show = (tab: OptionTab): void => {
     for (const [id, b] of buttons) { b.setAttribute('aria-selected', String(id === tab)); b.classList.toggle('selected', id === tab); }
     error.textContent = '';
-    env.state = getState() ?? env.state; // the dialog may stay open while plans and settings change
+    env.state = getState() ?? env.state; // the dialog may stay open while projects and settings change
     panel.replaceChildren(BUILDERS[tab](env));
   };
   for (const id of OPTION_TABS) {

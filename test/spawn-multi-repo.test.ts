@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, state, ui, until, type Running } from './helpers';
 import { gitSync, makeMultiRepo, removeDir, type MultiRepo } from './git-helpers';
-import { agentBranchFor, worktreePathFor } from '../src/server/git/worktree';
+import { agentBranchFor, worktreePathFor as pathFor, worktreesDirFor } from '../src/server/git/worktree';
 
 vi.setConfig({ testTimeout: 60_000 });
 process.env.CONSOLE_TEST = '1';
@@ -11,10 +11,15 @@ const made: MultiRepo[] = [];
 afterEach(() => { while (made.length) removeDir(made.pop()!.base); });
 autoClose();
 
+let projectRoot = '';
+/** Where the server puts an agent's worktree: `<project>/.console/worktrees/<repo>/<slug>`. */
+const worktreePathFor = (repo: string, slug: string): string => pathFor(repo, slug, worktreesDirFor(projectRoot, repo));
+
 async function boot(): Promise<{ s: Running; m: MultiRepo }> {
   const m = makeMultiRepo(['abc-fe', 'abc-be'], { remote: true });
   made.push(m);
-  const s = await bootServer({ planRoot: m.root, config: { git: { worktrees: true } } });
+  projectRoot = m.root;
+  const s = await bootServer({ projectRoot: m.root, config: { git: { worktrees: true } } });
   return { s, m };
 }
 const spawn = (s: Running, name: string, repo?: string) => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal: 'audit it', ...(repo !== undefined ? { repo } : {}) });
@@ -28,7 +33,7 @@ it('lists the repos in the state and is not "not a repo"', async () => {
   const { s } = await boot();
   const st = await state(s);
   expect(st.repos).toEqual(['abc-be', 'abc-fe']);
-  expect(st.planIsRepo).toBe(true);
+  expect(st.projectIsRepo).toBe(true);
 });
 it('several repos and no repo given: git.repoRequired listing them, and the name is not kept', async () => {
   const { s } = await boot();
@@ -39,7 +44,7 @@ it('an unknown repo is git.unknownRepo', async () => {
   const { s } = await boot();
   expect((await spawn(s, 'audit-privacy', '../abc-fe')).body).toMatchObject({ status: 'error', code: 'git.unknownRepo' });
 });
-it('an agent gets its worktree, branch and plan branch in the chosen repo only, and starts inside it', async () => {
+it('an agent gets its worktree, branch and project branch in the chosen repo only, and starts inside it', async () => {
   const { s, m } = await boot();
   expect((await spawn(s, 'audit-privacy', 'abc-fe')).body).toEqual({ status: 'started', name: 'audit-privacy' });
   const fe = m.repos['abc-fe']!.repo;
@@ -47,9 +52,9 @@ it('an agent gets its worktree, branch and plan branch in the chosen repo only, 
   const wt = worktreePathFor(fe, 'audit-privacy');
   expect(existsSync(wt)).toBe(true);
   expect(gitSync(fe, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).toContain(agentBranchFor('shop-api', 'audit-privacy'));
-  expect(gitSync(be, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).not.toContain('plan/shop-api');
+  expect(gitSync(be, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).not.toContain('project/shop-api');
   expect((await cwdOf(s, 'audit-privacy')).toLowerCase()).toBe(wt.toLowerCase());
-  expect(readFileSync(join(m.root, '.console', 'plan.json'), 'utf8')).toContain('shop-api'); // plan state stays in the plan folder
+  expect(readFileSync(join(m.root, '.console', 'project.json'), 'utf8')).toContain('shop-api'); // project state stays in the project folder
   expect(existsSync(join(fe, '.console'))).toBe(false);
 });
 it('agents in both repos at once get their own worktrees (no race on refs or config)', async () => {

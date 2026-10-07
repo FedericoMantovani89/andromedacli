@@ -1,5 +1,5 @@
 export interface LaunchOptions {
-  command: string[]; role: 'main' | 'agent' | 'reviewer' | 'recovery'; slug: string; plan: string;
+  command: string[]; role: 'main' | 'agent' | 'reviewer' | 'recovery'; slug: string; project: string;
   /** For a launched session this is its own session token (never the UI token). */
   url: string; token: string; bypass: boolean; baseEnv: NodeJS.ProcessEnv; platform?: NodeJS.Platform;
   /** The console mod to load (--plugin-dir). Omitted: no mod (fake agents in tests, or mod disabled). */
@@ -12,6 +12,8 @@ export interface LaunchOptions {
   allowedTools?: string[];
   /** Resumes this Claude Code session (--resume <id>): it keeps its own context. Plain characters only (SESSION_ID_RE). */
   resumeId?: string;
+  /** Session display name (--name): what Remote Control and the session picker show. Omitted: Claude Code's default. */
+  displayName?: string;
 }
 
 /**
@@ -39,6 +41,7 @@ export function buildClaudeLaunch(o: LaunchOptions): { file: string; args: strin
   if (o.resumeId !== undefined && !SESSION_ID_RE.test(o.resumeId)) throw new Error(`invalid session id: ${JSON.stringify(o.resumeId)}`);
   const flags = [
     ...(o.resumeId !== undefined ? ['--resume', o.resumeId] : []),
+    ...(o.displayName ? ['--name', o.displayName] : []),
     ...(o.model ? ['--model', o.model] : []),
     ...(o.pluginDir ? ['--plugin-dir', fwd(o.pluginDir)] : []),
     ...(o.appendPromptFile ? ['--append-system-prompt-file', fwd(o.appendPromptFile)] : []),

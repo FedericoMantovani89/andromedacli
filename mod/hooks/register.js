@@ -72,13 +72,13 @@ const TOOL_SPECS = {
         profile: { type: 'string', description: 'backend, dba, frontend, reviewer or recovery' },
         goal: { type: 'string', description: 'What the agent must achieve: result, constraints, references. Not the steps.' },
         model: { type: 'string', description: 'Optional model alias or id' },
-        repo: { type: 'string', description: 'Only when the plan folder holds several git repositories: the one the agent works in (its folder name, for example abc-fe). The console answers git.repoRequired and lists them if you leave it out.' },
+        repo: { type: 'string', description: 'Only when the project folder holds several git repositories: the one the agent works in (its folder name, for example abc-fe). The console answers git.repoRequired and lists them if you leave it out.' },
       },
       required: ['name', 'profile', 'goal'],
     },
   },
   list_agents: {
-    description: 'List the sessions of this plan: name, profile, state and goal, and the ticket status when it is not simply in progress '
+    description: 'List the sessions of this project: name, profile, state and goal, and the ticket status when it is not simply in progress '
       + '(for example suspended_limit or delivered). Use it to know who exists before asking.',
     inputSchema: { type: 'object', properties: {} },
   },
@@ -136,7 +136,7 @@ const TOOL_SPECS = {
     },
   },
   merge_ticket: {
-    description: 'Merge an approved ticket into the plan branch (one at a time, never forced). A conflict or red tests after the merge send the ticket back to its author. Returns { status: "merged" | "conflict" | "tests_failed" | "refused" }.',
+    description: 'Merge an approved ticket into the project branch (one at a time, never forced). A conflict or red tests after the merge send the ticket back to its author. Returns { status: "merged" | "conflict" | "tests_failed" | "refused" }.',
     inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'The ticket (agent) name' } }, required: ['name'] },
   },
   propose_release: {

@@ -9,9 +9,9 @@ export const MAX_REWORK_ROUNDS = 2;
 
 export interface ReviewDeps {
   tickets: TicketStore;
-  /** The plan folder (where `.console/` lives). */
+  /** The project folder (where `.console/` lives). */
   root: string;
-  plan: string;
+  project: string;
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
@@ -19,7 +19,7 @@ export interface ReviewDeps {
   language(): { lang: string; t: Translate };
   /** Starts the reviewer session through the normal spawn flow (limits, worktree, token). */
   spawnReviewer(r: ReviewerSpawn): Promise<{ ok: true } | { ok: false; code: string; detail?: string }>;
-  /** Every agent name already used in the plan (reviewer names must be new). */
+  /** Every agent name already used in the project (reviewer names must be new). */
   existingSlugs(): string[];
   authorAlive(slug: string): boolean;
   notifyMain(text: string): void;
@@ -78,14 +78,14 @@ export function reviewerSlugFor(ticket: string, taken: readonly string[]): strin
 }
 
 export interface ReviewerGoalInput {
-  slug: string; plan: string; sha: string; goal?: string; testsOk: boolean | undefined; files: number; added: number; removed: number;
+  slug: string; project: string; sha: string; goal?: string; testsOk: boolean | undefined; files: number; added: number; removed: number;
   reportFile: string; round: number; previous: Verdict[];
 }
 
 /** What the reviewer is told first (English: it is a prompt, not interface text). */
 export function reviewerGoal(i: ReviewerGoalInput): string {
   const lines = [
-    `Review the delivered ticket "${i.slug}" of the plan "${i.plan}" (review round ${i.round}). You are read-only: change nothing, run nothing that writes.`,
+    `Review the delivered ticket "${i.slug}" of the project "${i.project}" (review round ${i.round}). You are read-only: change nothing, run nothing that writes.`,
     '',
     `Objective the main wrote for the author:\n${i.goal?.trim() ? i.goal.trim() : '(none recorded)'}`,
     '',
@@ -94,7 +94,7 @@ export function reviewerGoal(i: ReviewerGoalInput): string {
     `- ${i.files} files changed, +${i.added} -${i.removed}`,
     `- the full report is the file ${i.reportFile}`,
     '',
-    `How: your folder is a checkout of the delivered commit. See the change with: git diff plan/${i.plan}...HEAD . Read the surrounding code where you need to.`,
+    `How: your folder is a checkout of the delivered commit. See the change with: git diff project/${i.project}...HEAD . Read the surrounding code where you need to.`,
     'Look for defects a user would hit (wrong behaviour, missing cases, crashes, unsafe handling, a test that proves nothing), and for work that does not match the objective or files nobody asked for. Not style.',
   ];
   if (i.previous.length > 0) {
@@ -164,14 +164,14 @@ export class ReviewService {
       this.d.tickets.setTests(slug, tests);
     }
 
-    const files = await changedFiles(wt.worktree, `plan/${this.d.plan}`, sha);
+    const files = await changedFiles(wt.worktree, `project/${this.d.project}`, sha);
     if (!files) return { ok: false, code: 'git_failed', detail: 'could not list the changed files' };
     const goal = ticket.goal ?? '';
     const foreignHints = files.map((f) => f.path).filter((p) => FOREIGN.some((re) => re.test(p)) && !goal.toLowerCase().includes(p.slice(p.lastIndexOf('/') + 1).toLowerCase()));
     const docsNote = ticket.steps.length > 0 ? ticket.steps[ticket.steps.length - 1]!.note : undefined;
     const { lang, t } = this.d.language();
     const report = buildReport({
-      slug, plan: this.d.plan, branch: wt.branch, goal: ticket.goal, steps: ticket.steps, files, tests, docsNote,
+      slug, project: this.d.project, branch: wt.branch, goal: ticket.goal, steps: ticket.steps, files, tests, docsNote,
       verdicts: ticket.verdicts, lang, t, generatedAt: new Date().toISOString(),
     });
     const reportFile = writeReport(this.d.root, slug, report);
@@ -206,7 +206,7 @@ export class ReviewService {
       const round = ticket.verdicts.length + 1;
       const sum = report.facts.files.reduce((n, f) => ({ a: n.a + (f.added ?? 0), r: n.r + (f.removed ?? 0) }), { a: 0, r: 0 });
       const goal = reviewerGoal({
-        slug, plan: this.d.plan, sha, goal: ticket.goal, testsOk: tests.ok, files: report.facts.files.length, added: sum.a, removed: sum.r,
+        slug, project: this.d.project, sha, goal: ticket.goal, testsOk: tests.ok, files: report.facts.files.length, added: sum.a, removed: sum.r,
         reportFile: report.reportFile.replace(/\\/g, '/'), round, previous: ticket.verdicts,
       });
       const started = await this.d.spawnReviewer({ slug: reviewer, ticket: slug, sha, goal, model: o.model });

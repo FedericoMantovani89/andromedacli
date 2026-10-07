@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { openNewPlanDialog } = await import('../src/ui/new-plan');
+const { openNewProjectDialog } = await import('../src/ui/new-project');
 const { showWelcome } = await import('../src/ui/welcome');
 
 interface Call { path: string; method: string; body: unknown }
@@ -19,8 +19,8 @@ beforeEach(() => {
     calls.push({ path, method, body: init?.body ? JSON.parse(init.body) : undefined });
     const answer = (status: number, body: unknown) => ({ status, json: async () => body });
     if (path === '/api/pick-folder') return answer(pick.status, pick.body);
-    if (path === '/api/plans' && method === 'POST') return answer(created.status, created.body);
-    if (path.startsWith('/api/plans/detect')) return answer(200, { source: 'pom.xml', build: 'mvn package', test: 'mvn test' });
+    if (path === '/api/projects' && method === 'POST') return answer(created.status, created.body);
+    if (path.startsWith('/api/projects/detect')) return answer(200, { source: 'pom.xml', build: 'mvn package', test: 'mvn test' });
     if (path === '/api/templates') return answer(200, [{ id: 'generic', name: { en: 'Generic' }, description: { en: '' }, source: 'shipped', valid: true }]);
     return answer(200, []);
   });
@@ -30,34 +30,34 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const field = (name: string): HTMLInputElement => document.querySelector(`#overlay input[name="${name}"]`)!;
 const browse = (): HTMLButtonElement => document.querySelector('#overlay button.browse-folder')!;
 
-describe('the Browse button of the new-plan dialog', () => {
+describe('the Browse button of the new-project dialog', () => {
   it('fills the folder with what the native window returned, proposes the name and reads the project', async () => {
-    openNewPlanDialog(() => undefined);
+    openNewProjectDialog(() => undefined);
     await tick();
-    expect(browse().dataset.i18n).toBe('plans.new.browse');
+    expect(browse().dataset.i18n).toBe('projects.new.browse');
     browse().click();
     await tick(); await tick();
     expect(calls.some((c) => c.path === '/api/pick-folder' && c.method === 'POST')).toBe(true);
     expect(field('folder').value).toBe('D:\\work\\Shop API');
     expect(field('name').value).toBe('shop-api');
-    expect(calls.some((c) => c.path === `/api/plans/detect?root=${encodeURIComponent('D:\\work\\Shop API')}`)).toBe(true);
+    expect(calls.some((c) => c.path === `/api/projects/detect?root=${encodeURIComponent('D:\\work\\Shop API')}`)).toBe(true);
     expect(field('test').value).toBe('mvn test');
   });
 
   it('leaves the folder alone when the window was closed', async () => {
     pick = { status: 200, body: { status: 'cancelled' } };
-    openNewPlanDialog(() => undefined);
+    openNewProjectDialog(() => undefined);
     await tick();
     field('folder').value = 'D:\\typed';
     browse().click();
     await tick(); await tick();
     expect(field('folder').value).toBe('D:\\typed');
-    expect(calls.some((c) => c.path.startsWith('/api/plans/detect'))).toBe(false);
+    expect(calls.some((c) => c.path.startsWith('/api/projects/detect'))).toBe(false);
   });
 
   it('says so when the window cannot be opened here, and the typed path still works', async () => {
     pick = { status: 200, body: { status: 'unavailable', reason: 'unsupported_platform' } };
-    openNewPlanDialog(() => undefined);
+    openNewProjectDialog(() => undefined);
     await tick();
     browse().click();
     await tick(); await tick();
@@ -68,7 +68,7 @@ describe('the Browse button of the new-plan dialog', () => {
 
   it('shows the error of a refused request (a window is already open)', async () => {
     pick = { status: 409, body: { code: 'folder.pickBusy' } };
-    openNewPlanDialog(() => undefined);
+    openNewProjectDialog(() => undefined);
     await tick();
     browse().click();
     await tick(); await tick();
@@ -76,10 +76,10 @@ describe('the Browse button of the new-plan dialog', () => {
   });
 });
 
-describe('the new-plan dialog tells who created the plan', () => {
-  it('calls onCreated with the plan name, after closing, only on success', async () => {
+describe('the new-project dialog tells who created the project', () => {
+  it('calls onCreated with the project name, after closing, only on success', async () => {
     const onCreated = vi.fn();
-    openNewPlanDialog(() => undefined, onCreated);
+    openNewProjectDialog(() => undefined, onCreated);
     await tick();
     field('folder').value = 'D:\\work\\shop-api';
     document.querySelector<HTMLFormElement>('#overlay form')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -88,8 +88,8 @@ describe('the new-plan dialog tells who created the plan', () => {
     expect(document.getElementById('overlay')!.hidden).toBe(true);
 
     onCreated.mockClear();
-    created = { status: 409, body: { code: 'plan.duplicate' } };
-    openNewPlanDialog(() => undefined, onCreated);
+    created = { status: 409, body: { code: 'project.duplicate' } };
+    openNewProjectDialog(() => undefined, onCreated);
     await tick();
     field('folder').value = 'D:\\work\\shop-api';
     document.querySelector<HTMLFormElement>('#overlay form')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -98,8 +98,8 @@ describe('the new-plan dialog tells who created the plan', () => {
   });
 });
 
-describe('the welcome screen (no plan open)', () => {
-  it('hides the plan chrome, asks for a project at once, and reloads the page once a plan exists', async () => {
+describe('the welcome screen (no project open)', () => {
+  it('hides the project chrome, asks for a project at once, and reloads the page once a project exists', async () => {
     const reload = vi.fn();
     showWelcome({ reload });
     await tick();

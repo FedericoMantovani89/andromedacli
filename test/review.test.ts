@@ -29,7 +29,7 @@ let ended: string[];
 
 beforeEach(async () => {
   t = makeRepo({ remote: true });
-  const w = await createAgentWorktree({ repo: t.repo, plan: 'p', slug: 'a-job' });
+  const w = await createAgentWorktree({ repo: t.repo, project: 'p', slug: 'a-job' });
   wt = w.path;
   branch = w.branch;
   tickets = new TicketStore(t.repo);
@@ -37,7 +37,7 @@ beforeEach(async () => {
   spawned = []; main = []; author = []; asked = []; alive = true; existing = ['a-job']; ended = [];
   spawnResult = { ok: true };
   const deps: ReviewDeps = {
-    tickets, root: t.repo, plan: 'p',
+    tickets, root: t.repo, project: 'p',
     worktreeOf: (slug) => (slug === 'a-job' ? { worktree: wt, branch } : undefined),
     testCommand: () => command, testTimeoutMs: () => 30_000,
     language: () => ({ lang: 'en', t: createTranslator({ lang: 'en', messages: bundles.get('en') ?? {}, fallback: bundles.get('en') }) }),
@@ -90,10 +90,10 @@ describe('reviewerSlugFor', () => {
 
 describe('reviewerGoal', () => {
   it('tells the reviewer what to look at, that it is read-only, how to answer, and the console facts', () => {
-    const g = reviewerGoal({ slug: 'a-job', plan: 'p', sha: 'abcdef1234567', goal: 'Add multiply', testsOk: true, files: 2, added: 11, removed: 1, reportFile: 'D:/x/report.md', round: 1, previous: [] });
+    const g = reviewerGoal({ slug: 'a-job', project: 'p', sha: 'abcdef1234567', goal: 'Add multiply', testsOk: true, files: 2, added: 11, removed: 1, reportFile: 'D:/x/report.md', round: 1, previous: [] });
     expect(g).toContain('a-job');
     expect(g).toContain('Add multiply');
-    expect(g).toContain('git diff plan/p...HEAD');
+    expect(g).toContain('git diff project/p...HEAD');
     expect(g).toContain('abcdef1');
     expect(g).toMatch(/PASSED/);
     expect(g).toContain('D:/x/report.md');
@@ -102,7 +102,7 @@ describe('reviewerGoal', () => {
     expect(g).toMatch(/ToolSearch/);
   });
   it('a second round lists the previous notes to check', () => {
-    const g = reviewerGoal({ slug: 'a-job', plan: 'p', sha: 'abcdef1', goal: 'g', testsOk: true, files: 1, added: 1, removed: 0, reportFile: 'r', round: 2, previous: [{ round: 1, pass: false, reviewer: 'review-a-job', at: 'x', notes: NOTES }] });
+    const g = reviewerGoal({ slug: 'a-job', project: 'p', sha: 'abcdef1', goal: 'g', testsOk: true, files: 1, added: 1, removed: 0, reportFile: 'r', round: 2, previous: [{ round: 1, pass: false, reviewer: 'review-a-job', at: 'x', notes: NOTES }] });
     expect(g).toMatch(/round 2/i);
     expect(g).toContain('negative input is not handled');
   });
@@ -116,7 +116,7 @@ describe('requestReview', () => {
     expect(spawned).toHaveLength(1);
     expect(spawned[0]).toMatchObject({ slug: 'review-a-job', ticket: 'a-job', sha, model: 'sonnet' });
     expect(spawned[0]!.goal).toContain('Add multiply to src/math.js');
-    expect(spawned[0]!.goal).toContain('git diff plan/p...HEAD');
+    expect(spawned[0]!.goal).toContain('git diff project/p...HEAD');
     expect(tickets.get('a-job')).toMatchObject({ status: 'in_review', reviewer: 'review-a-job' });
   });
   it('only a delivered ticket can be put into review, and only once', async () => {

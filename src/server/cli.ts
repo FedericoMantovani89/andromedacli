@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { parseCliArgs, planNameFromDir } from './cli-args';
+import { parseCliArgs, projectNameFromDir } from './cli-args';
 import { configDir } from './config';
 import { startServer } from './index';
 import { runDoctor } from './prereq/doctor';
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   }
 
   if (args.command === 'doctor') {
-    const report = await runDoctor({ configDir: configDir(), planRoot: resolve(args.planRoot) });
+    const report = await runDoctor({ configDir: configDir(), projectRoot: resolve(args.projectRoot) });
     if (args.json) console.log(JSON.stringify(report, null, 2));
     else {
       for (const c of report.checks) {
@@ -34,15 +34,15 @@ async function main(): Promise<void> {
     process.exit(report.ok ? 0 : 1);
   }
 
-  // Only an explicit --plan-root opens a folder; otherwise the remembered plans open, or the welcome screen asks for a project.
-  const planRoot = args.planRootGiven ? resolve(args.planRoot) : undefined;
+  // Only an explicit --project-root opens a folder; otherwise the remembered projects open, or the welcome screen asks for a project.
+  const projectRoot = args.projectRootGiven ? resolve(args.projectRoot) : undefined;
   try {
     const server = await startServer({
-      port: args.port, configDir: configDir(), ...(planRoot ? { planRoot, planName: planNameFromDir(planRoot) } : {}),
+      port: args.port, configDir: configDir(), ...(projectRoot ? { projectRoot, projectName: projectNameFromDir(projectRoot) } : {}),
     });
     const link = `${server.url}/?token=${server.token}`;
     console.log(`Console: ${link}`);
-    if (planRoot) console.log(`Plan folder: ${planRoot} (state in ${join(planRoot, '.console')})`);
+    if (projectRoot) console.log(`Project folder: ${projectRoot} (state in ${join(projectRoot, '.console')})`);
     if (!args.noOpen) openBrowser(link);
     const stop = () => { void server.close().then(() => process.exit(0)); };
     process.on('SIGINT', stop);

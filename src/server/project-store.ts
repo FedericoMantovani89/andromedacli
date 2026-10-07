@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 
 /** `testCommand` is what the console runs for the validation step of every ticket (SPEC 8.3); the user writes it. */
-export interface PlanInfo {
+export interface ProjectInfo {
   name: string;
   createdAt: string;
   testCommand?: string;
@@ -14,11 +14,11 @@ export interface PlanInfo {
   lintCommand?: string;
   /** Profile names offered to the new-agent picker (default: all). */
   profiles?: string[];
-  /** Default model of the plan's agents (behind the request's and the profile's). */
+  /** Default model of the project's agents (behind the request's and the profile's). */
   model?: string;
-  /** Default token budget of the plan's agents (behind the request's and the profile's). */
+  /** Default token budget of the project's agents (behind the request's and the profile's). */
   agentTokens?: number;
-  /** Active-agent limit of this plan (default: `agents.maxActivePerPlan`). */
+  /** Active-agent limit of this project (default: `agents.maxActivePerProject`). */
   maxActive?: number;
   /** Files the last checklist step must update. */
   docs?: string[];
@@ -32,7 +32,7 @@ export interface AgentRecord {
   sessionId?: string;
   worktree?: string;
   branch?: string;
-  /** Absolute path of the repository of the worktree (a plan folder that holds several repos); absent: the plan root. */
+  /** Absolute path of the repository of the worktree (a project folder that holds several repos); absent: the project root. */
   repo?: string;
   model?: string;
   cwd?: string;
@@ -49,21 +49,21 @@ export type AgentPatch = { [K in keyof Omit<AgentRecord, 'slug' | 'createdAt'>]?
 export const isValidTestCommand = (v: unknown): v is string => typeof v === 'string' && v.length <= 500 && !/[\r\n]/.test(v);
 
 /** A model alias or id: plain characters only, because it becomes a command-line argument (same rule as `MODEL_RE` in spawn.ts). */
-const PLAN_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
+const PROJECT_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
 const isStringList = (v: unknown, max: number, maxLen: number): v is string[] =>
   Array.isArray(v) && v.length <= max && v.every((x) => typeof x === 'string' && x.trim() !== '' && x.length <= maxLen && !/[\r\n]/.test(x));
 const isIntIn = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
 
-/** The optional plan fields of Phase 6D that are set through `setFields` (`testCommand` and `squash` have their own setters). */
-export const PLAN_FIELDS = ['buildCommand', 'lintCommand', 'profiles', 'model', 'agentTokens', 'maxActive', 'docs', 'secretPatterns'] as const;
-export type PlanField = (typeof PLAN_FIELDS)[number];
+/** The optional project fields of Phase 6D that are set through `setFields` (`testCommand` and `squash` have their own setters). */
+export const PROJECT_FIELDS = ['buildCommand', 'lintCommand', 'profiles', 'model', 'agentTokens', 'maxActive', 'docs', 'secretPatterns'] as const;
+export type ProjectField = (typeof PROJECT_FIELDS)[number];
 
-/** Whether a value is acceptable for a plan field. `knownProfiles` limits `profiles` (names the console knows). */
-export function isValidPlanField(field: PlanField, v: unknown, knownProfiles: readonly string[]): boolean {
+/** Whether a value is acceptable for a project field. `knownProfiles` limits `profiles` (names the console knows). */
+export function isValidProjectField(field: ProjectField, v: unknown, knownProfiles: readonly string[]): boolean {
   switch (field) {
     case 'buildCommand': case 'lintCommand': return isValidTestCommand(v);
     case 'profiles': return isStringList(v, 64, 40) && v.every((p) => knownProfiles.includes(p));
-    case 'model': return typeof v === 'string' && PLAN_MODEL_RE.test(v);
+    case 'model': return typeof v === 'string' && PROJECT_MODEL_RE.test(v);
     case 'agentTokens': return isIntIn(v, 1000, 100_000_000);
     case 'maxActive': return isIntIn(v, 1, 64);
     case 'docs': return isStringList(v, 20, 200);
@@ -71,68 +71,68 @@ export function isValidPlanField(field: PlanField, v: unknown, knownProfiles: re
   }
 }
 
-/** Plan state under <repo>/.console/ (SPEC 23): plan.json and state/agents.json. */
-export class PlanStore {
-  private readonly planFile: string;
+/** Project state under <repo>/.console/ (SPEC 23): project.json and state/agents.json. */
+export class ProjectStore {
+  private readonly projectFile: string;
   private readonly agentsFile: string;
   private readonly stateDir: string;
 
   constructor(root: string) {
     this.stateDir = join(root, '.console', 'state');
-    this.planFile = join(root, '.console', 'plan.json');
+    this.projectFile = join(root, '.console', 'project.json');
     this.agentsFile = join(root, '.console', 'state', 'agents.json');
   }
 
   init(name: string): void {
-    if (!existsSync(this.planFile)) writeJsonAtomic(this.planFile, { name, createdAt: new Date().toISOString() });
+    if (!existsSync(this.projectFile)) writeJsonAtomic(this.projectFile, { name, createdAt: new Date().toISOString() });
     if (!existsSync(this.agentsFile)) writeJsonAtomic(this.agentsFile, []);
   }
 
-  get plan(): PlanInfo {
-    return JSON.parse(readFileSync(this.planFile, 'utf8')) as PlanInfo;
+  get project(): ProjectInfo {
+    return JSON.parse(readFileSync(this.projectFile, 'utf8')) as ProjectInfo;
   }
 
-  /** Sets (or, with an empty string, clears) the plan's test command. One line, at most 500 characters. */
+  /** Sets (or, with an empty string, clears) the project's test command. One line, at most 500 characters. */
   setTestCommand(command: string): void {
-    if (!isValidTestCommand(command)) throw new Error('plan.testCommandInvalid');
-    const { testCommand: _old, ...rest } = this.plan;
+    if (!isValidTestCommand(command)) throw new Error('project.testCommandInvalid');
+    const { testCommand: _old, ...rest } = this.project;
     const trimmed = command.trim();
-    writeJsonAtomic(this.planFile, trimmed === '' ? rest : { ...rest, testCommand: trimmed });
+    writeJsonAtomic(this.projectFile, trimmed === '' ? rest : { ...rest, testCommand: trimmed });
   }
 
   setSquash(squash: boolean): void {
-    if (typeof squash !== 'boolean') throw new Error('plan.squashInvalid');
-    writeJsonAtomic(this.planFile, { ...this.plan, squash });
+    if (typeof squash !== 'boolean') throw new Error('project.squashInvalid');
+    writeJsonAtomic(this.projectFile, { ...this.project, squash });
   }
 
   /** Stores the build and lint commands given at creation (empty or absent: left out). */
   setCommands(c: { build?: string; lint?: string }): void {
-    const next: PlanInfo = { ...this.plan };
+    const next: ProjectInfo = { ...this.project };
     if (c.build?.trim()) next.buildCommand = c.build.trim();
     if (c.lint?.trim()) next.lintCommand = c.lint.trim();
-    writeJsonAtomic(this.planFile, next);
+    writeJsonAtomic(this.projectFile, next);
   }
 
   /**
    * Sets (or, with `undefined`, `null`, an empty string or an empty list, clears) the Phase 6D fields. Every entry is checked before
-   * anything is written; a bad one throws `plan.fieldInvalid:<field>` and changes nothing.
+   * anything is written; a bad one throws `project.fieldInvalid:<field>` and changes nothing.
    */
-  setFields(patch: Partial<Record<PlanField, unknown>>, knownProfiles: readonly string[]): void {
-    const next: Record<string, unknown> = { ...this.plan };
-    for (const field of PLAN_FIELDS) {
+  setFields(patch: Partial<Record<ProjectField, unknown>>, knownProfiles: readonly string[]): void {
+    const next: Record<string, unknown> = { ...this.project };
+    for (const field of PROJECT_FIELDS) {
       if (!(field in patch)) continue;
       let v = patch[field];
       if (typeof v === 'string') v = v.trim();
       if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) { delete next[field]; continue; }
-      if (!isValidPlanField(field, v, knownProfiles)) throw new Error(`plan.fieldInvalid:${field}`);
+      if (!isValidProjectField(field, v, knownProfiles)) throw new Error(`project.fieldInvalid:${field}`);
       next[field] = v;
     }
-    writeJsonAtomic(this.planFile, next);
+    writeJsonAtomic(this.projectFile, next);
   }
 
-  /** The plan's optional fields; empty when plan.json cannot be read (a damaged file must not stop a launch). */
-  fields(): Partial<PlanInfo> {
-    try { return this.plan; } catch { return {}; }
+  /** The project's optional fields; empty when project.json cannot be read (a damaged file must not stop a launch). */
+  fields(): Partial<ProjectInfo> {
+    try { return this.project; } catch { return {}; }
   }
 
   listAgents(): AgentRecord[] {

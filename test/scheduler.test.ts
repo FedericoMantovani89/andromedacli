@@ -7,7 +7,7 @@ const req = (slug: string): SpawnRequest => ({ slug, profile: 'backend', goal: `
 
 function setup(limit: number, opts: { failFor?: string } = {}) {
   const registry = new AgentRegistry();
-  const limits = { global: limit, perPlan: limit };
+  const limits = { global: limit, perProject: limit };
   const started: string[] = [];
   const errors: string[] = [];
   const start = vi.fn((r: SpawnRequest) => {
@@ -61,7 +61,7 @@ it('a process that dies frees its slot', () => {
 it('lowering the limit stops nobody and admits nobody until there is room', () => {
   const { scheduler, started, limits, registry, finish } = setup(3);
   scheduler.request(req('a-job')); scheduler.request(req('b-job')); scheduler.request(req('c-job'));
-  limits.global = 1; limits.perPlan = 1;
+  limits.global = 1; limits.perProject = 1;
   expect(registry.list().every((a) => a.state === 'starting')).toBe(true); // nothing was stopped
   expect(scheduler.request(req('d-job'))).toEqual({ status: 'queued', position: 1 });
   finish('a-job');  // 2 active (b, c) > limit 1: still no room
@@ -71,9 +71,9 @@ it('lowering the limit stops nobody and admits nobody until there is room', () =
   finish('c-job');  // 0 active: d starts
   expect(started).toEqual(['a-job', 'b-job', 'c-job', 'd-job']);
 });
-it('the smaller of the global and per-plan limits applies', () => {
+it('the smaller of the global and per-project limits applies', () => {
   const { scheduler, limits } = setup(5);
-  limits.global = 4; limits.perPlan = 1;
+  limits.global = 4; limits.perProject = 1;
   scheduler.request(req('a-job'));
   expect(scheduler.request(req('b-job'))).toEqual({ status: 'queued', position: 1 });
 });
@@ -119,7 +119,7 @@ it('an asynchronous start counts as active at once, and its failure reaches the 
   const errors: string[] = [];
   let release!: (ok: boolean) => void;
   const scheduler = new Scheduler({
-    registry, limits: () => ({ global: 1, perPlan: 1 }),
+    registry, limits: () => ({ global: 1, perProject: 1 }),
     start: (r) => {
       registry.register({ slug: r.slug, role: 'agent', profile: r.profile, goal: r.goal });
       registry.onSpawned(r.slug); // synchronous part: the slot is taken
@@ -140,7 +140,7 @@ it('a queued request whose asynchronous start fails goes to onStartError and the
   const errors: string[] = [];
   const started: string[] = [];
   const scheduler = new Scheduler({
-    registry, limits: () => ({ global: 1, perPlan: 1 }),
+    registry, limits: () => ({ global: 1, perProject: 1 }),
     start: async (r) => {
       registry.register({ slug: r.slug, role: 'agent', profile: r.profile, goal: r.goal });
       registry.onSpawned(r.slug);
@@ -158,7 +158,7 @@ it('a queued request whose asynchronous start fails goes to onStartError and the
   expect(started).toEqual(['a-job', 'c-job']);
 });
 
-function withMultiplier(base: { global: number; perPlan: number }) {
+function withMultiplier(base: { global: number; perProject: number }) {
   const registry = new AgentRegistry();
   const state = { step: 'none' as QuotaStep };
   const started: string[] = [];
@@ -170,9 +170,9 @@ function withMultiplier(base: { global: number; perPlan: number }) {
 }
 
 it('the quota step halve cuts a base of {4,3} to 2 active agents', () => {
-  const { scheduler, state, started } = withMultiplier({ global: 4, perPlan: 3 });
+  const { scheduler, state, started } = withMultiplier({ global: 4, perProject: 3 });
   state.step = 'halve';
-  expect(scheduler.effectiveLimits()).toEqual({ global: 2, perPlan: 2 });
+  expect(scheduler.effectiveLimits()).toEqual({ global: 2, perProject: 2 });
   expect(scheduler.request(req('a-job'))).toEqual({ status: 'started' });
   expect(scheduler.request(req('b-job'))).toEqual({ status: 'started' });
   expect(scheduler.request(req('c-job'))).toEqual({ status: 'queued', position: 1 });
@@ -181,7 +181,7 @@ it('the quota step halve cuts a base of {4,3} to 2 active agents', () => {
 });
 
 it('freeze admits nobody and the queue holds; back to none, release() starts it', () => {
-  const { scheduler, state, started } = withMultiplier({ global: 4, perPlan: 3 });
+  const { scheduler, state, started } = withMultiplier({ global: 4, perProject: 3 });
   state.step = 'freeze';
   expect(scheduler.request(req('a-job'))).toEqual({ status: 'queued', position: 1 });
   expect(scheduler.request(req('b-job'))).toEqual({ status: 'queued', position: 2 });
@@ -196,5 +196,5 @@ it('freeze admits nobody and the queue holds; back to none, release() starts it'
 
 it('without a multiplier the configured limits apply unchanged', () => {
   const { scheduler } = setup(2);
-  expect(scheduler.effectiveLimits()).toEqual({ global: 2, perPlan: 2 });
+  expect(scheduler.effectiveLimits()).toEqual({ global: 2, perProject: 2 });
 });

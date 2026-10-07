@@ -10,10 +10,10 @@ export type Language = string;
 export interface Config {
   schema: 1;
   language: Language;
-  agents: { bypassPermissions: boolean; maxActiveGlobal: number; maxActivePerPlan: number };
+  agents: { bypassPermissions: boolean; maxActiveGlobal: number; maxActivePerProject: number };
   claude: { command: string[] };
   mod: { enabled: boolean };
-  /** Worktrees and commits by the console (SPEC 9). `worktrees: false` keeps the Phase 2 behaviour: agents share the plan folder. */
+  /** Worktrees and commits by the console (SPEC 9). `worktrees: false` keeps the Phase 2 behaviour: agents share the project folder. */
   git: { worktrees: boolean; secretPatterns: string[]; testTimeoutMinutes: number; staleWorktreeDays: number; staleCheck: boolean };
   /** `shadow` allows everything but logs what `enforce` would have denied (SPEC 14). */
   guard: { mode: 'enforce' | 'shadow' };
@@ -37,7 +37,7 @@ export interface ConfigError { path: string; code: 'config.invalid' | 'config.un
 export const DEFAULT_CONFIG: Config = {
   schema: 1,
   language: 'auto',
-  agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerPlan: 3 },
+  agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerProject: 3 },
   claude: { command: ['claude'] },
   mod: { enabled: true },
   git: { worktrees: true, secretPatterns: DEFAULT_SECRET_PATTERNS, testTimeoutMinutes: 15, staleWorktreeDays: 10, staleCheck: true },
@@ -104,7 +104,7 @@ export function validateConfig(raw: Record<string, unknown>): { config: Config; 
         if (typeof a.bypassPermissions === 'boolean') config.agents.bypassPermissions = a.bypassPermissions;
         else bad('agents.bypassPermissions');
       }
-      for (const key of ['maxActiveGlobal', 'maxActivePerPlan'] as const) {
+      for (const key of ['maxActiveGlobal', 'maxActivePerProject'] as const) {
         if (!(key in a)) continue;
         const v = a[key];
         if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64) config.agents[key] = v;

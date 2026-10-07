@@ -12,7 +12,7 @@ export interface Profile {
   readOnly: boolean;
   /** `console: budget_tokens: N`: the token budget of this profile's sessions (SPEC 16); absent means the configured default. */
   budgetTokens?: number;
-  source: 'plan' | 'user' | 'shipped';
+  source: 'project' | 'user' | 'shipped';
 }
 
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -49,10 +49,10 @@ function readProfile(file: string, name: string, source: Profile['source']): Pro
   return { name, description: meta.description ?? '', model, body, readOnly: consoleKeys.read_only === 'true', budgetTokens, source };
 }
 
-/** SPEC 11.4: the plan's profiles override the user's, which override the shipped ones. */
-export function loadProfile(name: string, planRoot: string, userDir: string = join(configDir(), 'profiles')): Profile | undefined {
+/** SPEC 11.4: the project's profiles override the user's, which override the shipped ones. */
+export function loadProfile(name: string, projectRoot: string, userDir: string = join(configDir(), 'profiles')): Profile | undefined {
   if (!NAME_RE.test(name)) return undefined; // also rules out path traversal
-  return readProfile(join(planRoot, '.console', 'profiles', `${name}.md`), name, 'plan')
+  return readProfile(join(projectRoot, '.console', 'profiles', `${name}.md`), name, 'project')
     ?? readProfile(join(userDir, `${name}.md`), name, 'user')
     ?? readProfile(join(promptsDir(), 'profiles', `${name}.md`), name, 'shipped');
 }
@@ -73,42 +73,42 @@ function writePrompt(outDir: string, name: string, text: string): string {
   return file;
 }
 
-const MAX_PLAN_TEXT = 32 * 1024;
+const MAX_PROJECT_TEXT = 32 * 1024;
 
-/** A plan's own text file (`.console/main.md`, `.console/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
-function planText(planRoot: string | undefined, file: 'main.md' | 'rules.md'): string | undefined {
-  if (!planRoot) return undefined;
+/** A project's own text file (`.console/main.md`, `.console/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
+function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.md'): string | undefined {
+  if (!projectRoot) return undefined;
   try {
-    const path = join(planRoot, '.console', file);
+    const path = join(projectRoot, '.console', file);
     if (!existsSync(path)) return undefined;
     const text = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').trim();
-    return text === '' ? undefined : text.slice(0, MAX_PLAN_TEXT);
+    return text === '' ? undefined : text.slice(0, MAX_PROJECT_TEXT);
   } catch {
     return undefined;
   }
 }
 
-/** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `planRoot`, the plan's main.md and rules.md follow. */
-export function renderMainPrompt(o: { plan: string; workLanguage: string; outDir: string; planRoot?: string; repos?: string[] }): string {
+/** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `projectRoot`, the project's main.md and rules.md follow. */
+export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[] }): string {
   const template = readFileSync(join(promptsDir(), 'main.md'), 'utf8');
-  const base = fill(template, { plan: o.plan, workLanguage: o.workLanguage });
-  // A plan folder that holds several repositories: every agent works in exactly one, which the main must name.
+  const base = fill(template, { project: o.project, workLanguage: o.workLanguage });
+  // A project folder that holds several repositories: every agent works in exactly one, which the main must name.
   const repoText = o.repos && o.repos.length > 1
-    ? `This plan folder holds several git repositories: ${o.repos.join(', ')}. Every agent works in exactly one of them: pass its name as "repo" to spawn_agent. Work that touches two repositories needs one agent for each.`
+    ? `This project folder holds several git repositories: ${o.repos.join(', ')}. Every agent works in exactly one of them: pass its name as "repo" to spawn_agent. Work that touches two repositories needs one agent for each.`
     : undefined;
-  const extra = [repoText, planText(o.planRoot, 'main.md'), planText(o.planRoot, 'rules.md')].filter((x): x is string => x !== undefined);
-  return writePrompt(o.outDir, `main-${o.plan}.md`, extra.length > 0 ? `${base.trimEnd()}\n\n${extra.join('\n\n')}\n` : base);
+  const extra = [repoText, projectText(o.projectRoot, 'main.md'), projectText(o.projectRoot, 'rules.md')].filter((x): x is string => x !== undefined);
+  return writePrompt(o.outDir, `main-${o.project}.md`, extra.length > 0 ? `${base.trimEnd()}\n\n${extra.join('\n\n')}\n` : base);
 }
 
 /** An agent's system-prompt addition: its profile plus who it is and what the console offers it. */
-export function renderAgentPrompt(o: { profile: Profile; slug: string; plan: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean; planRoot?: string; docs?: string[] }): string {
+export function renderAgentPrompt(o: { profile: Profile; slug: string; project: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean; projectRoot?: string; docs?: string[] }): string {
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
   const rulesFile = o.review ? 'reviewer-git.md' : o.recovery ? 'recovery-git.md' : 'agent-git.md';
-  const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, plan: o.plan }) : '';
-  const text = fill(template, { slug: o.slug, plan: o.plan, profile: o.profile.body, git: gitRules });
-  // The plan's rules reach every session; the documents to update concern only the one that writes the work (not a review or a recovery).
+  const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, project: o.project }) : '';
+  const text = fill(template, { slug: o.slug, project: o.project, profile: o.profile.body, git: gitRules });
+  // The project's rules reach every session; the documents to update concern only the one that writes the work (not a review or a recovery).
   const docs = o.docs && o.docs.length > 0 && !o.review && !o.recovery ? `At the last step update: ${o.docs.join(', ')}.` : undefined;
-  const extra = [planText(o.planRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
+  const extra = [projectText(o.projectRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
   const full = extra.length > 0 ? `${text.trimEnd()}\n\n${extra.join('\n\n')}\n` : text;
   return writePrompt(o.outDir, `agent-${o.slug}.md`, full.replace(/\n{3,}/g, '\n\n'));
 }

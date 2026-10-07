@@ -3,7 +3,7 @@ import type { Context } from '../http';
 import { buildClaudeLaunch, SESSION_ID_RE } from '../pty/claude-launch';
 import { loadProfile, renderAgentPrompt, type Profile } from '../profiles';
 import { validateSlug } from '../../shared/slug';
-import { checkSpawnable, createAgentWorktree, createReviewWorktree, discardAgentWorktree, GitError, removeWorktree } from '../git/worktree';
+import { checkSpawnable, createAgentWorktree, createReviewWorktree, discardAgentWorktree, GitError, removeWorktree, worktreesDirFor } from '../git/worktree';
 import { installPushHook } from '../git/hooks';
 import { repoPathOf, resolveRepo } from '../git/repos';
 import type { SpawnRequest } from './scheduler';
@@ -42,11 +42,11 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   const blocked = (await ctx.ensurePrereq()).find((c) => c.required && c.status !== 'ok');
   if (blocked) return refuse(422, 'prereq.blocked', { tool: blocked.id });
 
-  const v = validateSlug(r.slug, [ctx.planName, ...ctx.store.listAgents().map((a) => a.slug)]);
+  const v = validateSlug(r.slug, [ctx.projectName, ...ctx.store.listAgents().map((a) => a.slug)]);
   if (!v.ok) return refuse(422, v.code, v.params);
-  const profile = typeof r.profile === 'string' ? loadProfile(r.profile, ctx.planRoot) : undefined;
+  const profile = typeof r.profile === 'string' ? loadProfile(r.profile, ctx.projectRoot) : undefined;
   if (!profile) return refuse(422, 'profile.invalid');
-  // A plan may offer only some profiles (its template); the console's own reviewer, recovery and replacement spawns are exempt.
+  // A project may offer only some profiles (its template); the console's own reviewer, recovery and replacement spawns are exempt.
   const offered = ctx.store.fields().profiles;
   if (offered && !r.review && !r.recovery && !r.resumeBranch && !offered.includes(r.profile)) return refuse(422, 'profile.invalid');
 
@@ -57,16 +57,16 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   // A recovery exists only for a stopped ticket: start_recovery (or the user's answer to a stop) starts it, on the WIP commit.
   if (r.profile === 'recovery' && !r.recovery) return refuse(422, 'recovery.useRecoveryTool');
   if (ctx.git.worktrees) {
-    // Which repository: the plan folder when it is one, else the sub-folder named in the request. Found now, before the name is
+    // Which repository: the project folder when it is one, else the sub-folder named in the request. Found now, before the name is
     // reserved, so the user sees the real reason (SPEC 9.2); the worktree itself is made at start.
-    const repo = resolveRepo(ctx.planRoot, r.repo);
+    const repo = resolveRepo(ctx.projectRoot, r.repo);
     if (!repo.ok) {
       return refuse(422, repo.code, repo.code === 'git.repoRequired' ? { repos: repo.repos.join(', ') }
         : repo.code === 'git.unknownRepo' ? { repo: r.repo ?? '', repos: repo.repos.join(', ') } : undefined);
     }
     request.repo = repo.rel;
     await ctx.prepareRepo(repo.path);
-    const problem = await checkSpawnable({ repo: repo.path, plan: ctx.planName, slug: v.slug, review: Boolean(detachedOf(r)) });
+    const problem = await checkSpawnable({ repo: repo.path, project: ctx.projectName, slug: v.slug, dir: worktreesDirFor(ctx.projectRoot, repo.path), review: Boolean(detachedOf(r)) });
     if (problem) return refuse(422, problem);
   }
   try {
@@ -100,32 +100,33 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
  * asynchronous: the slot is taken at once, the worktree and its hook are made, and only then does the process start.
  */
 export function launchAgent(ctx: Context, r: SpawnRequest): void | Promise<void> {
-  const profile = loadProfile(r.profile, ctx.planRoot);
+  const profile = loadProfile(r.profile, ctx.projectRoot);
   if (!profile) throw new Error(`profile ${r.profile} disappeared`);
   const { bypass } = ctx.noteLaunch(r.slug); // the settings of this moment, even if the worktree takes a while
   if (r.resume) {
     // A resumed session goes back to the worktree it was suspended in; nothing new is created. With worktrees off, agents share
-    // the plan folder: that is where it goes back to.
+    // the project folder: that is where it goes back to.
     const git = ctx.registry.get(r.slug)?.git;
-    if (!git && !ctx.git.worktrees) return startProcess(ctx, r, profile, ctx.planRoot, undefined, bypass);
+    if (!git && !ctx.git.worktrees) return startProcess(ctx, r, profile, ctx.projectRoot, undefined, bypass);
     if (!git || !existsSync(git.worktree)) throw new Error('no_worktree');
     return startProcess(ctx, r, profile, git.worktree, git, bypass);
   }
-  if (!ctx.git.worktrees) return startProcess(ctx, r, profile, ctx.planRoot, undefined, bypass);
+  if (!ctx.git.worktrees) return startProcess(ctx, r, profile, ctx.projectRoot, undefined, bypass);
   ctx.registry.onSpawned(r.slug);
   return startInWorktree(ctx, r, profile, bypass);
 }
 
 async function startInWorktree(ctx: Context, r: SpawnRequest, profile: Profile, bypass: boolean): Promise<void> {
   let made: { path: string; branch: string } | undefined;
-  const repo = repoPathOf(ctx.planRoot, r.repo);
+  const repo = repoPathOf(ctx.projectRoot, r.repo);
+  const dir = worktreesDirFor(ctx.projectRoot, repo);
   try {
     // A reviewer reads a detached checkout of the delivered commit, a recovery one of the WIP commit; their nominal branch exists
     // nowhere, so the push hook refuses everything. A replacement agent checks out the stopped agent's branch.
     const detached = detachedOf(r);
     made = detached
-      ? { path: (await createReviewWorktree({ repo, slug: r.slug, sha: detached.sha })).path, branch: `${detached.prefix}/${r.slug}` }
-      : await createAgentWorktree({ repo, plan: ctx.planName, slug: r.slug, ...(r.resumeBranch ? { branch: r.resumeBranch } : {}) });
+      ? { path: (await createReviewWorktree({ repo, slug: r.slug, sha: detached.sha, dir })).path, branch: `${detached.prefix}/${r.slug}` }
+      : await createAgentWorktree({ repo, project: ctx.projectName, slug: r.slug, dir, ...(r.resumeBranch ? { branch: r.resumeBranch } : {}) });
     await installPushHook({ repo, worktree: made.path, branch: made.branch, slug: r.slug });
     await ctx.afterWorktreeCreated?.(r.slug);
     ctx.registry.setGit(r.slug, { worktree: made.path, branch: made.branch, repo });
@@ -141,15 +142,15 @@ async function startInWorktree(ctx: Context, r: SpawnRequest, profile: Profile, 
 }
 
 function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: string, git: { worktree: string; branch: string } | undefined, bypass: boolean): void {
-  const planFields = ctx.store.fields();
+  const projectFields = ctx.store.fields();
   const launch = buildClaudeLaunch({
-    command: ctx.claudeCommand, role: roleOf(r), slug: r.slug, plan: ctx.planName,
+    command: ctx.claudeCommand, role: roleOf(r), slug: r.slug, project: ctx.projectName,
     url: `http://127.0.0.1:${ctx.getPort()}`, token: ctx.tokens.issue(r.slug), bypass, baseEnv: process.env,
-    pluginDir: ctx.modDir,
+    pluginDir: ctx.modDir, displayName: `${r.slug} ${ctx.projectName} AndromedaCli`,
     allowedTools: ctx.modDir ? (r.review ? REVIEWER_TOOLS : r.recovery ? RECOVERY_TOOLS : AGENT_TOOLS) : undefined,
-    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, plan: ctx.planName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), planRoot: ctx.planRoot, docs: planFields.docs }),
-    // request > profile > plan (Phase 6D) > the global choice in Options (Phase 6E) > Claude Code's own default (no --model)
-    model: r.model ?? profile.model ?? planFields.model ?? ctx.models.agentModel(),
+    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, project: ctx.projectName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), projectRoot: ctx.projectRoot, docs: projectFields.docs }),
+    // request > profile > project (Phase 6D) > the global choice in Options (Phase 6E) > Claude Code's own default (no --model)
+    model: r.model ?? profile.model ?? projectFields.model ?? ctx.models.agentModel(),
     ...(r.resume ? { resumeId: r.resume.sessionId } : {}),
   });
   ctx.ptys.spawn({ id: r.slug, ...launch, cwd, cols: 120, rows: 30 });
@@ -159,9 +160,9 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
   // The process already runs: a ticket file that cannot be written leaves the agent without a budget (n/a), it does not undo the start.
   if (git && roleOf(r) === 'agent') {
     try {
-      ctx.budget.begin(r.slug, r.budget ?? profile.budgetTokens ?? planFields.agentTokens ?? ctx.budgetConfig.agentTokens);
+      ctx.budget.begin(r.slug, r.budget ?? profile.budgetTokens ?? projectFields.agentTokens ?? ctx.budgetConfig.agentTokens);
     } catch (e) {
-      ctx.inbox.push(ctx.planName, `The token budget of "${r.slug}" could not be recorded (${e instanceof Error ? e.message : String(e)}); it runs without one.`);
+      ctx.inbox.push(ctx.projectName, `The token budget of "${r.slug}" could not be recorded (${e instanceof Error ? e.message : String(e)}); it runs without one.`);
     }
   }
   // A resumed session keeps its context: no goal again, only the word to go on (an interactive session waits for a turn).
@@ -211,17 +212,17 @@ export function failQueuedStart(ctx: Context, r: SpawnRequest): void {
   if (r.recovery) ctx.recovery.abandon(r.slug); // nor in recovery
   if (r.resume && r.resume.reason && r.resume.reason !== 'limit') {
     // A woken agent has no limit to blame: its ticket stays as it is and the main decides.
-    ctx.inbox.push(ctx.planName, `Waking "${r.slug}" failed when its turn in the queue came; it is interrupted. Try resume_agent once more, or tell the user.`);
+    ctx.inbox.push(ctx.projectName, `Waking "${r.slug}" failed when its turn in the queue came; it is interrupted. Try resume_agent once more, or tell the user.`);
   } else if (r.resume) {
     // A resumed ticket that could not start waits again as suspended, so the main can try once more.
     try { if (ctx.tickets.get(r.slug)?.status === 'in_progress') ctx.tickets.move(r.slug, 'suspended_limit'); } catch { /* told below anyway */ }
-    ctx.inbox.push(ctx.planName, `Resuming "${r.slug}" failed when its turn in the queue came; its ticket is suspended again.`);
+    ctx.inbox.push(ctx.projectName, `Resuming "${r.slug}" failed when its turn in the queue came; its ticket is suspended again.`);
   }
   if (r.resumeBranch) {
     // A replacement that could not start: its ticket must not stay in_progress with no agent. The branch is intact; the user decides.
     let moved = false;
     try { if (ctx.tickets.get(r.slug)?.status === 'in_progress') { ctx.tickets.move(r.slug, 'needs_user'); moved = true; } } catch { /* told below anyway */ }
-    ctx.inbox.push(ctx.planName, `The new agent "${r.slug}" that was to take over branch ${r.resumeBranch} could not start when its turn in the queue came${moved ? '; its ticket now needs the user (needs_user)' : ''}. The branch and its commits are intact. Tell the user.`);
+    ctx.inbox.push(ctx.projectName, `The new agent "${r.slug}" that was to take over branch ${r.resumeBranch} could not start when its turn in the queue came${moved ? '; its ticket now needs the user (needs_user)' : ''}. The branch and its commits are intact. Tell the user.`);
   }
   ctx.broadcastState();
 }

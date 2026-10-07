@@ -9,12 +9,12 @@ export type Profile = (typeof PROFILES)[number];
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
   'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
-  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
-  'folder.pickBusy', 'plan.duplicate', 'plan.badRoot', 'plan.badName', 'plan.notFound', 'plan.closeFailed',
+  'git.notRepo', 'git.noCommits', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
+  'folder.pickBusy', 'project.duplicate', 'project.badRoot', 'project.badName', 'project.notFound',
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
-  'plan.fieldInvalid', 'plan.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
-  'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'plan.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'plan.squashInvalid', 'recovery.useRecoveryTool',
+  'project.fieldInvalid', 'project.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
+  'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -68,7 +68,7 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
-  plan: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean };
+  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean };
   /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
   settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };
   main: SessionInfo;
@@ -81,10 +81,10 @@ export interface StateMessage {
   prereq: PrereqResult[] | null;
   /** true until the first-start wizard saved a configuration file. */
   needsSetup: boolean;
-  planIsRepo: boolean;
-  /** The git repositories agents can work in, relative to the plan folder (`['']` when the plan folder is one); empty when there is none. */
+  projectIsRepo: boolean;
+  /** The git repositories agents can work in, relative to the project folder (`['']` when the project folder is one); empty when there is none. */
   repos: string[];
-  planRoot: string;
+  projectRoot: string;
   /** Everything that waits for the user: questions from the main and the agents. */
   queue: QueueItem[];
   /** The console is waiting for a usage limit to lift (Phase 5); absent when it is not. `until` is when the next probe is due. */
@@ -93,16 +93,16 @@ export interface StateMessage {
   quota?: { percent: number; kind: string };
   /** Agents counting against the active-agent limit, and that limit as it is now (the quota step may have cut it). */
   limits?: { active: number; max: number };
-  /** Every open plan, in the order they were opened (Phase 6C): the tabs. */
-  plans?: PlanTab[];
+  /** Every open project, in the order they were opened (Phase 6C): the tabs. */
+  projects?: ProjectTab[];
   /** The last assisted install that ended (Phase 6F); absent until one did since the console started. */
   install?: { id: string; result: 'needs_admin' | 'failed' | 'done'; exitCode: number };
   /** Phase 6B: whether a native toast can be shown (`unknown` until checked, shown as n/a) and the notification settings. */
   notifications?: { toast: ToastStatus; config: NotificationsConfig };
 }
 
-/** One tab: `waiting` is the length of that plan's queue (a dot when above zero). */
-export interface PlanTab { name: string; root: string; waiting: number; mainStatus: SessionStatus }
+/** One tab: `waiting` is the length of that project's queue (a dot when above zero). */
+export interface ProjectTab { name: string; root: string; waiting: number; mainStatus: SessionStatus }
 
 export interface ApiError {
   code: string;
@@ -112,9 +112,9 @@ export interface ApiError {
 /** Control message the browser sends as a text frame on a terminal socket; keyboard input is a binary frame. */
 export interface ResizeMessage { type: 'resize'; cols: number; rows: number }
 
-/** What the console knows about itself with or without a plan (`GET /api/host`): the welcome screen asks this first. */
+/** What the console knows about itself with or without a project (`GET /api/host`): the welcome screen asks this first. */
 export interface HostInfo {
-  plans: PlanTab[];
+  projects: ProjectTab[];
   language: string;
   languages: string[];
   needsSetup: boolean;

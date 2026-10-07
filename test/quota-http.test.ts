@@ -19,15 +19,15 @@ const ticketFile = (root: string, slug: string): string => join(root, '.console'
 
 async function boot() {
   const fake = fakeSleepClock();
-  const planRoot = mkdtempSync(join(tmpdir(), 'q-plan-'));
-  const s = await bootServer({ planRoot, sleepClock: fake.clock });
-  return { s, fake, planRoot };
+  const projectRoot = mkdtempSync(join(tmpdir(), 'q-project-'));
+  const s = await bootServer({ projectRoot, sleepClock: fake.clock });
+  return { s, fake, projectRoot };
 }
 
 it('72% halves the limit seen by GET /api/state; the quota percent is there, n/a (absent) before', async () => {
   const { s } = await boot();
   const before = await state(s);
-  expect(before.limits).toEqual({ active: 0, max: 3 }); // the stricter of the global (4) and the per-plan (3) limit
+  expect(before.limits).toEqual({ active: 0, max: 3 }); // the stricter of the global (4) and the per-project (3) limit
   expect(before.quota).toBeUndefined(); // unknown: n/a, never zero
   expect(before.sleep).toBeUndefined();
   expect((await quota(s, 72)).status).toBeLessThan(300);
@@ -51,12 +51,12 @@ it('88% keeps a spawned agent queued, and it starts by itself when the quota fal
 });
 
 it('96% moves an active agent\'s ticket to suspended_limit and leaves the main running', async () => {
-  const { s, planRoot } = await boot();
+  const { s, projectRoot } = await boot();
   expect((await spawn(s, 'job-one')).body).toEqual({ status: 'started', name: 'job-one' });
-  await until(() => existsSync(ticketFile(planRoot, 'job-one')));
+  await until(() => existsSync(ticketFile(projectRoot, 'job-one')));
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'running');
   await quota(s, 96);
-  await until(() => JSON.parse(readFileSync(ticketFile(planRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
+  await until(() => JSON.parse(readFileSync(ticketFile(projectRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
   await until(async () => (await agentOf(s, 'job-one'))?.state === 'suspended');
   const st = await state(s);
   expect((await agentOf(s, 'job-one')).status).toBe('exited');
@@ -68,7 +68,7 @@ it('96% moves an active agent\'s ticket to suspended_limit and leaves the main r
 });
 
 it('100% with a resetsAt sets sleep.phase "sleeping" and one timer until the reset (+5 s); the probe backs off', async () => {
-  const { s, fake, planRoot } = await boot();
+  const { s, fake, projectRoot } = await boot();
   await quota(s, 100, RESET);
   await until(async () => (await state(s)).sleep?.phase === 'sleeping');
   const sleeping = (await state(s)).sleep;
@@ -167,14 +167,14 @@ it('a main whose process had ended is started again with --resume of its last se
   await until(async () => (await state(s)).sleep === undefined);
 });
 
-it('resume_agent over /v1: bad_request without names; quota_high while the quota is high; with worktrees off the agent resumes in the plan folder', async () => {
-  const { s, planRoot } = await boot();
+it('resume_agent over /v1: bad_request without names; quota_high while the quota is high; with worktrees off the agent resumes in the project folder', async () => {
+  const { s, projectRoot } = await boot();
   expect((await spawn(s, 'job-one')).body).toEqual({ status: 'started', name: 'job-one' });
-  await until(() => existsSync(ticketFile(planRoot, 'job-one')));
+  await until(() => existsSync(ticketFile(projectRoot, 'job-one')));
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'running');
   await modEvent(s, 'job-one', 'session.start'); // its session id is recorded
   await quota(s, 96);
-  await until(() => JSON.parse(readFileSync(ticketFile(planRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
+  await until(() => JSON.parse(readFileSync(ticketFile(projectRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
   const resume = (body: unknown) => mod(s, 'shop-api', '/v1/tools/resume_agent', 'POST', body);
   expect((await resume({})).body).toEqual({ status: 'error', code: 'bad_request' });
   expect((await resume({ names: [] })).body).toEqual({ status: 'error', code: 'bad_request' });
@@ -182,24 +182,24 @@ it('resume_agent over /v1: bad_request without names; quota_high while the quota
   await quota(s, 10);
   await until(async () => (await state(s)).limits.max === 3);
   expect((await resume({ names: ['no-such-job'] })).body).toEqual({ status: 'refused', code: 'not_suspended', detail: 'no-such-job' });
-  expect(JSON.parse(readFileSync(ticketFile(planRoot, 'job-one'), 'utf8')).status).toBe('suspended_limit');
-  // the agents of this server share the plan folder (git.worktrees off): that is where the session is resumed
+  expect(JSON.parse(readFileSync(ticketFile(projectRoot, 'job-one'), 'utf8')).status).toBe('suspended_limit');
+  // the agents of this server share the project folder (git.worktrees off): that is where the session is resumed
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'exited'); // the stop has finished
   expect((await resume({ names: ['job-one'] })).body).toEqual({ status: 'ok', started: ['job-one'], scheduled: [] });
   await until(() => (s.lastLaunchArgs('job-one') ?? []).includes('--resume'));
   const args = s.lastLaunchArgs('job-one')!;
   expect(args[args.indexOf('--resume') + 1]).toBe('sess-job-one');
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'running');
-  expect(JSON.parse(readFileSync(ticketFile(planRoot, 'job-one'), 'utf8')).status).toBe('in_progress');
+  expect(JSON.parse(readFileSync(ticketFile(projectRoot, 'job-one'), 'utf8')).status).toBe('in_progress');
 });
 
 // ---- fix wave ----
 
-it('limits.max is the stricter of the global and the per-plan limit', async () => {
+it('limits.max is the stricter of the global and the per-project limit', async () => {
   const { s } = await boot();
-  s.setLimits({ global: 5, perPlan: 2 });
+  s.setLimits({ global: 5, perProject: 2 });
   expect((await state(s)).limits.max).toBe(2);
-  s.setLimits({ global: 1, perPlan: 6 });
+  s.setLimits({ global: 1, perProject: 6 });
   expect((await state(s)).limits.max).toBe(1);
 });
 
@@ -295,20 +295,20 @@ it('a main relaunched at a wake-up keeps its session id: a relaunch that dies be
 });
 
 it('a resumed agent whose process ends before its session starts is suspended again and the main is told', async () => {
-  const { s, planRoot } = await boot();
+  const { s, projectRoot } = await boot();
   expect((await spawn(s, 'job-one')).body).toEqual({ status: 'started', name: 'job-one' });
-  await until(() => existsSync(ticketFile(planRoot, 'job-one')));
+  await until(() => existsSync(ticketFile(projectRoot, 'job-one')));
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'running');
   await modEvent(s, 'job-one', 'session.start');
   await quota(s, 96);
-  await until(() => JSON.parse(readFileSync(ticketFile(planRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
+  await until(() => JSON.parse(readFileSync(ticketFile(projectRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'exited');
   await quota(s, 10);
   await until(async () => (await state(s)).limits.max === 3);
   expect((await mod(s, 'shop-api', '/v1/tools/resume_agent', 'POST', { names: ['job-one'] })).body).toMatchObject({ status: 'ok', started: ['job-one'] });
   await until(async () => (await agentOf(s, 'job-one'))?.status === 'running');
   s.writeToSession('job-one', 'quit\r'); // it dies before reporting session.start
-  await until(() => JSON.parse(readFileSync(ticketFile(planRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
+  await until(() => JSON.parse(readFileSync(ticketFile(projectRoot, 'job-one'), 'utf8')).status === 'suspended_limit');
   await until(async () => (await mod(s, 'shop-api', '/v1/inbox')).body.messages.some((m: { text: string }) => m.text.includes('job-one') && m.text.includes('before its session started')));
 });
 

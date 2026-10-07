@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { budgetTokens, Ledger, turnEntry, type LedgerEntry } from '../src/server/budget/ledger';
 
-const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({ ts: '2026-10-05T10:00:00.000Z', plan: 'p', agent: 'a', session: 's', turn: 1, in: 10, out: 5, cache_creation: 100, cache_read: 1000, tools: ['Edit'], cost: null, ...o });
+const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({ ts: '2026-10-05T10:00:00.000Z', project: 'p', agent: 'a', session: 's', turn: 1, in: 10, out: 5, cache_creation: 100, cache_read: 1000, tools: ['Edit'], cost: null, ...o });
 const u = (id: string, i: number, o: number, cc: number, cr: number) => ({ kind: 'usage' as const, messageId: id, input: i, output: o, cacheCreation: cc, cacheRead: cr });
 
 describe('Ledger', () => {
@@ -46,7 +46,7 @@ describe('Ledger', () => {
     const l = new Ledger(dir);
     l.append(entry({ agent: 'valid' }));
     // Write a line missing the 'out' field
-    appendFileSync(join(dir, '2026-10.jsonl'), JSON.stringify({ ts: '2026-10-05T10:00:00.000Z', plan: 'p', agent: 'bad', session: 's', turn: 1, in: 10, cache_creation: 100, cache_read: 1000, tools: ['Edit'], cost: null }) + '\n');
+    appendFileSync(join(dir, '2026-10.jsonl'), JSON.stringify({ ts: '2026-10-05T10:00:00.000Z', project: 'p', agent: 'bad', session: 's', turn: 1, in: 10, cache_creation: 100, cache_read: 1000, tools: ['Edit'], cost: null }) + '\n');
     // Only the valid entry should be read
     expect(l.entries()).toHaveLength(1);
     expect(l.entries()[0]!.agent).toBe('valid');
@@ -64,18 +64,18 @@ describe('Ledger', () => {
 });
 
 describe('Ledger scopes and the in-memory index', () => {
-  const A = { plan: 'shop-api', root: 'C:/w/shop' };
-  const B = { plan: 'shop-api', root: 'C:/w/other-shop' };
+  const A = { project: 'shop-api', root: 'C:/w/shop' };
+  const B = { project: 'shop-api', root: 'C:/w/other-shop' };
 
   it('two scopes with the same agent name do not mix; old lines without root never match a scoped query', () => {
     const dir = mkdtempSync(join(tmpdir(), 'h-led-'));
     const l = new Ledger(dir);
-    l.append(entry({ plan: A.plan, root: A.root, agent: 'fix-login' }));
-    l.append(entry({ plan: B.plan, root: B.root, agent: 'fix-login', out: 1000 }));
-    l.append(entry({ plan: 'shop-api', agent: 'fix-login', out: 5000 })); // an old line, written before scopes existed
+    l.append(entry({ project: A.project, root: A.root, agent: 'fix-login' }));
+    l.append(entry({ project: B.project, root: B.root, agent: 'fix-login', out: 1000 }));
+    l.append(entry({ project: 'shop-api', agent: 'fix-login', out: 5000 })); // an old line, written before scopes existed
     expect(l.totalFor('fix-login', A)).toEqual({ tokens: 115, turns: 1 });
     expect(l.totalFor('fix-login', B)).toEqual({ tokens: 1110, turns: 1 });
-    expect(l.totalFor('fix-login', { plan: 'other', root: A.root })).toEqual({ tokens: 0, turns: 0 });
+    expect(l.totalFor('fix-login', { project: 'other', root: A.root })).toEqual({ tokens: 0, turns: 0 });
     expect(l.entries({ agent: 'fix-login', scope: A })).toHaveLength(1);
     expect(l.totalFor('fix-login')).toEqual({ tokens: 115 + 1110 + 5110, turns: 3 }); // unscoped: everything of that name
   });
@@ -83,10 +83,10 @@ describe('Ledger scopes and the in-memory index', () => {
   it('a root is compared normalised (resolved; case-insensitive on Windows)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'h-led-'));
     const l = new Ledger(dir);
-    const root = join(tmpdir(), 'Some', 'Plan');
-    l.append(entry({ plan: 'p', root, agent: 'a' }));
-    expect(l.totalFor('a', { plan: 'p', root: join(root, '.') }).turns).toBe(1);
-    if (process.platform === 'win32') expect(l.totalFor('a', { plan: 'p', root: root.toUpperCase() }).turns).toBe(1);
+    const root = join(tmpdir(), 'Some', 'Project');
+    l.append(entry({ project: 'p', root, agent: 'a' }));
+    expect(l.totalFor('a', { project: 'p', root: join(root, '.') }).turns).toBe(1);
+    if (process.platform === 'win32') expect(l.totalFor('a', { project: 'p', root: root.toUpperCase() }).turns).toBe(1);
   });
 
   it('reads the files once: later totals come from memory and follow appends', () => {
@@ -152,9 +152,9 @@ describe('budget tokens and turn entries', () => {
   it('does not count cache reads', () => { expect(budgetTokens(entry())).toBe(115); });
 
   it('sums the messages of a turn, and writes nothing for a turn without data', () => {
-    const t = turnEntry({ plan: 'p', agent: 'a', session: 's', turn: 3, ts: 't', tools: ['Read', 'Edit'], usages: [u('m1', 10, 5, 100, 1000), u('m2', 1, 2, 3, 4)] });
+    const t = turnEntry({ project: 'p', agent: 'a', session: 's', turn: 3, ts: 't', tools: ['Read', 'Edit'], usages: [u('m1', 10, 5, 100, 1000), u('m2', 1, 2, 3, 4)] });
     expect(t).toMatchObject({ in: 11, out: 7, cache_creation: 103, cache_read: 1004, tools: ['Read', 'Edit'], cost: null });
-    expect(turnEntry({ plan: 'p', agent: 'a', session: 's', turn: 4, ts: 't', tools: [], usages: [] })).toBeUndefined();
-    expect(turnEntry({ plan: 'p', root: 'C:/w/p', agent: 'a', session: 's', turn: 5, ts: 't', tools: [], usages: [u('m3', 1, 1, 1, 1)] })?.root).toBe('C:/w/p');
+    expect(turnEntry({ project: 'p', agent: 'a', session: 's', turn: 4, ts: 't', tools: [], usages: [] })).toBeUndefined();
+    expect(turnEntry({ project: 'p', root: 'C:/w/p', agent: 'a', session: 's', turn: 5, ts: 't', tools: [], usages: [u('m3', 1, 1, 1, 1)] })?.root).toBe('C:/w/p');
   });
 });

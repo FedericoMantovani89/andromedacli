@@ -28,9 +28,9 @@ async function until(f: () => Promise<boolean> | boolean, ms = 10000): Promise<b
 async function boot(opts: { configured: boolean }) {
   const configDir = mkdtempSync(join(tmpdir(), 'e2e-cfg-'));
   if (opts.configured) writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false } }));
-  const planRoot = mkdtempSync(join(tmpdir(), 'e2e-plan-'));
-  const s = await startServer({ port: 0, planRoot, configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture], worktrees: false });
-  s.setLimits({ global: 64, perPlan: 64 }); // fake agents never report events, so they stay "starting" and would hold slots
+  const projectRoot = mkdtempSync(join(tmpdir(), 'e2e-project-'));
+  const s = await startServer({ port: 0, projectRoot, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], worktrees: false });
+  s.setLimits({ global: 64, perProject: 64 }); // fake agents never report events, so they stay "starting" and would hold slots
   const get = async (path: string) => (await fetch(`${s.url}${path}`, { headers: { authorization: `Bearer ${s.token}` } })).json() as Promise<any>;
   const post = async (path: string, body: unknown) => {
     const r = await fetch(`${s.url}${path}`, { method: 'POST', headers: { authorization: `Bearer ${s.token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });

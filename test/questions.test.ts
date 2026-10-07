@@ -138,7 +138,7 @@ it('questions and permissions behave as before', () => {
   expect(queue.answer(id, 'anything goes')).toBe('ok');
 });
 
-it('console items belong to a source no agent or plan can be called, so no turn of any session drops them (review finding)', async () => {
+it('console items belong to a source no agent or project can be called, so no turn of any session drops them (review finding)', async () => {
   const { CONSOLE_FROM } = await import('../src/server/questions/queue');
   expect(CONSOLE_FROM).toBe('@console');
   expect(/^[a-z0-9]+(-[a-z0-9]+)*$/.test(CONSOLE_FROM)).toBe(false); // not a valid slug

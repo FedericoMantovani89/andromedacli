@@ -33,7 +33,7 @@ export interface Ticket {
   recoveries: number;
   stopCause?: 'budget' | 'loop' | 'limit';
   handover?: string;
-  /** The repository the agent works in, relative to the plan folder; absent means the plan folder itself. */
+  /** The repository the agent works in, relative to the project folder; absent means the project folder itself. */
   repo?: string;
 }
 export interface TicketProgress { done: number; total: number; blocked: boolean; status: TicketStatus }

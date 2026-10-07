@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import type { Translate } from '../../shared/i18n';
 import type { AgentGit } from '../agents/registry';
 import { git } from '../git/git';
-import { changedFiles, ensurePlanWorktree, mergeIntoPlan, resetTo, startMergeForAuthor, withPlanLock } from '../git/merge';
+import { worktreesDirFor } from '../git/worktree';
+import { changedFiles, ensureProjectWorktree, mergeIntoProject, resetTo, startMergeForAuthor, withProjectLock } from '../git/merge';
 import { commonDir, removeWorktree } from '../git/worktree';
 import { squashMessage } from './report';
 import type { TicketStore } from './store';
@@ -11,13 +12,13 @@ import { runValidation } from './validate';
 
 export interface MergeDeps {
   tickets: TicketStore;
-  /** The plan folder: its state lives here. It is also the repository of an agent that has none of its own (a plan folder that is a repo). */
+  /** The project folder: its state lives here. It is also the repository of an agent that has none of its own (a project folder that is a repo). */
   root: string;
-  plan: string;
+  project: string;
   worktreeOf(slug: string): AgentGit | undefined;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
-  /** Plan option: one commit per ticket (default) or the step commits behind a merge commit. */
+  /** Project option: one commit per ticket (default) or the step commits behind a merge commit. */
   squash(): boolean;
   language(): { lang: string; t: Translate };
   authorAlive(slug: string): boolean;
@@ -34,13 +35,13 @@ export type MergeResult =
   | { status: 'merged'; sha: string; cleanup?: 'incomplete' }
   | { status: 'conflict'; files: string[] }
   | { status: 'tests_failed'; tail: string }
-  | { status: 'refused'; code: 'not_approved' | 'no_worktree' | 'author_moved' | 'planbranch_checked_out' | 'git_failed'; detail?: string };
+  | { status: 'refused'; code: 'not_approved' | 'no_worktree' | 'author_moved' | 'project_branch_checked_out' | 'git_failed'; detail?: string };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * `merge_ticket` (SPEC 15.4): one ticket at a time into the plan branch. What is merged is exactly what was reviewed; a conflict or a
- * red test run after the merge always leaves the plan branch where it was and sends the ticket back; nothing is ever forced.
+ * `merge_ticket` (SPEC 15.4): one ticket at a time into the project branch. What is merged is exactly what was reviewed; a conflict or a
+ * red test run after the merge always leaves the project branch where it was and sends the ticket back; nothing is ever forced.
  */
 export class MergeService {
   private chain: Promise<unknown> = Promise.resolve();
@@ -48,13 +49,13 @@ export class MergeService {
   constructor(private readonly d: MergeDeps) {}
 
   mergeTicket(slug: string): Promise<MergeResult> {
-    const locked = () => withPlanLock(this.repoOf(this.d.worktreeOf(slug)), () => this.merge(slug));
+    const locked = () => withProjectLock(this.repoOf(this.d.worktreeOf(slug)), () => this.merge(slug));
     const run = this.chain.then(locked, locked);
     this.chain = run.catch(() => undefined);
     return run;
   }
 
-  /** The repository of an agent: its own when it has one, else the plan folder. */
+  /** The repository of an agent: its own when it has one, else the project folder. */
   private repoOf(a: { repo?: string } | undefined): string { return a?.repo ?? this.d.root; }
 
   private async merge(slug: string): Promise<MergeResult> {
@@ -67,32 +68,32 @@ export class MergeService {
     if (tip.code !== 0 || tip.stdout.trim() !== ticket.deliveredSha) {
       return { status: 'refused', code: 'author_moved', detail: `reviewed ${ticket.deliveredSha.slice(0, 7)}, the branch is at ${tip.stdout.trim().slice(0, 7)}` };
     }
-    const plan = await ensurePlanWorktree(repo, this.d.plan);
-    if (!plan.ok) return { status: 'refused', code: plan.code, detail: plan.detail };
-    const before = (await git(plan.path, ['rev-parse', 'HEAD'])).stdout.trim();
-    // A crash after the merge commit and before the ticket update leaves the ticket `approved` with its commit already on the plan
+    const project = await ensureProjectWorktree(repo, this.d.project, worktreesDirFor(this.d.root, repo));
+    if (!project.ok) return { status: 'refused', code: project.code, detail: project.detail };
+    const before = (await git(project.path, ['rev-parse', 'HEAD'])).stdout.trim();
+    // A crash after the merge commit and before the ticket update leaves the ticket `approved` with its commit already on the project
     // branch: adopt that commit instead of merging the same work twice.
-    const adopted = await this.alreadyMerged(plan.path, slug);
+    const adopted = await this.alreadyMerged(project.path, slug);
     if (adopted) {
       // The tests of the merge may never have run (that is what a crash there looks like): run them before accepting it.
       const adoptedCommand = this.d.testCommand()?.trim();
       if (adoptedCommand) {
-        const run = await runValidation({ cwd: plan.path, command: adoptedCommand, timeoutMs: this.d.testTimeoutMs() });
+        const run = await runValidation({ cwd: project.path, command: adoptedCommand, timeoutMs: this.d.testTimeoutMs() });
         if (!run.ok) {
-          if ((await git(plan.path, ['rev-parse', 'HEAD'])).stdout.trim() === adopted) await resetTo(plan.path, `${adopted}^`);
+          if ((await git(project.path, ['rev-parse', 'HEAD'])).stdout.trim() === adopted) await resetTo(project.path, `${adopted}^`);
           return this.testsFailed(slug, run.tail);
         }
       }
       return this.completeMerge(slug, author, adopted);
     }
 
-    const files = (await changedFiles(repo, `plan/${this.d.plan}`, ticket.deliveredSha)) ?? [];
+    const files = (await changedFiles(repo, `project/${this.d.project}`, ticket.deliveredSha)) ?? [];
     const { lang, t } = this.d.language();
     const message = squashMessage({
-      slug, plan: this.d.plan, branch: author.branch, goal: ticket.goal, steps: ticket.steps, files, tests: ticket.tests,
+      slug, project: this.d.project, branch: author.branch, goal: ticket.goal, steps: ticket.steps, files, tests: ticket.tests,
       verdicts: ticket.verdicts, lang, t,
     });
-    const merged = await mergeIntoPlan({ wt: plan.path, sha: ticket.deliveredSha, message, squash: this.d.squash() });
+    const merged = await mergeIntoProject({ wt: project.path, sha: ticket.deliveredSha, message, squash: this.d.squash() });
     if (!merged.ok) {
       if (merged.kind === 'conflict') return await this.conflict(slug, merged.files, author.worktree);
       return { status: 'refused', code: 'git_failed', detail: merged.detail };
@@ -100,9 +101,9 @@ export class MergeService {
 
     const command = this.d.testCommand()?.trim();
     if (command) {
-      const run = await runValidation({ cwd: plan.path, command, timeoutMs: this.d.testTimeoutMs() });
+      const run = await runValidation({ cwd: project.path, command, timeoutMs: this.d.testTimeoutMs() });
       if (!run.ok) {
-        await resetTo(plan.path, before); // the merge turned the tests red: it never happened
+        await resetTo(project.path, before); // the merge turned the tests red: it never happened
         return this.testsFailed(slug, run.tail);
       }
     }
@@ -112,13 +113,13 @@ export class MergeService {
   private async completeMerge(slug: string, author: AgentGit, sha: string): Promise<MergeResult> {
     this.d.tickets.move(slug, 'merged', { mergedSha: sha });
     const cleanup = await this.cleanUp(slug, author);
-    this.d.notifyMain(`Ticket "${slug}" was merged into plan/${this.d.plan} (${sha.slice(0, 7)}).${cleanup ? ' Its session or folder could not be cleaned up completely; the work is safe on the plan branch.' : ''} Next: merge the other approved tickets, then propose_release.`);
+    this.d.notifyMain(`Ticket "${slug}" was merged into project/${this.d.project} (${sha.slice(0, 7)}).${cleanup ? ' Its session or folder could not be cleaned up completely; the work is safe on the project branch.' : ''} Next: merge the other approved tickets, then propose_release.`);
     return { status: 'merged', sha, ...(cleanup ? { cleanup: 'incomplete' as const } : {}) };
   }
 
-  /** The console's own commit for this ticket (its `Ticket:` and `Agent:` trailers) if it is already on the plan branch. */
-  private async alreadyMerged(planWorktree: string, slug: string): Promise<string | undefined> {
-    const r = await git(planWorktree, ['log', '-1', '--format=%H', '-E', `--grep=^Ticket: ${slug}$`, `--grep=^Agent: ${slug}$`, '--all-match']);
+  /** The console's own commit for this ticket (its `Ticket:` and `Agent:` trailers) if it is already on the project branch. */
+  private async alreadyMerged(projectWorktree: string, slug: string): Promise<string | undefined> {
+    const r = await git(projectWorktree, ['log', '-1', '--format=%H', '-E', `--grep=^Ticket: ${slug}$`, `--grep=^Agent: ${slug}$`, '--all-match']);
     const sha = r.stdout.trim();
     return r.code === 0 && /^[0-9a-f]{40}$/.test(sha) ? sha : undefined;
   }
@@ -128,19 +129,19 @@ export class MergeService {
     if (!this.d.authorAlive(slug)) {
       this.d.tickets.move(slug, 'needs_user');
       this.d.needsUser(slug, 'conflict_author_gone');
-      this.d.notifyMain(`Ticket "${slug}" conflicts with the plan branch in ${files.join(', ')} and its author is gone: a decision is in the user's queue.`);
+      this.d.notifyMain(`Ticket "${slug}" conflicts with the project branch in ${files.join(', ')} and its author is gone: a decision is in the user's queue.`);
       return { status: 'conflict', files };
     }
     // The console puts the author's folder in the conflict state; the author edits the files and closes its steps.
-    await startMergeForAuthor(authorWorktree, `plan/${this.d.plan}`);
+    await startMergeForAuthor(authorWorktree, `project/${this.d.project}`);
     const reopened = this.d.tickets.reopen(slug, { firstStep: 'Resolve merge conflicts' });
     this.d.notifyAuthor(slug, [
-      `Message from the main about your ticket "${slug}": it is approved, but it conflicts with work already merged into the plan branch, in:`,
+      `Message from the main about your ticket "${slug}": it is approved, but it conflicts with work already merged into the project branch, in:`,
       ...files.map((f) => `- ${f}`),
       'The console has started the merge in your folder: the conflict markers (<<<<<<<, =======, >>>>>>>) are in those files. Edit them so that both sides\' intent is kept, then close the steps in order with step_done.',
       `Your checklist has three new steps ("Resolve merge conflicts (round ${reopened.round})", "Validation (round ${reopened.round})", "Update documentation (round ${reopened.round})"). The console will deliver the branch again and it will be reviewed again.`,
     ].join('\n'));
-    this.d.notifyMain(`Ticket "${slug}" conflicts with the plan branch in ${files.join(', ')}: sent back to its author to resolve (rework ${reopened.round}). The plan branch is unchanged.`);
+    this.d.notifyMain(`Ticket "${slug}" conflicts with the project branch in ${files.join(', ')}: sent back to its author to resolve (rework ${reopened.round}). The project branch is unchanged.`);
     return { status: 'conflict', files };
   }
 
@@ -154,11 +155,11 @@ export class MergeService {
     }
     const reopened = this.d.tickets.reopen(slug);
     this.d.notifyAuthor(slug, [
-      `Message from the main about your ticket "${slug}": it is approved, but when the console merged it into the plan branch the tests failed, so the merge was undone. Output of the test command:`,
+      `Message from the main about your ticket "${slug}": it is approved, but when the console merged it into the project branch the tests failed, so the merge was undone. Output of the test command:`,
       tail.trim().slice(-1500),
       `Your checklist has three new steps ("Review fixes (round ${reopened.round})", "Validation (round ${reopened.round})", "Update documentation (round ${reopened.round})"). Fix the cause, close them in order with step_done, and the console will deliver the branch again.`,
     ].join('\n'));
-    this.d.notifyMain(`Merging ticket "${slug}" turned the tests red: undone, plan branch unchanged, ticket sent back to its author (rework ${reopened.round}).`);
+    this.d.notifyMain(`Merging ticket "${slug}" turned the tests red: undone, project branch unchanged, ticket sent back to its author (rework ${reopened.round}).`);
     return { status: 'tests_failed', tail };
   }
 

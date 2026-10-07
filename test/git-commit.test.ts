@@ -13,9 +13,9 @@ vi.setConfig({ testTimeout: 60_000 });
 
 async function setup(o: { remote?: boolean; identity?: boolean } = {}) {
   const t = makeRepo({ remote: o.remote ?? true, identity: o.identity });
-  const wt = await createAgentWorktree({ repo: t.repo, plan: 'shop-api', slug: 'fix-login' });
+  const wt = await createAgentWorktree({ repo: t.repo, project: 'shop-api', slug: 'fix-login' });
   const step = (n: number, total: number, title: string) =>
-    commitStep({ worktree: wt.path, n, total, title, slug: 'fix-login', plan: 'shop-api', secretPatterns: DEFAULT_SECRET_PATTERNS });
+    commitStep({ worktree: wt.path, n, total, title, slug: 'fix-login', project: 'shop-api', secretPatterns: DEFAULT_SECRET_PATTERNS });
   return { ...t, wt, step };
 }
 
@@ -24,7 +24,7 @@ it('commits a step with the SPEC 9.3 subject and trailers', async () => {
   writeFileSync(join(wt.path, 'a.txt'), 'x');
   const r = await step(4, 7, 'Map the field in the DTO and the mapper');
   expect(r.ok).toBe(true);
-  expect(gitSync(wt.path, 'log', '-1', '--format=%B')).toBe('step 4/7: Map the field in the DTO and the mapper\n\nAgent: fix-login\nTicket: fix-login\nPiano: shop-api');
+  expect(gitSync(wt.path, 'log', '-1', '--format=%B')).toBe('step 4/7: Map the field in the DTO and the mapper\n\nAgent: fix-login\nTicket: fix-login\nProgetto: shop-api');
   expect(gitSync(wt.path, 'show', '--name-only', '--format=', 'HEAD')).toBe('a.txt');
   if (r.ok) expect(r.sha).toBe(gitSync(wt.path, 'rev-parse', 'HEAD'));
 });
@@ -65,14 +65,14 @@ it('works when the repository has no configured identity', async () => {
   expect(r.ok, JSON.stringify(r)).toBe(true);
 });
 const wip = (path: string, reason = 'budget alert') =>
-  commitWip({ worktree: path, slug: 'fix-login', plan: 'shop-api', reason, secretPatterns: DEFAULT_SECRET_PATTERNS });
+  commitWip({ worktree: path, slug: 'fix-login', project: 'shop-api', reason, secretPatterns: DEFAULT_SECRET_PATTERNS });
 
 it('a WIP with changes commits them with the wip subject and the trailers', async () => {
   const { wt } = await setup();
   writeFileSync(join(wt.path, 'half.txt'), 'x');
   const r = await wip(wt.path);
   expect(r.ok, JSON.stringify(r)).toBe(true);
-  expect(gitSync(wt.path, 'log', '-1', '--format=%B')).toBe('wip: budget alert\n\nAgent: fix-login\nTicket: fix-login\nPiano: shop-api');
+  expect(gitSync(wt.path, 'log', '-1', '--format=%B')).toBe('wip: budget alert\n\nAgent: fix-login\nTicket: fix-login\nProgetto: shop-api');
   expect(gitSync(wt.path, 'show', '--name-only', '--format=', 'HEAD')).toBe('half.txt');
   if (r.ok) expect(r.sha).toBe(gitSync(wt.path, 'rev-parse', 'HEAD'));
 });

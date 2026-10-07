@@ -48,11 +48,11 @@ function wsRefusal(port: number, token: string, origin: string): Promise<number 
 
 /** SPEC 4.5 / 29.6: starts a throw-away server and proves the token, Host and Origin checks and the loopback bind. */
 async function securitySelfTest(): Promise<DoctorCheck> {
-  const planRoot = mkdtempSync(join(tmpdir(), 'doctor-plan-'));
+  const projectRoot = mkdtempSync(join(tmpdir(), 'doctor-project-'));
   const configDir = mkdtempSync(join(tmpdir(), 'doctor-cfg-'));
   const server = await startServer({
-    port: 0, planRoot, configDir,
-    planName: 'doctor-probe', claudeCommand: [process.execPath, '-e', 'setTimeout(() => {}, 5000)'],
+    port: 0, projectRoot, configDir,
+    projectName: 'doctor-probe', claudeCommand: [process.execPath, '-e', 'setTimeout(() => {}, 5000)'],
   });
   try {
     const own = `127.0.0.1:${server.port}`;
@@ -67,13 +67,13 @@ async function securitySelfTest(): Promise<DoctorCheck> {
       : { id: 'server.security', status: 'fail', detail: problems.join('; '), fix: 'Do not use the console until this passes; report the failure.' };
   } finally {
     await server.close();
-    rmSync(planRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
     rmSync(configDir, { recursive: true, force: true });
   }
 }
 
 /** Read-only health checks of what Phase 1 has built (the rest of SPEC 29.6 arrives with the phases that build it). */
-export async function runDoctor(o: { configDir: string; planRoot: string; run?: Runner; notifier?: Notifier }): Promise<DoctorReport> {
+export async function runDoctor(o: { configDir: string; projectRoot: string; run?: Runner; notifier?: Notifier }): Promise<DoctorReport> {
   const loaded = loadConfig(join(o.configDir, 'config.json'));
   const checks: DoctorCheck[] = (await runChecks(o.run, { claudeCommand: loaded.config.claude.command })).map(fromPrereq);
 
@@ -90,7 +90,7 @@ export async function runDoctor(o: { configDir: string; planRoot: string; run?: 
   checks.push(parity.length === 0 ? { id: 'i18n', status: 'ok' } : { id: 'i18n', status: 'fail', detail: parity.join('; '), fix: 'Add the missing keys to the language files.' });
 
   try {
-    const s = statfsSync(o.planRoot);
+    const s = statfsSync(o.projectRoot);
     const free = s.bavail * s.bsize;
     checks.push(free >= MIN_FREE_BYTES
       ? { id: 'disk', status: 'ok', detail: `${Math.round(free / 1024 ** 3)} GiB free` }

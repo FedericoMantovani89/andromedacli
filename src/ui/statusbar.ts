@@ -82,7 +82,7 @@ function paintSleep(bar: Bar): void {
   else bindText(bar.sleep, 'statusbar.sleep', { time, remaining: left });
 }
 
-/** Bottom bar (SPEC 5.7): plan budget (no source yet: n/a), subscription quota, the sleep for a usage limit, agents. */
+/** Bottom bar (SPEC 5.7): project budget (no source yet: n/a), subscription quota, the sleep for a usage limit, agents. */
 export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
   const bar = bars.get(el) ?? build(el);
   bars.set(el, bar);

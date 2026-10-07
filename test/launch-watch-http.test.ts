@@ -31,7 +31,7 @@ it('an agent that starts working in time causes no message', async () => {
 });
 it('a queued agent is checked from when it actually starts, not from when it was asked for', async () => {
   const s = await bootServer({ launchCheckMs: 400 });
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   await spawn(s, 'first-job');
   await spawn(s, 'second-job');
   await modEvent(s, 'first-job', 'session.start');

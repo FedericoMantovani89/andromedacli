@@ -3,11 +3,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { buildClaudeLaunch } from './pty/claude-launch';
 import { PtyManager } from './pty/pty-manager';
-import { PlanStore } from './plan-store';
+import { ProjectStore } from './project-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
 import { GENERIC_WORDS, SLUG_MAX, SLUG_MIN, validateSlug } from '../shared/slug';
-import { PROFILES, type HostInfo, type PlanTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
+import { PROFILES, type HostInfo, type ProjectTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
 import { applyConfigPatch, loadConfig } from './config';
 import type { PickFolderResult } from './pick-folder';
 import type { Notifier } from './notify/notifier';
@@ -27,7 +27,7 @@ import type { ReviewService } from './tickets/review';
 import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
-import { isValidPlanField, isValidTestCommand, PLAN_FIELDS } from './plan-store';
+import { isValidProjectField, isValidTestCommand, PROJECT_FIELDS } from './project-store';
 import { loadTemplates } from './templates/load';
 import { detectProject } from './templates/detect';
 import { saveTemplate } from './templates/save';
@@ -39,10 +39,10 @@ import type { LoopService } from './budget/loop-service';
 import type { Ledger } from './budget/ledger';
 import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
-import { handlePlansRoute, type PlansApi } from './plans-api';
+import { handleProjectsRoute, type ProjectsApi } from './projects-api';
 
-/** Finds the plan a request or socket asked for with `?plan=<name>`; no name means the first plan; undefined when it is not open. */
-export type PlanResolver = (name?: string) => Context | undefined;
+/** Finds the project a request or socket asked for with `?project=<name>`; no name means the first project; undefined when it is not open. */
+export type ProjectResolver = (name?: string) => Context | undefined;
 import type { InstallService } from './prereq/install';
 import type { WakeService } from './agents/wake';
 
@@ -50,9 +50,9 @@ export interface Context extends V1Context {
   getPort(): number;
   token: string;
   ptys: PtyManager;
-  store: PlanStore;
-  planName: string;
-  planRoot: string;
+  store: ProjectStore;
+  projectName: string;
+  projectRoot: string;
   claudeCommand: string[];
   /** Mod folder passed to launched sessions (--plugin-dir), when enabled. */
   modDir?: string;
@@ -60,7 +60,7 @@ export interface Context extends V1Context {
   reading: ReadingStore;
   /** Last launch arguments per session (a test seam; contains no secrets). */
   launchLog: Map<string, string[]>;
-  /** Where rendered system-prompt files are written (under the plan's .console/state). */
+  /** Where rendered system-prompt files are written (under the project's .console/state). */
   promptsDir: string;
   bypass: boolean;
   language: string;
@@ -91,7 +91,7 @@ export interface Context extends V1Context {
   quotaState: QuotaState;
   /** Sleep until a usage limit lifts (SPEC 18.4). */
   sleep: SleepTimer;
-  /** Console-wide terminals that are not agent sessions (assisted installs, Phase 6F); served on /ws/term/<id> after the plan's own. */
+  /** Console-wide terminals that are not agent sessions (assisted installs, Phase 6F); served on /ws/term/<id> after the project's own. */
   utilityPtys: PtyManager;
   /** Assisted installation of prerequisites: console-wide, one install at a time. */
   installer: InstallService;
@@ -115,9 +115,9 @@ export interface Context extends V1Context {
   noteLaunch(slug: string): { bypass: boolean };
   needsSetup(): boolean;
   broadcastState(): void;
-  /** The console's open plans (Phase 6C); set by the host, shared by every plan's Context. */
-  plans?: PlansApi;
-  /** Phase 6B: unique for the whole console (6C shares it between plans). */
+  /** The console's open projects (Phase 6C); set by the host, shared by every project's Context. */
+  projects?: ProjectsApi;
+  /** Phase 6B: unique for the whole console (6C shares it between projects). */
   notifier: Notifier;
   /** What the user is looking at, as the UI last reported it. */
   presence: Presence;
@@ -170,7 +170,7 @@ export function buildState(ctx: Context): StateMessage {
     else if (total === 0 && base === 'working') state = 'studying';
     return { state, ...(progress ? { progress } : {}), ...pipeline, ...budget };
   };
-  const main: SessionInfo = { slug: ctx.planName, profile: 'main', role: 'main', status: status(ctx.planName), state: stateOf(ctx.planName) };
+  const main: SessionInfo = { slug: ctx.projectName, profile: 'main', role: 'main', status: status(ctx.projectName), state: stateOf(ctx.projectName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
@@ -178,7 +178,7 @@ export function buildState(ctx: Context): StateMessage {
   let testCommand: string | undefined;
   let squash: boolean | undefined;
   let offeredProfiles: string[] | undefined;
-  try { ({ testCommand, squash, profiles: offeredProfiles } = ctx.store.plan); } catch { /* a damaged plan.json: shown as not set */ }
+  try { ({ testCommand, squash, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
   const repos = ctx.repos();
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
@@ -187,17 +187,17 @@ export function buildState(ctx: Context): StateMessage {
     ...(installed ? { install: installed } : {}),
     ...(worst ? { quota: { percent: worst.percent, kind: worst.kind } } : {}),
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
-    // One plan per console today: the stricter of the global and the per-plan limit is the one that holds.
-    limits: { active: ctx.scheduler.activeCount(), max: (({ global, perPlan }) => Math.min(global, perPlan))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', plan: { name: ctx.planName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? PROFILES,
-    prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), planIsRepo: repos.length > 0, repos, planRoot: ctx.planRoot,
+    // One project per console today: the stricter of the global and the per-project limit is the one that holds.
+    limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
+    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? PROFILES,
+    prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
     queue: ctx.questions.pending(),
-    ...(ctx.plans ? { plans: ctx.plans.list() } : {}),
+    ...(ctx.projects ? { projects: ctx.projects.list() } : {}),
     notifications: { toast: ctx.notify.toast(), config: ctx.notificationsConfig },
   };
 }
 
-/** The console-wide part the request handler needs; unlike a plan's Context it exists even when no plan is open. */
+/** The console-wide part the request handler needs; unlike a project's Context it exists even when no project is open. */
 export interface HostContext {
   getPort(): number;
   token: string;
@@ -206,15 +206,15 @@ export interface HostContext {
   configDir: string;
   version: string;
   bundles: Bundles;
-  plans: PlansApi;
+  projects: ProjectsApi;
   ensurePrereq(): Promise<PrereqResult[]>;
   info(): HostInfo;
   /** The native "choose a folder" window (the server runs on the user's own machine). */
   pickFolder(): Promise<PickFolderResult>;
 }
 
-export function createRequestHandler(source: Context | PlanResolver, host: HostContext) {
-  const resolve: PlanResolver = typeof source === 'function' ? source : () => source;
+export function createRequestHandler(source: Context | ProjectResolver, host: HostContext) {
+  const resolve: ProjectResolver = typeof source === 'function' ? source : () => source;
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (!isAllowedHost(req.headers.host, host.getPort())) return fail(res, 403, 'forbidden');
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${host.getPort()}`);
@@ -239,41 +239,41 @@ export function createRequestHandler(source: Context | PlanResolver, host: HostC
 
     // The mod channel has its own authentication (per-session tokens); the UI token is not valid there.
     if (path.startsWith('/v1/')) {
-      // The plan that issued the session token is the one that answers (tokens are random, no plan can use another's).
+      // The project that issued the session token is the one that answers (tokens are random, no project can use another's).
       const t = extractToken(req.headers, url);
-      const owner = t ? host.plans.contexts().find((c) => c.tokens.slugFor(t) !== undefined) : undefined;
+      const owner = t ? host.projects.contexts().find((c) => c.tokens.slugFor(t) !== undefined) : undefined;
       return owner ? handleV1(owner, req, res, url) : fail(res, 401, 'unauthorized');
     }
 
     const token = extractToken(req.headers, url);
     if (!token || !tokensEqual(token, host.token)) return fail(res, 401, 'unauthorized');
 
-    // Opening and closing plans are not about one plan; every other route below is, and takes it from `?plan=` (absent: the first).
-    if ((req.method === 'POST' && path === '/api/plans') || (req.method === 'DELETE' && /^\/api\/plans\/[^/]+$/.test(path))) return handlePlansRoute(host, req, res, path);
-    // What the console knows without any plan: the welcome screen asks this before anything else.
+    // Opening and closing projects are not about one project; every other route below is, and takes it from `?project=` (absent: the first).
+    if ((req.method === 'POST' && path === '/api/projects') || (req.method === 'DELETE' && /^\/api\/projects\/[^/]+$/.test(path))) return handleProjectsRoute(host, req, res, path);
+    // What the console knows without any project: the welcome screen asks this before anything else.
     if (req.method === 'GET' && path === '/api/host') return send(res, 200, host.info());
     if (req.method === 'POST' && path === '/api/pick-folder') {
       const picked = await host.pickFolder();
       return picked.status === 'busy' ? fail(res, 409, 'folder.pickBusy') : send(res, 200, picked);
     }
-    // Plan templates and project detection are plan-independent (the welcome screen needs them with no plan open); saving a template is not.
+    // Project templates and project detection are project-independent (the welcome screen needs them with no project open); saving a template is not.
     if (req.method === 'GET' && path === '/api/templates') {
       return send(res, 200, loadTemplates({ configDir: host.configDir }).map((t) => ({
         id: t.id, name: t.name, description: t.description, source: t.source, valid: t.valid, ...(t.reason ? { reason: t.reason } : {}),
       })));
     }
     // What the project in a folder suggests (SPEC 21): read-only, no process is run.
-    if (req.method === 'GET' && path === '/api/plans/detect') {
+    if (req.method === 'GET' && path === '/api/projects/detect') {
       const root = url.searchParams.get('root') ?? '';
       let isDir = false;
       try { isDir = isAbsolute(root) && statSync(root).isDirectory(); } catch { /* not there */ }
-      if (!isDir) return fail(res, 422, 'plan.badRoot');
+      if (!isDir) return fail(res, 422, 'project.badRoot');
       return send(res, 200, detectProject(resolvePath(root)));
     }
-    const asked = url.searchParams.get('plan');
-    const planCtx = asked !== null ? resolve(asked) : resolve();
-    if (!planCtx) return fail(res, 404, 'plan.notFound');
-    const ctx: Context = planCtx;
+    const asked = url.searchParams.get('project');
+    const projectCtx = asked !== null ? resolve(asked) : resolve();
+    if (!projectCtx) return fail(res, 404, 'project.notFound');
+    const ctx: Context = projectCtx;
 
     if (req.method === 'GET' && path === '/api/state') return send(res, 200, buildState(ctx));
 
@@ -381,7 +381,7 @@ export function createRequestHandler(source: Context | PlanResolver, host: HostC
       const profilesDir = join(dir, 'profiles');
       return send(res, 200, {
         config, errors, paths: { configDir: dir, profilesDir, templatesDir: join(dir, 'templates') }, server: { port: ctx.getPort() },
-        profiles: PROFILES.map((name) => ({ name, source: loadProfile(name, ctx.planRoot, profilesDir)?.source ?? null })),
+        profiles: PROFILES.map((name) => ({ name, source: loadProfile(name, ctx.projectRoot, profilesDir)?.source ?? null })),
         names: { minLength: SLUG_MIN, maxLength: SLUG_MAX, banned: GENERIC_WORDS },
       });
     }
@@ -390,39 +390,39 @@ export function createRequestHandler(source: Context | PlanResolver, host: HostC
     if (req.method === 'GET' && path === '/api/plugins') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version));
     if (req.method === 'POST' && path === '/api/plugins/refresh') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version, true));
 
-    if (req.method === 'PUT' && path === '/api/plan') {
+    if (req.method === 'PUT' && path === '/api/project') {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
       if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
       const b = body as Record<string, unknown>;
       const hasCommand = 'testCommand' in b;
       const hasSquash = 'squash' in b;
-      const planFields = PLAN_FIELDS.filter((f) => f in b); // Phase 6D: build/lint commands, profiles, model, budget, limit, docs, secrets
-      if (!hasCommand && !hasSquash && planFields.length === 0) return fail(res, 400, 'bad_request');
+      const projectFields = PROJECT_FIELDS.filter((f) => f in b); // Phase 6D: build/lint commands, profiles, model, budget, limit, docs, secrets
+      if (!hasCommand && !hasSquash && projectFields.length === 0) return fail(res, 400, 'bad_request');
       // Everything is checked before anything is written: a bad entry changes nothing.
-      if (hasSquash && typeof b.squash !== 'boolean') return fail(res, 422, 'plan.squashInvalid');
-      if (hasCommand && !isValidTestCommand(b.testCommand)) return fail(res, 422, 'plan.testCommandInvalid');
-      for (const f of planFields) {
+      if (hasSquash && typeof b.squash !== 'boolean') return fail(res, 422, 'project.squashInvalid');
+      if (hasCommand && !isValidTestCommand(b.testCommand)) return fail(res, 422, 'project.testCommandInvalid');
+      for (const f of projectFields) {
         const v = typeof b[f] === 'string' ? (b[f] as string).trim() : b[f];
         const clears = v === null || v === '' || (Array.isArray(v) && v.length === 0);
-        if (!clears && !isValidPlanField(f, v, PROFILES)) return fail(res, 422, 'plan.fieldInvalid', { field: f });
+        if (!clears && !isValidProjectField(f, v, PROFILES)) return fail(res, 422, 'project.fieldInvalid', { field: f });
       }
       if (hasCommand) ctx.store.setTestCommand(b.testCommand as string);
       if (hasSquash) ctx.store.setSquash(b.squash as boolean);
-      if (planFields.length > 0) ctx.store.setFields(Object.fromEntries(planFields.map((f) => [f, b[f]])), PROFILES);
+      if (projectFields.length > 0) ctx.store.setFields(Object.fromEntries(projectFields.map((f) => [f, b[f]])), PROFILES);
       ctx.broadcastState();
-      const saved = ctx.store.plan;
-      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...Object.fromEntries(planFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
+      const saved = ctx.store.project;
+      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...Object.fromEntries(projectFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
     }
 
-    if (req.method === 'POST' && path === '/api/plans/save-template') {
+    if (req.method === 'POST' && path === '/api/projects/save-template') {
       let body: unknown;
       try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
       if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
       const b = body as { id?: unknown; name?: unknown; overwrite?: unknown };
-      let plan;
-      try { plan = ctx.store.plan; } catch { return fail(res, 422, 'template.invalid'); }
-      const saved = saveTemplate({ planRoot: ctx.planRoot, plan, configDir: dirname(ctx.configPath), id: String(b.id ?? ''), name: b.name, overwrite: b.overwrite === true });
+      let project;
+      try { project = ctx.store.project; } catch { return fail(res, 422, 'template.invalid'); }
+      const saved = saveTemplate({ projectRoot: ctx.projectRoot, project, configDir: dirname(ctx.configPath), id: String(b.id ?? ''), name: b.name, overwrite: b.overwrite === true });
       if (!saved.ok) return fail(res, saved.code === 'template.exists' ? 409 : 422, saved.code);
       return send(res, 201, { id: String(b.id) });
     }

@@ -26,7 +26,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 20000): Promise<b
 }
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
 const NOTES = [{ severity: 'high', where: 'src/math.js:3', text: 'negative input is not handled' }];
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo.worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.console', 'worktrees', slug);
 const gitFails = (cwd: string, ...args: string[]): boolean => {
   try { execFileSync('git', args, { cwd, stdio: 'ignore' }); return false; } catch { return true; }
 };
@@ -36,10 +36,10 @@ async function boot() {
   const t = makeRepo({ remote: true });
   const configDir = mkdtempSync(join(tmpdir(), 'e2e4-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
-  const s = await startServer({ port: 0, planRoot: t.repo, configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null });
-  s.setLimits({ global: 20, perPlan: 20 });
-  const planFile = join(t.repo, '.console', 'plan.json');
-  writeFileSync(planFile, JSON.stringify({ ...JSON.parse(readFileSync(planFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
+  const s = await startServer({ port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null });
+  s.setLimits({ global: 20, perProject: 20 });
+  const projectFile = join(t.repo, '.console', 'project.json');
+  writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
       method, headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
@@ -120,7 +120,7 @@ try {
     check('the reviewer works in a detached checkout of the delivered commit', gitSync(rvwt, 'rev-parse', 'HEAD') === gitSync(worktreeOf(t, 'fix-login'), 'rev-parse', 'HEAD') && gitFails(rvwt, 'symbolic-ref', '-q', 'HEAD'));
     const guard = async (tl: string, input: unknown) => (await asUi('/api/state')) && (await (await fetch(`${s.url}/v1/guard`, { method: 'POST', headers: { authorization: `Bearer ${s.sessionTokenFor('review-fix-login')}`, 'content-type': 'application/json' }, body: JSON.stringify({ tool: tl, input }) })).json());
     check('the reviewer cannot write a file (guard)', (await guard('Write', { file_path: 'x.md' })).rule === 'readonly.write' && (await guard('Bash', { command: 'echo x > y.txt' })).rule === 'readonly.write');
-    check('the reviewer can read the diff (guard)', (await guard('Bash', { command: 'git diff plan/shop-api...HEAD' })).decision === 'allow');
+    check('the reviewer can read the diff (guard)', (await guard('Bash', { command: 'git diff project/shop-api...HEAD' })).decision === 'allow');
 
     const v1 = await tool('review-fix-login', 'review_verdict', { pass: false, notes: NOTES });
     check('a failed review returns the ticket to its author', v1.json.status === 'ok' && v1.json.outcome === 'sent_back', JSON.stringify(v1.json));
@@ -158,15 +158,15 @@ try {
       await tool('shop-api', 'request_review', { name: slug });
       await tool(`review-${slug}`, 'review_verdict', { pass: true, notes: [] });
     }
-    const before = Number(gitSync(t.repo, 'rev-list', '--count', 'plan/shop-api'));
+    const before = Number(gitSync(t.repo, 'rev-list', '--count', 'project/shop-api'));
     const m1 = await tool('shop-api', 'merge_ticket', { name: 'first-job' });
-    check('the first ticket is squashed into the plan branch as one commit', m1.json.status === 'merged' && Number(gitSync(t.repo, 'rev-list', '--count', 'plan/shop-api')) === before + 1, JSON.stringify(m1.json));
-    check('its message follows the console\'s format', gitSync(t.repo, 'log', '-1', '--format=%B', 'plan/shop-api').startsWith('ticket first-job: First change') && gitSync(t.repo, 'log', '-1', '--format=%B', 'plan/shop-api').includes('Reviewed-by: review-first-job (round 1)'));
+    check('the first ticket is squashed into the project branch as one commit', m1.json.status === 'merged' && Number(gitSync(t.repo, 'rev-list', '--count', 'project/shop-api')) === before + 1, JSON.stringify(m1.json));
+    check('its message follows the console\'s format', gitSync(t.repo, 'log', '-1', '--format=%B', 'project/shop-api').startsWith('ticket first-job: First change') && gitSync(t.repo, 'log', '-1', '--format=%B', 'project/shop-api').includes('Reviewed-by: review-first-job (round 1)'));
     check('its session ended and its folder and local branch are gone', await until(async () => !existsSync(worktreeOf(t, 'first-job')) && gitSync(t.repo, 'branch', '--list', 'agent/shop-api/first-job') === ''));
     check('the first panel shows Finished and the ticket Merged', await until(async () => (await stateChip(page, 'first-job').innerText().catch(() => '')) === 'Finished' && (await chip(page, 'first-job').innerText().catch(() => '')) === 'Merged'));
-    const tip = gitSync(t.repo, 'rev-parse', 'plan/shop-api');
+    const tip = gitSync(t.repo, 'rev-parse', 'project/shop-api');
     const m2 = await tool('shop-api', 'merge_ticket', { name: 'second-job' });
-    check('the conflicting ticket is not merged by force', m2.json.status === 'conflict' && m2.json.files.includes('shared.js') && gitSync(t.repo, 'rev-parse', 'plan/shop-api') === tip, JSON.stringify(m2.json));
+    check('the conflicting ticket is not merged by force', m2.json.status === 'conflict' && m2.json.files.includes('shared.js') && gitSync(t.repo, 'rev-parse', 'project/shop-api') === tip, JSON.stringify(m2.json));
     check('the author got the files in a message from the main', (await inbox('second-job')).some((m) => m.startsWith('Message from the main') && m.includes('shared.js')));
     check('its folder is in the conflict state with markers it can edit', readFileSync(join(worktreeOf(t, 'second-job'), 'shared.js'), 'utf8').includes('<<<<<<<'));
     check('the panel shows Rework 1', await until(async () => (await chip(page, 'second-job').innerText().catch(() => '')) === 'Rework 1'), await chip(page, 'second-job').innerText().catch(() => ''));
@@ -207,7 +207,7 @@ try {
     await page.keyboard.press('Alt+Q');
     check('the queue shows one confirmation', await until(async () => (await page.locator('#drawer .queue-confirm').count()) === 1));
     const text = await page.locator('#drawer .queue-confirm').innerText();
-    check('it names the plan, the branch, the ticket and the test result', text.includes('shop-api') && text.includes('origin/main') && text.includes('fix-login') && /Tests of the plan branch passed/.test(text), text.slice(0, 200));
+    check('it names the project, the branch, the ticket and the test result', text.includes('shop-api') && text.includes('origin/main') && text.includes('fix-login') && /Tests of the project branch passed/.test(text), text.slice(0, 200));
     await page.locator('#drawer .queue-confirm details summary', { hasText: 'Ticket fix-login' }).click();
     await page.locator('#drawer .queue-confirm details details summary', { hasText: 'Report' }).click();
     check('the ticket report is readable inside the confirmation', (await page.locator('#drawer .queue-report').innerText()).includes('Fix the login'));
@@ -218,7 +218,7 @@ try {
     await tool('shop-api', 'propose_release');
     await until(async () => (await page.locator('#drawer .queue-confirm').count()) === 1);
     await page.click('#drawer .queue-confirm button[data-answer="approve"]');
-    check('Approve moves origin/main to the plan tip', await until(() => gitSync(t.remote, 'rev-parse', 'main') === gitSync(t.repo, 'rev-parse', 'plan/shop-api'), 40000));
+    check('Approve moves origin/main to the project tip', await until(() => gitSync(t.remote, 'rev-parse', 'main') === gitSync(t.repo, 'rev-parse', 'project/shop-api'), 40000));
     check('the local main is the same and the file is in the checkout', gitSync(t.repo, 'rev-parse', 'main') === gitSync(t.remote, 'rev-parse', 'main') && existsSync(join(t.repo, 'login.js')));
     check('the ticket is Released', await until(async () => (await chip(page, 'fix-login').innerText().catch(() => '')) === 'Released'), await chip(page, 'fix-login').innerText().catch(() => ''));
     check('no release token is left behind', !existsSync(join(t.repo, '.git', 'console-hooks', 'release-token')));
@@ -230,16 +230,16 @@ try {
     await s.close();
   }
 
-  // 5. Settings: the squash switch is saved in the plan
+  // 5. Settings: the squash switch is saved in the project
   {
     const { s, t } = await boot();
     const page = await open(`${s.url}/?token=${s.token}`);
     await until(async () => (await page.locator(`${panel('shop-api')} .xterm`).count()) > 0);
     await page.click('#settings-btn');
-    await page.click('.options-tab[data-tab="plans"]');
+    await page.click('.options-tab[data-tab="projects"]');
     check('the squash switch starts on', await page.locator('input[name="squash"]').isChecked());
     await page.uncheck('input[name="squash"]');
-    check('turning it off is saved in the plan', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'plan.json'), 'utf8')).squash === false));
+    check('turning it off is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.console', 'project.json'), 'utf8')).squash === false));
     await page.close();
     await s.close();
   }

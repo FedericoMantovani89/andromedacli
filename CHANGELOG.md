@@ -8,38 +8,45 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- "Plan" is now "project" everywhere (UI texts in English and Italian, prompts, API `/api/projects`, `project.json`, `projects.json`, `--project-root`, branches `project/<project>` and `agent/<project>/<name>`, the `.project` merge worktree). No migration: projects created before this change must be recreated.
+- New agents' worktrees (and the console's `.project` merge checkout) live under the project's `.console/worktrees/` (`<repo>/` one level down when the project folder holds several repos) instead of `<repo>.worktrees`; worktrees already made keep working where they are. Claude Code's folder trust now reaches them from the project folder.
+- The last open project can be closed: the console goes back to the welcome screen.
+- The close-project dialog has a box "also delete the project's data": it removes the project's worktrees, its `agent/<project>/*` and `project/<project>` branches and its `.console`, so the project opens again as new (`DELETE /api/projects/<name>?purge=1`).
+- Agents are launched with `--name "<agent> <project> AndromedaCli"` (same reason).
+- The main session is launched with `--name "<project> AndromedaCli"` (also on restart/resume), so Remote Control shows it instead of the default name.
 - The guard refuses the main any Claude Code built-in subagent other than the read-only Explore, Plan and claude-code-guide types (rule `agent.builtin-subagent`), pointing it to `spawn_agent`; the mod now sends the subagent type and also guards the older `Task` tool name.
 - The main's prompt tells it to do every file-changing job through console agents (`spawn_agent`), not Claude Code's built-in subagents, which are invisible to the console (no worktree, ticket or budget).
-- Visual redesign of the whole UI: dark graphite surface with hairline seams instead of dimmed panels, one accent for focus, state dots with colour only for state, tab-style plan and options navigation, themed terminals, a brand mark in the top bar and a narrow-window layout.
-- Options dialog navigation is a vertical menu on the left (a row on narrow windows); Escape closes the Options, new-plan and close-plan dialogs.
+- Visual redesign of the whole UI: dark graphite surface with hairline seams instead of dimmed panels, one accent for focus, state dots with colour only for state, tab-style project and options navigation, themed terminals, a brand mark in the top bar and a narrow-window layout.
+- Options dialog navigation is a vertical menu on the left (a row on narrow windows); Escape closes the Options, new-project and close-project dialogs.
 
 ### Fixed
+- On Windows the terminals use the ConPTY bundled with node-pty (falling back to the system's if it cannot start): the system one on Windows 10 dropped the mouse and alternate-screen requests of Claude Code's fullscreen mode, so the mouse wheel did nothing in the terminals while PageUp/PageDown worked.
 - git is retried when Windows kills it at start-up on a starved machine (exit 0xC0000142, before git runs anything); this made a step commit fail now and then under a heavy test run.
-- Opening a plan whose saved main session had no transcript (it never received a prompt) failed with "No conversation found with session ID"; the main now resumes only a session that has a transcript and otherwise starts a new one.
+- Opening a project whose saved main session had no transcript (it never received a prompt) failed with "No conversation found with session ID"; the main now resumes only a session that has a transcript and otherwise starts a new one.
 - The native folder window opened by Browse could appear behind the browser; its owner window is now shown (invisible, off-screen, topmost, brought to the foreground) so the dialog comes to the front.
-- The new-plan dialog on the welcome screen listed no templates and detected no commands (those routes needed an open plan); they now answer with no plan open.
-- The start-up picture now covers the whole window (cropped instead of letterboxed), and dialog forms (new plan, save as template) have stacked labels, styled fields, a three-column commands row and a primary action button.
+- The new-project dialog on the welcome screen listed no templates and detected no commands (those routes needed an open project); they now answer with no project open.
+- The start-up picture now covers the whole window (cropped instead of letterboxed), and dialog forms (new project, save as template) have stacked labels, styled fields, a three-column commands row and a primary action button.
 
 ### Added
-- A plan folder that is not a git repository but holds several (for example `abc-website` with `abc-fe` and `abc-be`) now works: `spawn_agent` and the new-agent form take a `repo`, each agent gets its worktree and branches in that repo, and review, merge and a single release confirmation run per repo (`git.repoRequired`, `git.unknownRepo`); the main's prompt lists the repos.
-- With no plan open (nothing remembered and no `--plan-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-plan dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
-- `GET /api/host` tells the page what the console knows without a plan (plans, language, languages); plan routes with no plan answer `404 plan.notFound`.
+- A project folder that is not a git repository but holds several (for example `abc-website` with `abc-fe` and `abc-be`) now works: `spawn_agent` and the new-agent form take a `repo`, each agent gets its worktree and branches in that repo, and review, merge and a single release confirmation run per repo (`git.repoRequired`, `git.unknownRepo`); the main's prompt lists the repos.
+- With no project open (nothing remembered and no `--project-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-project dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
+- `GET /api/host` tells the page what the console knows without a project (projects, language, languages); project routes with no project answer `404 project.notFound`.
 
 ### Fixed
 - The guard no longer asks the network whether a UNC path (`\servershare...`) exists: it is never inside a local folder, so it is decided at once (the lookup of an unknown server name took about 20 s per call).
 
 ### Changed
-- `serve` without `--plan-root` no longer opens the current folder: it opens the plans remembered in `plans.json`, or shows the welcome screen. `startServer` takes `planRoot` and `planName` as optional.
-- The request handler takes the console-wide part (`HostContext`) apart from a plan's `Context`.
+- `serve` without `--project-root` no longer opens the current folder: it opens the projects remembered in `projects.json`, or shows the welcome screen. `startServer` takes `projectRoot` and `projectName` as optional.
+- The request handler takes the console-wide part (`HostContext`) apart from a project's `Context`.
 
 Next: Phase 7 (external providers, optional); ask before starting.
 
-## Phase 6: multiple plans, full resume, notifications, templates, options (2026-10-05)
+## Phase 6: multiple projects, full resume, notifications, templates, options (2026-10-05)
 
-### 6C: Multiple plans and tabs
-- One console now hosts several plans (one per project folder), each with its own main session, agents, tickets, queue and `.console/` folder, shown as tabs with a dot while its queue waits; `+ plan` opens a plan, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
-- `POST /api/plans`, `DELETE /api/plans/<name>`, `?plan=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first plan); `StateMessage.plans`; the open plans are remembered in `<configDir>/plans.json`.
-- The active-agent global limit counts agents of all plans; a freed slot in one plan starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all plans.
+### 6C: Multiple projects and tabs
+- One console now hosts several projects (one per project folder), each with its own main session, agents, tickets, queue and `.console/` folder, shown as tabs with a dot while its queue waits; `+ project` opens a project, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
+- `POST /api/projects`, `DELETE /api/projects/<name>`, `?project=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first project); `StateMessage.projects`; the open projects are remembered in `<configDir>/projects.json`.
+- The active-agent global limit counts agents of all projects; a freed slot in one project starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all projects.
 
 ### 6A: Full resume
 - After a restart the main resumes its own session and the other agents come back dormant (no process, no quota spent); an agent whose turn was lost in a crash, or whose worktree is gone, is interrupted. The main gets one message with the lists.
@@ -53,20 +60,20 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - A click on a toast opens the console on that queue item (#queue=<id>); the tab title shows the number of waiting items.
 - When no toast can be shown the state says so and an optional browser notification takes over; the Notifications section of Settings has a test toast button; the doctor checks that the toast module loads.
 
-### 6D: Templates and the new-plan flow
-- Plan templates: a folder with `template.json`, `main.md`, `rules.md` and `profiles/*.md`; shipped ones live in `templates/` (`backend-java`, `frontend-web`, `generic`), the user's in `<config dir>/templates/` (the user's wins on the same id); an invalid template is listed as unavailable with the reason. `GET /api/templates` lists them.
-- New plan from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.console/profiles/`, writes `.console/main.md` and `.console/rules.md` and the plan fields; what the user typed beats the detected commands, which beat the template's.
-- `GET /api/plans/detect?root=` proposes build, test and lint commands from `pom.xml`, Gradle or `package.json` (bounded reads, no process is run).
-- `POST /api/plans/save-template` saves the current plan as a user template (a copy: later plan changes never touch it; an existing id is refused unless `overwrite`).
-- New optional plan fields (`plan.json`, `PUT /api/plan`): `buildCommand`, `lintCommand`, `profiles`, `model`, `agentTokens`, `maxActive`, `docs`, `secretPatterns`; the plan's profiles limit the new-agent picker and `spawn_agent`, its model, token budget, active-agent limit and secret patterns sit behind the request's and the profile's own values.
+### 6D: Templates and the new-project flow
+- Project templates: a folder with `template.json`, `main.md`, `rules.md` and `profiles/*.md`; shipped ones live in `templates/` (`backend-java`, `frontend-web`, `generic`), the user's in `<config dir>/templates/` (the user's wins on the same id); an invalid template is listed as unavailable with the reason. `GET /api/templates` lists them.
+- New project from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.console/profiles/`, writes `.console/main.md` and `.console/rules.md` and the project fields; what the user typed beats the detected commands, which beat the template's.
+- `GET /api/projects/detect?root=` proposes build, test and lint commands from `pom.xml`, Gradle or `package.json` (bounded reads, no process is run).
+- `POST /api/projects/save-template` saves the current project as a user template (a copy: later project changes never touch it; an existing id is refused unless `overwrite`).
+- New optional project fields (`project.json`, `PUT /api/project`): `buildCommand`, `lintCommand`, `profiles`, `model`, `agentTokens`, `maxActive`, `docs`, `secretPatterns`; the project's profiles limit the new-agent picker and `spawn_agent`, its model, token budget, active-agent limit and secret patterns sit behind the request's and the profile's own values.
 - The main's prompt gets `.console/main.md` and every session's prompt gets `.console/rules.md`; an agent is told which documents to update at the last step (`docs`).
-- New-plan dialog (template, folder, name; commands prefilled from the folder) and a "save as template" dialog; the first-start wizard offers to create a plan from a template.
+- New-project dialog (template, folder, name; commands prefilled from the folder) and a "save as template" dialog; the first-start wizard offers to create a project from a template.
 - SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.console/rules.md`, appended to every session's system prompt.
 
 ### 6E: Options, remote model list, plugin catalog
-- The gear opens a tabbed Options dialog (models, profiles, budget and limits, names, plan, git, guard, mod, notifications, language, prerequisites, plugins, server); each editable field saves on change and goes back when the server refuses it.
+- The gear opens a tabbed Options dialog (models, profiles, budget and limits, names, project, git, guard, mod, notifications, language, prerequisites, plugins, server); each editable field saves on change and goes back when the server refuses it.
 - `PUT /api/config` accepts any subset of the configuration: it is deep-merged into the user's file (unknown entries kept), validated, refused with `config.invalid {path}` when a touched entry is invalid, and applied at once to the limits, budget thresholds, git options and catalogs; `GET /api/options` returns the effective configuration and the read-only facts.
-- New config entries `models` (`agent`, `catalogUrl`, `cacheHours`) and `plugins` (`catalogUrl`, `cacheHours`); the saved agent model is used for launches after the ticket, profile and plan levels.
+- New config entries `models` (`agent`, `catalogUrl`, `cacheHours`) and `plugins` (`catalogUrl`, `cacheHours`); the saved agent model is used for launches after the ticket, profile and project levels.
 - Model list from a remote `models.json` with a cache (6 hours by default), a shipped fallback in `catalog/models.json`, a refresh button and a warning when the saved model left the list.
 - Plugin catalog as a read-only list (`catalog/plugins-catalog.json`, `GET /api/plugins`): tiers, trust, requirements, conflicts, "not tested with this version", and the exact install command to copy; nothing is installed or enabled.
 - SPEC delta: the model and plugin catalog URLs are empty by default (repository address still open), so the shipped lists are the source until one is set.
@@ -78,10 +85,10 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - New optional prerequisite: the GitHub CLI (`gh`); missing never blocks anything.
 
 ### Fixed (found when the six parts were put together)
-- `/api/plans/detect` and `/api/plans/save-template` are no longer taken for plan routes (they answered 404).
+- `/api/projects/detect` and `/api/projects/save-template` are no longer taken for project routes (they answered 404).
 - The generic configuration patch accepts the `notifications` section.
 - A leftover agent record with no ticket, no session and no worktree is history, not a dormant agent.
-- The first-start wizard has a third button on its last step (create a plan from a template); the acceptance spec clicks Skip explicitly.
+- The first-start wizard has a third button on its last step (create a project from a template); the acceptance spec clicks Skip explicitly.
 
 ## Phase 5: budget, blocks, limits (2026-10-05)
 
@@ -92,14 +99,14 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - Loop and block detection from the transcript: repeated identical calls, repeated identical errors and repeated compactions are corrected, then limited, then stopped (ticket `blocked`, recovery by the main) and keep escalating while the loop goes on; silence (any sign of life counts, the notice says whether the process is alive) and a long time without `step_done` only warn the main.
 - Subscription quota: the mod reports the limits (`session.measure`, `quota` event); at 70% the active-agent limit halves, at 85% nothing new starts and agents are told to close the step, at 95% they are restricted, committed and ended in priority order, the main last; a spend limit never drives the steps.
 - Sleep until the reset: from the 95% stop (when the reset time is known) or at 100% the console waits with no attempt in between and, at the reset, wakes only the main (one check, then a backoff of 5, 10 and 20 minutes); a later low reading ends any sleep; the weekly limit does not restart by itself and puts an item in the queue listing the choices.
-- `resume_agent` (main): resumes suspended agents with `--resume`, staggered across calls, refused while the quota is high; with `git.worktrees` off they resume in the plan folder.
+- `resume_agent` (main): resumes suspended agents with `--resume`, staggered across calls, refused while the quota is high; with `git.worktrees` off they resume in the project folder.
 - The status bar shows the quota, the reset date or waiting time, "paused / almost used up" and an always visible "Resume now" button (disabled while awake), and the agents against the current limit; the agent bar shows the budget used, the new ticket states and loop level, and a queue item with raise, close or recover after a budget stop.
 - The guard can restrict a session (budget, loop, quota); the mod now routes WebFetch, WebSearch and Agent through the guard.
 - Budget, loop and quota thresholds are configuration entries (`budget` in config.json) with the SPEC defaults.
 
 ### Changed
 - Queued agents start oldest first when several slots free at once.
-- The agent counter and the start limit use the stricter of the global and the per-plan limit.
+- The agent counter and the start limit use the stricter of the global and the per-project limit.
 - `checklist_set` is refused (`restricted`) while an agent is restricted; "close" on a budget decision is refused while a recovery runs on the ticket.
 
 ### Fixed (found by the final review)
@@ -126,9 +133,9 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - Rounds: a failed review (or red tests on the delivered commit) goes back to the author as a message from the main, with
   three new steps appended to its checklist; after two rework rounds the next failure puts a decision in the user's queue
   (send back / approve as it is / leave).
-- Merge in series into the plan branch through a console-owned worktree (`<repo>.worktrees/.plan`): squash by default
-  (`plan.json` `squash:false` keeps the step commits behind a merge commit; Settings switch). A conflict is never forced: the
-  plan branch stays put and the console starts the merge in the author's folder so it only edits the files; red tests after the
+- Merge in series into the project branch through a console-owned worktree (`<repo>.worktrees/.project`): squash by default
+  (`project.json` `squash:false` keeps the step commits behind a merge commit; Settings switch). A conflict is never forced: the
+  project branch stays put and the console starts the merge in the author's folder so it only edits the files; red tests after the
   merge undo it. After a merge the author session ends (`Finished`), its worktree and local branch go, the remote branch stays.
 - Release to `origin/main`: `propose_release` puts one confirmation in the queue (tickets, reports, files, verdicts, tests); only
   after Approve does the console merge into the local `main` (the checkout must be on `main` and clean), rerun the tests and push
@@ -143,32 +150,32 @@ Next: Phase 7 (external providers, optional); ask before starting.
 
 ### Fixed (found by the final review)
 - The main can no longer push `origin/main` around the release hook (`--no-verify`, wildcard refspecs, `send-pack`, `core.hooksPath`/alias changes, editing the hooks folder); the read-only guard for reviewers closes more write paths and has fewer false positives.
-- A crash during the post-merge tests no longer adopts the merge without tests; a merge and a release proposal no longer race on the `.plan` worktree; a deleted `.plan` folder no longer blocks merges.
+- A crash during the post-merge tests no longer adopts the merge without tests; a merge and a release proposal no longer race on the `.project` worktree; a deleted `.project` folder no longer blocks merges.
 - A failed release keeps edits the user made meanwhile (`reset --keep`), merges the approved commit, and releases every merged ticket; large release payloads shrink the reports instead of being cut, and list commits already on local main.
 - Only failed reviews count toward the two rework rounds (conflicts and red merge tests do not); the panel chip reads "Rework N".
-- A queued reviewer that fails to start gives the ticket back; a plan or agent named `console` can no longer erase console queue items; goal and review notes cannot alter the report structure; reviewer hook folders are removed.
+- A queued reviewer that fails to start gives the ticket back; a project or agent named `console` can no longer erase console queue items; goal and review notes cannot alter the report structure; reviewer hook folders are removed.
 
 ## Phase 3: git worktrees, checklists and guard (2026-10-04)
 
 ### Added
-- Git worktrees: every agent gets its own worktree (`<repo>.worktrees/<name>`) on its own branch `agent/<plan>/<name>`,
-  created from the plan branch `plan/<plan>` (made from HEAD the first time); the session starts inside it. A queued agent
+- Git worktrees: every agent gets its own worktree (`<repo>.worktrees/<name>`) on its own branch `agent/<project>/<name>`,
+  created from the project branch `project/<project>` (made from HEAD the first time); the session starts inside it. A queued agent
   gets its worktree only when its slot arrives. Refused up front with `git.notRepo`, `git.noCommits`, `git.worktreeExists`;
   a failed start leaves no worktree, branch, hook folder, token or process. `git.worktrees: false` keeps the old behaviour.
 - Per-worktree `pre-push` hook (through `extensions.worktreeConfig`, script kept in the repository's git dir): only the
   agent's own branch can be pushed; other refs, force, deletes and tags are refused.
 - Checklists and tickets: tools `checklist_set`, `step_done`, `report_blocked` (agents only). The console validates the
   mandatory skeleton (study, tests first, steps, validation, documentation), commits each closed step itself
-  (`step n/N: title`, trailers `Agent:`, `Ticket:`, `Piano:`), refuses secrets (`.env`, keys, credentials, configurable
-  patterns), runs the plan's test command at the validation step with a timeout, and pushes the branch when the last step
+  (`step n/N: title`, trailers `Agent:`, `Ticket:`, `Progetto:`), refuses secrets (`.env`, keys, credentials, configurable
+  patterns), runs the project's test command at the validation step with a timeout, and pushes the branch when the last step
   closes, telling the main. Steps close in order, one at a time; the checklist is also saved in `.console/checklist.md`.
 - Guard: `POST /v1/guard` judges every `Bash`, `PowerShell`, `Write`, `Edit`, `NotebookEdit`, `Read`, `Grep` and `Glob` call
   with the caller's own role and worktree (git commit/push/force/tag/checkout/merge/reset, config tampering, paths outside the
   worktree and `.git`, secrets, wide deletes, download-and-run). The main has a shorter list. Fails closed for shell and
   writing tools when the console is unreachable. `guard.mode` `enforce` or `shadow` (allow and log); refusals are logged to
   `.console/state/guard.jsonl`.
-- Settings dialog: a switch for `agents.bypassPermissions` (with a warning), the guard mode, and the plan's test command;
-  `PUT /api/config` takes them (and still the language), `PUT /api/plan` the test command. Bypass and guard mode apply to
+- Settings dialog: a switch for `agents.bypassPermissions` (with a warning), the guard mode, and the project's test command;
+  `PUT /api/config` takes them (and still the language), `PUT /api/project` the test command. Bypass and guard mode apply to
   sessions launched afterwards; running sessions keep what they started with.
 - Launch check: 90 s after an agent is launched the console verifies it reported in and took its goal; if not, the main gets a "Launch check:" message (also for agents started from the UI) and the panel shows "Not started yet" until the agent works. Asked for by the architect.
 - Build version: the latest tag reachable from `main` of the console's own repository (without the `v`; `package.json` version, now 0.0.1, until a tag exists) is shown over the splash picture and in the tab title (`AndromedaCli v0.0.1`).
@@ -179,7 +186,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - Guard: commands inside if/then/fi, subshells, brace groups, PowerShell blocks and `iex "..."` are judged like any other; `timeout`, `xargs`, `watch` are looked through; a `cd` earlier in the command moves later relative paths; `rmdir/rd/del -Recurse` and piped `Remove-Item` count as recursive deletes.
 - Guard: the main's `git push` / `git push origin HEAD` / `--all` are refused while the repository is on a protected branch, and pushing an existing tag by name is a tag push.
 - Secrets: `.env.example` and other template files are no longer refused; `credentials.*` narrowed to real credential file types.
-- Several agents started at once no longer race on the plan branch and the repository config (one lock per repository).
+- Several agents started at once no longer race on the project branch and the repository config (one lock per repository).
 - The agent prompt tells it its worktree has only tracked files (install dependencies first).
 
 ### Changed
@@ -196,12 +203,12 @@ Next: Phase 7 (external providers, optional); ask before starting.
   there and session tokens are not valid on `/api` or the WebSockets.
 - Agent state derived from mod events (`starting`, `idle`, `working`, `waiting_user`, `queued`, `interrupted`), shown
   in the panel headers; the terminal text never changes it.
-- Limit on active agents (default 4 global, 3 per plan): beyond it `spawn_agent` answers `queued` with the position and
+- Limit on active agents (default 4 global, 3 per project): beyond it `spawn_agent` answers `queued` with the position and
   the agent starts by itself when a slot frees; lowering the limit stops nobody. One flow serves the UI button and the tool.
-- Question queue (drawer, `Alt+Q`, dot on the plan tab): answers reach the waiting tool call without moving the focus.
+- Question queue (drawer, `Alt+Q`, dot on the project tab): answers reach the waiting tool call without moving the focus.
 - "Read" panel (`Alt+L` or the Read button): the last 50 answers of each session as sanitised Markdown with normal
   scrolling, filter and copy; kept on disk under `.console/state/reading/`.
-- Profiles (`prompts/profiles/*.md`, plan > user > shipped), the main's instructions (`prompts/main.md`) and the agent's
+- Profiles (`prompts/profiles/*.md`, project > user > shipped), the main's instructions (`prompts/main.md`) and the agent's
   (`prompts/agent.md`) naming the deferred tools by full name.
 - Tests: scheduler, registry, questions, reading, markdown sanitiser, `/v1` security, launch, profiles; browser e2e with a
   simulated mod (`test/e2e/phase2.spec.ts`) and a manual contract test with the real Claude Code and the real mod
@@ -231,7 +238,7 @@ Next: Phase 7 (external providers, optional); ask before starting.
 - Browser UI (xterm.js): fixed main on the left, agents stacked on the right (full panels up to four, then bars),
   manual agent launch, status bar, `Alt+1..9` shortcuts. The keyboard focus never moves on its own.
 - Activity-name (slug) rules: format, length, generic names, Windows reserved names, uniqueness, accents transliterated.
-- Plan state under `<repo>/.console/` (`plan.json`, `state/agents.json`); the plan keeps its original name.
+- Project state under `<repo>/.console/` (`project.json`, `state/agents.json`); the project keeps its original name.
 - Internationalisation through `.properties` bundles (`en`, `it`); languages are discovered from the files and can be
   switched at runtime without reloading.
 - Build gate `npm run check`: key/placeholder parity between languages, unused and undefined keys, user-facing error
@@ -262,5 +269,5 @@ Next: Phase 7 (external providers, optional); ask before starting.
 ## Phase 0: verification of the Claude Code mods (2026-10-04)
 
 Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` with the outcome of checks V1-V19, the study
-of context compaction (S0), notes on the reference projects, and a probe mod. No plan B was needed for V1-V8. See
+of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.

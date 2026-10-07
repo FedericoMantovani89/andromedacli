@@ -63,15 +63,15 @@ it('pom.xml wins over package.json (the first known build tool decides)', () => 
   expect(detectProject(d, 'linux').source).toBe('pom.xml');
 });
 
-it('GET /api/plans/detect needs the token and an existing absolute folder', async () => {
+it('GET /api/projects/detect needs the token and an existing absolute folder', async () => {
   const s = await bootServer();
   const d = tmp();
   put(d, 'package.json', JSON.stringify({ scripts: { test: 'y' } }));
-  const url = (root: string): string => `/api/plans/detect?root=${encodeURIComponent(root)}`;
+  const url = (root: string): string => `/api/projects/detect?root=${encodeURIComponent(root)}`;
   expect((await ui(s, url(d))).body).toEqual({ source: 'package.json', test: 'npm test' });
   expect((await ui(s, url(tmp()))).body).toEqual({});
-  expect((await ui(s, url(join(d, 'missing')))).body).toMatchObject({ code: 'plan.badRoot' });
+  expect((await ui(s, url(join(d, 'missing')))).body).toMatchObject({ code: 'project.badRoot' });
   expect((await ui(s, url('relative/dir'))).status).toBe(422);
-  expect((await ui(s, '/api/plans/detect')).status).toBe(422);
+  expect((await ui(s, '/api/projects/detect')).status).toBe(422);
   expect((await req(s, url(d))).status).toBe(401);
 });

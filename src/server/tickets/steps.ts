@@ -21,7 +21,7 @@ export type ChecklistSetResult =
 
 export interface StepDeps {
   tickets: TicketStore;
-  plan: string;
+  project: string;
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
@@ -105,7 +105,7 @@ export class StepService {
 
     if (isValidation) {
       const command = this.d.testCommand()?.trim();
-      if (!command) return refuse('no_test_command', { detail: 'the plan has no test command: ask the main to set it in the console options' });
+      if (!command) return refuse('no_test_command', { detail: 'the project has no test command: ask the main to set it in the console options' });
       const v = await runValidation({ cwd: wt.worktree, command, timeoutMs: this.d.testTimeoutMs() });
       if (!v.ok) return refuse('validation_failed', { tail: v.tail, ...(v.timedOut ? { timedOut: true, detail: 'the test command timed out and was stopped' } : { detail: `the test command exited with code ${v.code}` }) });
     }
@@ -118,7 +118,7 @@ export class StepService {
     // A crash between the commit and the ticket update leaves the commit in git but the step open: adopt it instead of committing twice.
     const adopted = await this.existingCommit(wt.worktree, o.n, total, next.title, slug);
     const commit = adopted ?? await commitStep({
-      worktree: wt.worktree, n: o.n, total, title: next.title, slug, plan: this.d.plan, secretPatterns: this.d.secretPatterns(),
+      worktree: wt.worktree, n: o.n, total, title: next.title, slug, project: this.d.project, secretPatterns: this.d.secretPatterns(),
     });
     if (!commit.ok) {
       if (commit.code === 'secrets') return refuse('secrets', { files: commit.files, detail: 'these files look like secrets and were left out: remove them or add them to .gitignore' });

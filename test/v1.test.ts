@@ -20,7 +20,7 @@ async function boot(): Promise<Running> {
   const configDir = mkdtempSync(join(tmpdir(), 'v1-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en' }));
   const s = await startServer({
-    port: 0, planRoot: mkdtempSync(join(tmpdir(), 'v1-plan-')), configDir, planName: 'shop-api',
+    port: 0, projectRoot: mkdtempSync(join(tmpdir(), 'v1-project-')), configDir, projectName: 'shop-api',
     claudeCommand: [process.execPath, fixture], prereqRunner: goodRunner, worktrees: false,
   });
   running.push(s);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { callSignature, evaluate, type GuardContext } from '../src/server/guard/rules';
 
-const base: GuardContext = { worktree: 'C:/w/a', repo: 'C:/w/repo', branch: 'agent/p/a', planBranch: 'plan/p', secretPatterns: [] };
+const base: GuardContext = { worktree: 'C:/w/a', repo: 'C:/w/repo', branch: 'agent/p/a', projectBranch: 'project/p', secretPatterns: [] };
 
 describe('restricted sessions', () => {
   it('refuses every guarded tool under a budget restriction, reads included', () => {

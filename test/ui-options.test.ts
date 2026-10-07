@@ -4,12 +4,12 @@ import { OPTION_TABS, openOptions } from '../src/ui/options';
 import type { StateMessage } from '../src/shared/protocol';
 
 const options = {
-  config: { agents: { maxActiveGlobal: 4, maxActivePerPlan: 3, bypassPermissions: false }, git: { worktrees: true, testTimeoutMinutes: 15, secretPatterns: ['.env'] }, mod: { enabled: true },
+  config: { agents: { maxActiveGlobal: 4, maxActivePerProject: 3, bypassPermissions: false }, git: { worktrees: true, testTimeoutMinutes: 15, secretPatterns: ['.env'] }, mod: { enabled: true },
     budget: { agentTokens: 400000, alertPercent: 80, limitPercent: 100, stopPercent: 110, graceMinutes: 5, loop: {}, quota: {} }, models: { agent: '', catalogUrl: '', cacheHours: 6 } },
   errors: [], paths: { configDir: 'C:/c', profilesDir: 'C:/c/profiles', templatesDir: 'C:/c/templates' }, server: { port: 7391 },
   profiles: [{ name: 'backend', source: 'shipped' }], names: { minLength: 3, maxLength: 40, banned: ['agent'] },
 };
-const state = { settings: { bypassPermissions: false, guardMode: 'enforce', worktrees: true }, plan: { name: 'p' }, language: 'en', languages: ['en', 'it'], prereq: null } as unknown as StateMessage;
+const state = { settings: { bypassPermissions: false, guardMode: 'enforce', worktrees: true }, project: { name: 'p' }, language: 'en', languages: ['en', 'it'], prereq: null } as unknown as StateMessage;
 
 let puts: unknown[] = [];
 let putStatus = 200;

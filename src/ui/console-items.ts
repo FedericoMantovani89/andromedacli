@@ -45,7 +45,7 @@ function noteList(notes: unknown[]): HTMLElement {
   return ul;
 }
 
-/** "Release plan X to origin/main?": tickets with their reports and verdicts, the files, the tests; Approve or Reject. */
+/** "Release project X to origin/main?": tickets with their reports and verdicts, the files, the tests; Approve or Reject. */
 export function createConfirmEntry(item: QueueItem, send: (answer: string) => void): Entry {
   const p = isObj(item.payload) ? item.payload : {};
   const tickets = arr(p.tickets).filter(isObj);
@@ -56,7 +56,7 @@ export function createConfirmEntry(item: QueueItem, send: (answer: string) => vo
 
   const title = document.createElement('div');
   title.className = 'queue-text';
-  bindText(title, 'queue.confirm.title', { plan: str(p.plan), branch: str(p.branch), count: tickets.length });
+  bindText(title, 'queue.confirm.title', { project: str(p.project), branch: str(p.branch), count: tickets.length });
   el.append(title);
   const extra = num(p.extraCommits);
   if (extra > 0) {
@@ -204,7 +204,7 @@ export function createBudgetEntry(item: QueueItem, send: (answer: string) => voi
 
 /**
  * "The weekly limit is (almost) used up" (SPEC 18.5): nothing restarts by itself, so the user reads the choices (wait until the reset,
- * go on with fewer agents or a cheaper model set in the configuration, stop the plans) and acknowledges with one button.
+ * go on with fewer agents or a cheaper model set in the configuration, stop the projects) and acknowledges with one button.
  */
 export function createWeeklyEntry(item: QueueItem, send: (answer: string) => void): Entry {
   const p = isObj(item.payload) ? item.payload : {};

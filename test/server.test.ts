@@ -16,23 +16,23 @@ const goodRunner: Runner = async (cmd) => ({
   code: 0, stdout: cmd === 'node' ? 'v24.15.0' : cmd === 'git' ? 'git version 2.53.0' : '2.1.289 (Claude Code)',
 });
 
-const lastDirs: { configDir: string; planRoot: string } = { configDir: '', planRoot: '' };
-async function boot(runner: Runner = goodRunner, seed: { configJson?: string; agentsJson?: string; planName?: string; i18nDir?: string } = {}): Promise<Running> {
+const lastDirs: { configDir: string; projectRoot: string } = { configDir: '', projectRoot: '' };
+async function boot(runner: Runner = goodRunner, seed: { configJson?: string; agentsJson?: string; projectName?: string; i18nDir?: string } = {}): Promise<Running> {
   const configDir = mkdtempSync(join(tmpdir(), 'srv-cfg-'));
-  const planRoot = mkdtempSync(join(tmpdir(), 'srv-plan-'));
+  const projectRoot = mkdtempSync(join(tmpdir(), 'srv-project-'));
   if (seed.configJson !== undefined) writeFileSync(join(configDir, 'config.json'), seed.configJson);
   if (seed.agentsJson !== undefined) {
-    mkdirSync(join(planRoot, '.console', 'state'), { recursive: true });
-    writeFileSync(join(planRoot, '.console', 'plan.json'), JSON.stringify({ name: 'shop-api', createdAt: '2026-01-01T00:00:00Z' }));
-    writeFileSync(join(planRoot, '.console', 'state', 'agents.json'), seed.agentsJson);
+    mkdirSync(join(projectRoot, '.console', 'state'), { recursive: true });
+    writeFileSync(join(projectRoot, '.console', 'project.json'), JSON.stringify({ name: 'shop-api', createdAt: '2026-01-01T00:00:00Z' }));
+    writeFileSync(join(projectRoot, '.console', 'state', 'agents.json'), seed.agentsJson);
   }
-  Object.assign(lastDirs, { configDir, planRoot });
+  Object.assign(lastDirs, { configDir, projectRoot });
   const s = await startServer({
     prereqRunner: runner,
     port: 0,
-    planRoot,
+    projectRoot,
     configDir,
-    planName: seed.planName ?? 'shop-api',
+    projectName: seed.projectName ?? 'shop-api',
     i18nDir: seed.i18nDir,
     claudeCommand: [process.execPath, fixture],
     worktrees: false, // these tests use a plain temporary folder
@@ -117,7 +117,7 @@ it('creates the main session at start and lists it in /api/state', async () => {
   const s = await boot();
   const r = await request(s, '/api/state');
   expect(r.status).toBe(200);
-  expect(r.body.plan.name).toBe('shop-api');
+  expect(r.body.project.name).toBe('shop-api');
   expect(r.body.main).toMatchObject({ slug: 'shop-api', role: 'main', status: 'running' });
   expect(r.body.agents).toEqual([]);
 });
@@ -128,7 +128,7 @@ it('rejects a generic slug with a code and params, and does not spawn', async ()
   expect(r.body).toEqual({ code: 'slug.generic', params: { slug: 'agent-1' } });
   expect((await request(s, '/api/state')).body.agents).toEqual([]);
 });
-it('rejects a slug equal to the plan name (it is the main session)', async () => {
+it('rejects a slug equal to the project name (it is the main session)', async () => {
   const s = await boot();
   const r = await request(s, '/api/agents', { method: 'POST', body: { slug: 'shop-api', profile: 'backend' } });
   expect(r.body.code).toBe('slug.duplicate');
@@ -237,9 +237,9 @@ it('reports first run until the language is saved, then keeps it', async () => {
   expect(st.language).toBe('it');
   expect(st.needsSetup).toBe(false);
 });
-it('says whether the plan folder is a git repository', async () => {
+it('says whether the project folder is a git repository', async () => {
   const s = await boot();
-  expect((await request(s, '/api/state')).body.planIsRepo).toBe(false);
+  expect((await request(s, '/api/state')).body.projectIsRepo).toBe(false);
 });
 
 it('waits for the startup checks instead of creating an agent while prerequisites are unknown (P7)', async () => {
@@ -308,7 +308,7 @@ it('offers every language that has a bundle file, and saves it', async () => {
 });
 it('cleans up when saving the new agent fails after the process started, so the slug can be retried', async () => {
   const s = await boot();
-  const file = join(lastDirs.planRoot, '.console', 'state', 'agents.json');
+  const file = join(lastDirs.projectRoot, '.console', 'state', 'agents.json');
   const original = readFileSync(file, 'utf8');
   rmSync(file);
   mkdirSync(file); // a directory where the file should be: writing fails
@@ -321,11 +321,11 @@ it('cleans up when saving the new agent fails after the process started, so the 
   const retried = await request(s, '/api/agents', { method: 'POST', body: { slug: 'retry-job', profile: 'backend' } });
   expect(retried.status).toBe(201);
 });
-it('keeps the plan name stored in plan.json even if the folder was renamed to something else', async () => {
+it('keeps the project name stored in project.json even if the folder was renamed to something else', async () => {
   const old = JSON.stringify([{ slug: 'old-job', profile: 'backend', createdAt: '2026-01-01T00:00:00Z' }]);
-  const s = await boot(goodRunner, { agentsJson: old, planName: 'old-job' });
+  const s = await boot(goodRunner, { agentsJson: old, projectName: 'old-job' });
   const st = (await request(s, '/api/state')).body;
-  expect(st.plan.name).toBe('shop-api');
+  expect(st.project.name).toBe('shop-api');
   expect(st.main.slug).toBe('shop-api');
 });
 

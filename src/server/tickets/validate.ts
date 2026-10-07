@@ -6,7 +6,7 @@ const TAIL_BYTES = 4096;
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, 'g');
 
 /**
- * Runs the plan's test command (the user wrote it, so it goes through the platform shell: `cmd` on Windows) in `cwd`, with a
+ * Runs the project's test command (the user wrote it, so it goes through the platform shell: `cmd` on Windows) in `cwd`, with a
  * timeout, and keeps the last 4 KiB of the combined output with colour codes removed. The console's own variables are not passed on.
  */
 export function runValidation(o: { cwd: string; command: string; timeoutMs: number }): Promise<ValidationResult> {

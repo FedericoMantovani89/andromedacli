@@ -22,7 +22,7 @@ const missing = (cmd: string): never => { throw Object.assign(new Error(`${cmd} 
 async function boot(o: { table: InstallEntry[]; prereq?: Runner; probe?: Runner }) {
   const configDir = mkdtempSync(join(tmpdir(), 'inst-cfg-'));
   const s = await startServer({
-    port: 0, planRoot: mkdtempSync(join(tmpdir(), 'inst-plan-')), configDir, planName: 'shop-api', claudeCommand: [process.execPath, fixture],
+    port: 0, projectRoot: mkdtempSync(join(tmpdir(), 'inst-project-')), configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture],
     modDir: null, worktrees: false, projectsDir: mkdtempSync(join(tmpdir(), 'inst-proj-')),
     prereqRunner: o.prereq ?? goodRunner, installTable: o.table, installRunner: o.probe ?? goodRunner,
   });
@@ -78,7 +78,7 @@ it('runs the fixed command in a utility terminal, rechecks when it ends and writ
   const r = await ui(s, '/api/prereq/git/install', 'POST', { confirmed: true });
   expect(r.status).toBe(202);
   expect(r.body).toEqual({ terminal: 'install-git' });
-  // The terminal socket serves it (token and Origin as for every terminal) and the plan's own sessions are untouched.
+  // The terminal socket serves it (token and Origin as for every terminal) and the project's own sessions are untouched.
   const ws = new WebSocket(`ws://127.0.0.1:${s.port}/ws/term/install-git?token=${s.token}`, { headers: { origin: `http://127.0.0.1:${s.port}` } });
   await new Promise<void>((ok, err) => { ws.on('open', () => ok()); ws.on('error', err); });
   ws.close();

@@ -22,7 +22,7 @@ beforeAll(() => {
   mkdirSync(W, { recursive: true });
   setHead('main');
   writeFileSync(join(R, '.git', 'refs', 'tags', 'v1.0'), 'abc\n');
-  ctx = { worktree: W, repo: R, branch: 'agent/p/a', planBranch: 'plan/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
+  ctx = { worktree: W, repo: R, branch: 'agent/p/a', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -104,11 +104,11 @@ describe('review finding: the main pushing without a refspec', () => {
     }
     setHead('main');
   });
-  it('is allowed while the repository is on the plan branch', () => {
-    setHead('plan/shop');
+  it('is allowed while the repository is on the project branch', () => {
+    setHead('project/shop');
     expect(main(sh('git push'))).toEqual({ decision: 'allow' });
     expect(main(sh('git push origin HEAD'))).toEqual({ decision: 'allow' });
-    expect(main(sh('git push origin plan/shop'))).toEqual({ decision: 'allow' });
+    expect(main(sh('git push origin project/shop'))).toEqual({ decision: 'allow' });
     setHead('main');
   });
   it('pushing an existing tag by name is a tag push', () => {
@@ -117,7 +117,7 @@ describe('review finding: the main pushing without a refspec', () => {
   });
   it('a detached or unreadable HEAD does not make every push refused', () => {
     writeFileSync(join(R, '.git', 'HEAD'), '0123456789abcdef0123456789abcdef01234567\n');
-    expect(main(sh('git push origin plan/shop'))).toEqual({ decision: 'allow' });
+    expect(main(sh('git push origin project/shop'))).toEqual({ decision: 'allow' });
     setHead('main');
   });
 });

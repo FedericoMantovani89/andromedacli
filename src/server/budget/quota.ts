@@ -63,9 +63,9 @@ export const quotaStepFor = (percent: number | undefined, q: BudgetConfig['quota
 };
 
 /** The active-agent limits under a step: halve rounds up (never to zero from a positive number); freeze and stop admit no new launch. */
-export const effectiveLimits = (base: { global: number; perPlan: number }, step: QuotaStep): { global: number; perPlan: number } => {
-  if (step === 'halve') return { global: Math.ceil(base.global / 2), perPlan: Math.ceil(base.perPlan / 2) };
-  if (step === 'freeze' || step === 'stop') return { global: 0, perPlan: 0 };
+export const effectiveLimits = (base: { global: number; perProject: number }, step: QuotaStep): { global: number; perProject: number } => {
+  if (step === 'halve') return { global: Math.ceil(base.global / 2), perProject: Math.ceil(base.perProject / 2) };
+  if (step === 'freeze' || step === 'stop') return { global: 0, perProject: 0 };
   return { ...base };
 };
 

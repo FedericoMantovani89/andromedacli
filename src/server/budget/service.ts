@@ -12,8 +12,8 @@ export const HANDOVER_FILE = '.console/handover.md';
 export const ALERT_TEXT = `Budget alert: you have used most of the token budget of this ticket. Write the handover note NOW to ${HANDOVER_FILE} in your worktree (what is done, what is missing, what you suspect is consuming the most): at the budget limit every tool except step_done is refused, so this is your only chance. Then close the step you are on with step_done. Do not start anything new.`;
 
 export interface BudgetDeps {
-  tickets: TicketStore; ledger: Ledger; reader: TranscriptReader; plan: string;
-  /** The plan folder: with `plan` it scopes the ledger, which every plan of the user shares. */
+  tickets: TicketStore; ledger: Ledger; reader: TranscriptReader; project: string;
+  /** The project folder: with `project` it scopes the ledger, which every project of the user shares. */
   root: string;
   config: () => BudgetConfig;
   now: () => number; // ms, injectable
@@ -42,7 +42,7 @@ export class BudgetService {
 
   constructor(private readonly d: BudgetDeps) {}
 
-  private get scope(): LedgerScope { return { plan: this.d.plan, root: this.d.root }; }
+  private get scope(): LedgerScope { return { project: this.d.project, root: this.d.root }; }
   private used(slug: string): number { return this.d.ledger.totalFor(slug, this.scope).tokens; }
 
   /** A failure of the budget tracking itself, told to the main once per agent (the tracking must never fail silently). */
@@ -88,7 +88,7 @@ export class BudgetService {
     this.d.changed();
   }
 
-  /** Undefined (n/a, never zero) without a budget or before the first turn this plan recorded for the agent. Served from memory. */
+  /** Undefined (n/a, never zero) without a budget or before the first turn this project recorded for the agent. Served from memory. */
   usage(slug: string): { used: number; limit: number; step: BudgetStep } | undefined {
     const b = this.d.tickets.get(slug)?.budget;
     if (!b) return undefined;
@@ -146,7 +146,7 @@ export class BudgetService {
     }
     const usages = read.events.filter((e): e is UsageEvent => e.kind === 'usage');
     const tools = [...new Set(read.events.filter((e): e is ToolUseEvent => e.kind === 'tool_use').map((e) => e.name))];
-    const entry = turnEntry({ plan: this.d.plan, root: this.d.root, agent: slug, session: session.sessionId, turn: session.turn, usages, tools, ts: new Date(this.d.now()).toISOString() });
+    const entry = turnEntry({ project: this.d.project, root: this.d.root, agent: slug, session: session.sessionId, turn: session.turn, usages, tools, ts: new Date(this.d.now()).toISOString() });
     if (!entry) return read.events;
     try {
       this.d.ledger.append(entry);

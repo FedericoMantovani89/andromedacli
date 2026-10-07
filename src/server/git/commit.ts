@@ -20,7 +20,7 @@ const oneLine = (s: string): string => s.replace(/[\r\n]+/g, ' ').replace(/\s+/g
  * checked against the secret patterns first: on a match nothing is committed and everything is unstaged.
  */
 export async function commitStep(o: {
-  worktree: string; n: number; total: number; title: string; slug: string; plan: string; secretPatterns: string[];
+  worktree: string; n: number; total: number; title: string; slug: string; project: string; secretPatterns: string[];
 }): Promise<CommitResult> {
   const staged = await stageAll(o.worktree, o.secretPatterns);
   if (!staged.ok) return staged;
@@ -31,7 +31,7 @@ export async function commitStep(o: {
  * A work-in-progress commit made by the console (a budget alert or stop, SPEC 16.3): subject `wip: <reason>`, the same trailers,
  * secret check and identity as a step. Unlike a step it is never empty: with nothing staged no commit is made and HEAD is returned.
  */
-export async function commitWip(o: { worktree: string; slug: string; plan: string; reason: string; secretPatterns: string[] }): Promise<CommitResult> {
+export async function commitWip(o: { worktree: string; slug: string; project: string; reason: string; secretPatterns: string[] }): Promise<CommitResult> {
   // A merge in progress (a conflict the author is resolving): committing would conclude it with the markers in. Nothing is touched.
   const merging = await git(o.worktree, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']);
   if (merging.code === 0) return { ok: false, code: 'merging', detail: `a merge is in progress (MERGE_HEAD ${merging.stdout.trim()})` };
@@ -63,9 +63,9 @@ async function stageAll(worktree: string, secretPatterns: string[]): Promise<{ o
   return { ok: true, files };
 }
 
-async function commitStaged(worktree: string, subject: string, o: { slug: string; plan: string }, allowEmpty: boolean): Promise<CommitResult> {
+async function commitStaged(worktree: string, subject: string, o: { slug: string; project: string }, allowEmpty: boolean): Promise<CommitResult> {
   const identity = await identityArgs(worktree);
-  const trailers = `Agent: ${o.slug}\nTicket: ${o.slug}\nPiano: ${o.plan}`;
+  const trailers = `Agent: ${o.slug}\nTicket: ${o.slug}\nProgetto: ${o.project}`;
   const committed = await git(worktree, [...identity, 'commit', ...(allowEmpty ? ['--allow-empty'] : []), '--no-verify', '-q', '-m', subject, '-m', trailers]);
   if (committed.code !== 0) {
     const text = `${committed.stderr}\n${committed.stdout}`.trim();

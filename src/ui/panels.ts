@@ -29,12 +29,12 @@ function applyStale(el: HTMLElement, stale: boolean | undefined): void {
 interface Panel extends PanelHandle {
   setState(state: Activity, progress?: SessionInfo['progress'], stalled?: boolean, ticket?: SessionInfo['ticket'], budget?: SessionInfo['budget'], loop?: SessionInfo['loop']): void;
   dispose(): void;
-  /** Fits the terminal to its box again (after the plan's tab was hidden). */
+  /** Fits the terminal to its box again (after the project's tab was hidden). */
   refit(): void;
 }
 
 /** One terminal panel: an xterm.js instance wired to /ws/term/<slug>. The server owns the process and the scrollback. */
-function createPanel(info: SessionInfo, onActivate: (slug: string) => void, plan: string | undefined): Panel {
+function createPanel(info: SessionInfo, onActivate: (slug: string) => void, project: string | undefined): Panel {
   const root = document.createElement('div');
   root.className = 'panel';
   root.dataset.slug = info.slug;
@@ -96,7 +96,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, plan
   };
 
   const connect = () => {
-    ws = new WebSocket(wsUrl(`/ws/term/${info.slug}`, plan));
+    ws = new WebSocket(wsUrl(`/ws/term/${info.slug}`, project));
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       term.reset(); // the server replays the whole scrollback on every connection
@@ -152,18 +152,18 @@ export class Workspace {
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
   private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; budget: HTMLElement; loop: HTMLElement; pending: boolean; dormant: boolean; stale: HTMLElement }>();
 
-  /** `plan` is the plan this workspace shows: its terminals connect with it, whichever tab is on screen. */
-  constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string, private readonly plan?: string) {
+  /** `project` is the project this workspace shows: its terminals connect with it, whichever tab is on screen. */
+  constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string, private readonly project?: string) {
     this.mainId = mainId;
     this.focus = new FocusState(mainId);
   }
 
-  /** The plan was closed: every terminal connection ends. */
+  /** The project was closed: every terminal connection ends. */
   dispose(): void {
     for (const slug of [...this.panels.keys()]) this.dropPanel(slug);
   }
 
-  /** The plan's tab was selected (a user action): fit its terminals again, then make its active panel the active input. */
+  /** The project's tab was selected (a user action): fit its terminals again, then make its active panel the active input. */
   show(): void {
     for (const p of this.panels.values()) p.refit();
     this.activate(this.focus.active);
@@ -236,7 +236,7 @@ export class Workspace {
   private ensurePanel(info: SessionInfo): Panel {
     let p = this.panels.get(info.slug);
     if (!p) {
-      p = createPanel(info, (slug) => this.activate(slug), this.plan);
+      p = createPanel(info, (slug) => this.activate(slug), this.project);
       this.panels.set(info.slug, p);
       this.focus.onPanelAdded(info.slug);
     }

@@ -76,11 +76,11 @@ describe('quotaStepFor', () => {
 
 describe('effectiveLimits', () => {
   it('halves rounding up, freezes to zero, leaves none alone', () => {
-    expect(effectiveLimits({ global: 4, perPlan: 3 }, 'halve')).toEqual({ global: 2, perPlan: 2 });
-    expect(effectiveLimits({ global: 3, perPlan: 3 }, 'halve')).toEqual({ global: 2, perPlan: 2 });
-    expect(effectiveLimits({ global: 4, perPlan: 3 }, 'freeze')).toEqual({ global: 0, perPlan: 0 });
-    expect(effectiveLimits({ global: 4, perPlan: 3 }, 'stop')).toEqual({ global: 0, perPlan: 0 });
-    expect(effectiveLimits({ global: 4, perPlan: 3 }, 'none')).toEqual({ global: 4, perPlan: 3 });
+    expect(effectiveLimits({ global: 4, perProject: 3 }, 'halve')).toEqual({ global: 2, perProject: 2 });
+    expect(effectiveLimits({ global: 3, perProject: 3 }, 'halve')).toEqual({ global: 2, perProject: 2 });
+    expect(effectiveLimits({ global: 4, perProject: 3 }, 'freeze')).toEqual({ global: 0, perProject: 0 });
+    expect(effectiveLimits({ global: 4, perProject: 3 }, 'stop')).toEqual({ global: 0, perProject: 0 });
+    expect(effectiveLimits({ global: 4, perProject: 3 }, 'none')).toEqual({ global: 4, perProject: 3 });
   });
 });
 
@@ -93,7 +93,7 @@ function harness(opts: { agents?: { slug: string; role: Role; priority: number }
   const told: [string, string][] = [];
   const reached: [string | undefined, RateLimit['kind']][] = [];
   const agents = opts.agents ?? [
-    { slug: 'main-plan', role: 'main' as const, priority: 100 },
+    { slug: 'main-project', role: 'main' as const, priority: 100 },
     { slug: 'old', role: 'agent' as const, priority: 3 },
     { slug: 'mid', role: 'agent' as const, priority: 2 },
     { slug: 'new', role: 'agent' as const, priority: 1 },
@@ -154,7 +154,7 @@ describe('QuotaService', () => {
       'restrict mid limit', 'wip mid', 'suspend mid',
       'restrict old limit', 'wip old', 'suspend old',
     ]);
-    expect(h.log.join('|')).not.toContain('main-plan');
+    expect(h.log.join('|')).not.toContain('main-project');
     expect(h.main).toHaveLength(1);
     await h.svc.onQuota(five(97));
     expect(h.log.filter((l) => l.startsWith('suspend'))).toHaveLength(3);
@@ -189,7 +189,7 @@ describe('QuotaService', () => {
     expect(h.svc.step()).toBe('none');
     expect(h.applied.at(-1)).toBe('none');
     expect(h.log).toContain('clear old');
-    expect(h.log).not.toContain('clear main-plan');
+    expect(h.log).not.toContain('clear main-project');
   });
   it('a drop that stays above the first threshold comes down to the step the reading says', async () => {
     const h = harness();

@@ -2,14 +2,14 @@ import type { StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
-import { openNewPlanDialog } from './new-plan';
+import { openNewProjectDialog } from './new-project';
 
-type Step = 'language' | 'prerequisites' | 'plan';
-const STEPS: Step[] = ['language', 'prerequisites', 'plan'];
+type Step = 'language' | 'prerequisites' | 'project';
+const STEPS: Step[] = ['language', 'prerequisites', 'project'];
 const STEP_TITLES: Record<Step, string> = {
   language: k('wizard.step.language'),
   prerequisites: k('wizard.step.prerequisites'),
-  plan: k('wizard.step.plan'),
+  project: k('wizard.step.project'),
 };
 
 /**
@@ -44,21 +44,21 @@ export function openWizard(getState: () => StateMessage | undefined): void {
     } else {
       const name = document.createElement('div');
       const nameLabel = document.createElement('span');
-      bindText(nameLabel, 'wizard.plan.name');
+      bindText(nameLabel, 'wizard.project.name');
       const nameValue = document.createElement('strong');
-      nameValue.textContent = ` ${state?.plan.name ?? ''}`;
+      nameValue.textContent = ` ${state?.project.name ?? ''}`;
       name.append(nameLabel, nameValue);
       const folder = document.createElement('div');
       const folderLabel = document.createElement('span');
-      bindText(folderLabel, 'wizard.plan.folder');
+      bindText(folderLabel, 'wizard.project.folder');
       const folderValue = document.createElement('code');
-      folderValue.textContent = ` ${state?.planRoot ?? ''}`;
+      folderValue.textContent = ` ${state?.projectRoot ?? ''}`;
       folder.append(folderLabel, folderValue);
       body.append(name, folder);
-      if (state && !state.planIsRepo) {
+      if (state && !state.projectIsRepo) {
         const warn = document.createElement('div');
         warn.className = 'form-error';
-        bindText(warn, 'wizard.plan.notRepo');
+        bindText(warn, 'wizard.project.notRepo');
         body.append(warn);
       }
     }
@@ -76,8 +76,8 @@ export function openWizard(getState: () => StateMessage | undefined): void {
     if (last) {
       // SPEC 29.2 step 6: the user may start from a template. The wizard is finished first (the configuration is saved), then the dialog opens.
       const fromTemplate = document.createElement('button');
-      bindText(fromTemplate, 'wizard.plan.newPlan');
-      fromTemplate.addEventListener('click', () => { void finish().then(() => openNewPlanDialog(getState)); });
+      bindText(fromTemplate, 'wizard.project.newProject');
+      fromTemplate.addEventListener('click', () => { void finish().then(() => openNewProjectDialog(getState)); });
       actions.append(fromTemplate);
     }
 

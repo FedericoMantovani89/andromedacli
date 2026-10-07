@@ -20,7 +20,7 @@ export interface SpawnRequest {
   resume?: { sessionId: string; /** Why: `limit` (the default) after a usage limit; the others wake a dormant agent after a console restart (Phase 6A). */ reason?: 'limit' | 'user' | 'work' | 'main' };
   /** Token budget of this ticket; absent means the profile's `budget_tokens`, then `budget.agentTokens` (SPEC 16.2). */
   budget?: number;
-  /** The git repository the agent works in, relative to the plan folder (`''`: the plan folder itself). `spawnAgent` fills it in. */
+  /** The git repository the agent works in, relative to the project folder (`''`: the project folder itself). `spawnAgent` fills it in. */
   repo?: string;
 }
 
@@ -30,8 +30,8 @@ export type RequestResult = { status: 'started'; ready?: Promise<void> } | { sta
 export interface SchedulerOptions {
   registry: AgentRegistry;
   /** Read on every decision, so changing the limits takes effect without restarting anything (SPEC 16.7, 22.2). */
-  limits: () => { global: number; perPlan: number };
-  /** Agents counting against the global limit across ALL plans (Phase 6C); absent: this plan's own count (a single plan). */
+  limits: () => { global: number; perProject: number };
+  /** Agents counting against the global limit across ALL projects (Phase 6C); absent: this project's own count (a single project). */
   globalActive?: () => number;
   /**
    * Actually starts the process. May throw, or return a promise that rejects. Either way the agent must count as active from the
@@ -108,7 +108,7 @@ export class Scheduler {
   }
 
   /** The limits in force now: the configured ones under the subscription quota's step (SPEC 18.2). */
-  effectiveLimits(): { global: number; perPlan: number } {
+  effectiveLimits(): { global: number; perProject: number } {
     return effectiveLimits(this.o.limits(), this.o.multiplier?.() ?? 'none');
   }
 
@@ -118,8 +118,8 @@ export class Scheduler {
   }
 
   private hasRoom(): boolean {
-    const { global, perPlan } = this.effectiveLimits();
+    const { global, perProject } = this.effectiveLimits();
     const active = this.o.registry.list().filter((a) => this.o.registry.isActive(a.slug)).length;
-    return active < perPlan && (this.o.globalActive ? this.o.globalActive() : active) < global;
+    return active < perProject && (this.o.globalActive ? this.o.globalActive() : active) < global;
   }
 }

@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, modEvent, state, ui, until, type Running } from './helpers';
-import { gitSync, makeRepo, removeDir, type TestRepo } from './git-helpers';
-import { worktreePathFor } from '../src/server/git/worktree';
+import { gitSync, makeRepo, removeDir, type TestRepo, worktreePathFor } from './git-helpers';
 import { transcriptPath } from '../src/server/budget/transcript';
 
 vi.setConfig({ testTimeout: 90_000 });
@@ -34,8 +33,8 @@ async function stopped(o: { handover?: string } = {}): Promise<{ s: Running; t: 
   repos.push(t);
   const projectsDir = mkdtempSync(join(tmpdir(), 'rec-proj-'));
   scratch.push(projectsDir);
-  const s = await bootServer({ planRoot: t.repo, projectsDir, config: { git: { worktrees: true }, budget: { graceMinutes: 0 } } });
-  s.setLimits({ global: 20, perPlan: 20 }); // fake agents never finish a turn by themselves, so they would hold the slots
+  const s = await bootServer({ projectRoot: t.repo, projectsDir, config: { git: { worktrees: true }, budget: { graceMinutes: 0 } } });
+  s.setLimits({ global: 20, perProject: 20 }); // fake agents never finish a turn by themselves, so they would hold the slots
   expect((await tool(s, 'shop-api', 'spawn_agent', { name: SLUG, profile: 'backend', goal: 'Fix the login so negative ids are rejected', budget: 1000 })).body.status).toBe('started');
   const wt = worktreePathFor(t.repo, SLUG);
   await modEvent(s, SLUG, 'session.start', { cwd: wt });
@@ -82,7 +81,7 @@ it('start_recovery: a read-only recovery on the WIP commit; its report restarts 
   expect(goal).toMatch(/turn \d+: 1050 tokens/);
   // read-only, and only its own tools
   expect((await mod(s, 'recover-fix-login', '/v1/guard', 'POST', { tool: 'Write', input: { file_path: 'x.md' } })).body).toMatchObject({ decision: 'deny', rule: 'readonly.write' });
-  expect((await mod(s, 'recover-fix-login', '/v1/guard', 'POST', { tool: 'Bash', input: { command: `git diff plan/shop-api...HEAD` } })).body).toEqual({ decision: 'allow' });
+  expect((await mod(s, 'recover-fix-login', '/v1/guard', 'POST', { tool: 'Bash', input: { command: `git diff project/shop-api...HEAD` } })).body).toEqual({ decision: 'allow' });
   for (const name of ['step_done', 'checklist_set', 'spawn_agent', 'review_verdict', 'start_recovery']) expect((await tool(s, 'recover-fix-login', name, {})).status, name).toBe(403);
   expect((await tool(s, SLUG, 'recovery_report', {})).status).not.toBe(200);
   expect((await tool(s, 'recover-fix-login', 'recovery_report', { verified_steps: [1], diagnosis: 'x', remedy: 'banana' })).body).toEqual({ status: 'error', code: 'bad_request' });
@@ -150,7 +149,7 @@ it('the budget answer "raise" restarts the ticket with a new agent on the same b
 it('spawn_agent and the UI cannot start a recovery by hand: start_recovery is the way', async () => {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true } } });
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
   expect((await tool(s, 'shop-api', 'spawn_agent', { name: 'recover-by-hand', profile: 'recovery', goal: 'recover something' })).body).toMatchObject({ status: 'error', code: 'recovery.useRecoveryTool' });
   expect((await ui(s, '/api/agents', 'POST', { slug: 'recover-by-hand', profile: 'recovery' })).body.code).toBe('recovery.useRecoveryTool');
   expect((await tool(s, 'shop-api', 'start_recovery', { name: 'nobody' })).body).toEqual({ status: 'refused', code: 'not_stopped' });

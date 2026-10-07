@@ -24,7 +24,7 @@ export interface WaitResult { answered: boolean; answer?: string; gone?: boolean
 
 const ANSWERED_KEEP_MS = 60 * 60 * 1000; // an answer stays readable for a late long-poll
 const MAX_TEXT = 4000;
-/** The asker of console items. It is not a valid slug, so no agent or plan can ever be called that: no turn or exit of any session drops them. */
+/** The asker of console items. It is not a valid slug, so no agent or project can ever be called that: no turn or exit of any session drops them. */
 export const CONSOLE_FROM = '@console';
 const MAX_PAYLOAD = 100_000; // characters of JSON: a report is text, but the drawer must never choke on one
 

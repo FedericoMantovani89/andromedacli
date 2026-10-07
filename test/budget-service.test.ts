@@ -22,7 +22,7 @@ function rig(limit = 1000, o: { live?: () => boolean; wipFails?: boolean; wipRej
   const ledger = new Ledger(o.ledgerDir ?? join(dir, 'ledger'));
   if (o.ledgerFails) ledger.append = () => { throw new Error('disk full'); };
   const d: BudgetDeps = {
-    tickets, ledger, reader: new TranscriptReader(), plan: 'p', root: o.root ?? dir,
+    tickets, ledger, reader: new TranscriptReader(), project: 'p', root: o.root ?? dir,
     config: () => { if (faults.config) throw new Error('config boom'); return DEFAULT_CONFIG.budget; }, now: () => now,
     transcriptOf: () => { if (faults.transcript) throw new Error('transcript boom'); return file; }, isLive: () => (o.live ? o.live() : true),
     wipCommit: async (_s, r) => {
@@ -132,7 +132,7 @@ describe('BudgetService', () => {
     expect(told[0]).toContain(r.file);
   });
 
-  it('the same agent name in another plan folder does not share the budget (a stopped one does not stop the other)', async () => {
+  it('the same agent name in another project folder does not share the budget (a stopped one does not stop the other)', async () => {
     const ledgerDir = mkdtempSync(join(tmpdir(), 'h-bud-led-'));
     const one = rig(1000, { ledgerDir, root: 'C:/w/one' });
     await one.turn(1100);

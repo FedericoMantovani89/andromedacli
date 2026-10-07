@@ -5,7 +5,7 @@ autoClose();
 
 async function withAgent() {
   const s = await bootServer();
-  s.setLimits({ global: 9, perPlan: 9 });
+  s.setLimits({ global: 9, perProject: 9 });
   await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
   await modEvent(s, 'fix-login', 'session.start');
   await modEvent(s, 'fix-login', 'turn.start');

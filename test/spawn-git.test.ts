@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, modEvent, mod, state, ui, until, type Running } from './helpers';
 import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
-import { agentBranchFor, worktreePathFor } from '../src/server/git/worktree';
+import { agentBranchFor, worktreePathFor as pathFor, worktreesDirFor } from '../src/server/git/worktree';
+
+/** Where the server puts an agent's worktree: under the project's .console (the project folder is the repo here). */
+const worktreePathFor = (repo: string, slug: string): string => pathFor(repo, slug, worktreesDirFor(repo, repo));
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
 vi.setConfig({ testTimeout: 60_000 });
@@ -22,7 +25,7 @@ autoClose();
 async function boot(o: { commit?: boolean; remote?: boolean; afterWorktree?: (slug: string) => void; config?: Record<string, unknown> } = {}): Promise<{ s: Running; t: TestRepo }> {
   const t = makeRepo({ remote: o.remote ?? true, commit: o.commit });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true }, ...o.config }, afterWorktreeCreated: o.afterWorktree });
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true }, ...o.config }, afterWorktreeCreated: o.afterWorktree });
   return { s, t };
 }
 const spawnTool = (s: Running, name: string, goal = 'make it work') => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal });
@@ -33,11 +36,11 @@ const cwdOf = async (s: Running, slug: string): Promise<string> => {
 };
 const branches = (repo: string): string[] => gitSync(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n').filter(Boolean);
 
-it('starting an agent creates the plan branch, its branch and the sibling worktree, installs the hook and launches inside it', async () => {
+it('starting an agent creates the project branch, its branch and the sibling worktree, installs the hook and launches inside it', async () => {
   const { s, t } = await boot();
   expect((await spawnTool(s, 'fix-login')).body).toEqual({ status: 'started', name: 'fix-login' });
   const wt = worktreePathFor(t.repo, 'fix-login');
-  expect(branches(t.repo)).toEqual(expect.arrayContaining(['plan/shop-api', agentBranchFor('shop-api', 'fix-login')]));
+  expect(branches(t.repo)).toEqual(expect.arrayContaining(['project/shop-api', agentBranchFor('shop-api', 'fix-login')]));
   expect(existsSync(wt)).toBe(true);
   expect(gitSync(wt, 'config', '--worktree', '--get', 'core.hooksPath')).toContain('console-hooks');
   expect((await cwdOf(s, 'fix-login')).toLowerCase()).toBe(wt.toLowerCase());
@@ -56,16 +59,16 @@ it('the prompt file tells the agent its branch, its folder and that the console 
   expect(prompt).toMatch(/only tracked files/i);
   expect(prompt).toMatch(/.env.example/);
 });
-it('a plan folder that is not a repository is refused with git.notRepo, and worktrees:false still works there', async () => {
+it('a project folder that is not a repository is refused with git.notRepo, and worktrees:false still works there', async () => {
   const plain = mkdtempSync(join(tmpdir(), 'plain-'));
   scratch.push(plain);
-  const s = await bootServer({ planRoot: plain, config: { git: { worktrees: true } } });
+  const s = await bootServer({ projectRoot: plain, config: { git: { worktrees: true } } });
   expect((await spawnTool(s, 'fix-login')).body).toMatchObject({ status: 'error', code: 'git.notRepo' });
   const viaUi = await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
   expect(viaUi.status).toBe(422);
   expect(viaUi.body.code).toBe('git.notRepo');
   expect((await state(s)).agents).toEqual([]);
-  const off = await bootServer({ planRoot: plain, config: { git: { worktrees: false } } });
+  const off = await bootServer({ projectRoot: plain, config: { git: { worktrees: false } } });
   expect((await spawnTool(off, 'fix-login')).body.status).toBe('started');
 });
 it('an empty repository is refused with git.noCommits and nothing is created', async () => {
@@ -98,7 +101,7 @@ it('a start that fails after the worktree exists leaves no worktree, branch, hoo
 });
 it('a queued agent gets its worktree only when its slot arrives', async () => {
   const { s, t } = await boot();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   await spawnTool(s, 'first-job');
   expect((await spawnTool(s, 'second-job')).body.status).toBe('queued');
   expect(existsSync(worktreePathFor(t.repo, 'second-job'))).toBe(false);
@@ -118,7 +121,7 @@ it('two agents get separate worktrees and branches', async () => {
   expect(gitSync(worktreePathFor(t.repo, 'first-job'), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('agent/shop-api/first-job');
   expect(gitSync(worktreePathFor(t.repo, 'second-job'), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('agent/shop-api/second-job');
 });
-it('worktrees:false keeps the Phase 2 behaviour: the agent runs in the plan folder and nothing is created', async () => {
+it('worktrees:false keeps the Phase 2 behaviour: the agent runs in the project folder and nothing is created', async () => {
   const { s, t } = await boot({ config: { git: { worktrees: false } } });
   await spawnTool(s, 'fix-login');
   expect(existsSync(worktreePathFor(t.repo, 'fix-login'))).toBe(false);
@@ -137,7 +140,7 @@ it('keeps the console folder out of git status from the start, without touching 
 it('the budget defaults to config.budget.agentTokens, and a profile with console: budget_tokens wins over it', async () => {
   const { s, t } = await boot({ config: { budget: { agentTokens: 7000 } } });
   mkdirSync(join(t.repo, '.console', 'profiles'), { recursive: true });
-  // The shipped profiles carry their own budget_tokens, so the default is seen through a plan profile without one.
+  // The shipped profiles carry their own budget_tokens, so the default is seen through a project profile without one.
   writeFileSync(join(t.repo, '.console', 'profiles', 'plain.md'), '---\nname: plain\ndescription: no budget of its own\n---\nBODY');
   writeFileSync(join(t.repo, '.console', 'profiles', 'lean.md'), '---\nname: lean\ndescription: a lean profile\nconsole:\n  budget_tokens: 5000\n---\nBODY');
   expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'first-job', profile: 'plain', goal: 'go' })).body.status).toBe('started');

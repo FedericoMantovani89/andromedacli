@@ -3,17 +3,17 @@ import { join, resolve } from 'node:path';
 import type { UsageEvent } from './transcript';
 
 export interface LedgerEntry {
-  ts: string; plan: string;
-  /** The plan folder (absolute). Absent on lines written before scopes existed: those never count for a scoped total. */
+  ts: string; project: string;
+  /** The project folder (absolute). Absent on lines written before scopes existed: those never count for a scoped total. */
   root?: string;
   agent: string; session: string; turn: number; model?: string;
   in: number; out: number; cache_creation: number; cache_read: number; tools: string[]; cost: null;
 }
 
-/** Which plan a budget belongs to: the ledger is shared by every plan of the user, and agent names repeat across plans. */
-export interface LedgerScope { plan: string; root: string }
+/** Which project a budget belongs to: the ledger is shared by every project of the user, and agent names repeat across projects. */
+export interface LedgerScope { project: string; root: string }
 
-/** A plan folder as the ledger compares it: resolved, and case-insensitive on Windows. */
+/** A project folder as the ledger compares it: resolved, and case-insensitive on Windows. */
 export const normaliseRoot = (root: string): string => {
   const r = resolve(root);
   return process.platform === 'win32' ? r.toLowerCase() : r;
@@ -23,7 +23,7 @@ export const normaliseRoot = (root: string): string => {
 export const budgetTokens = (e: Pick<LedgerEntry, 'in' | 'out' | 'cache_creation'>): number => e.in + e.out + e.cache_creation;
 
 type Total = { tokens: number; turns: number };
-const scopedKey = (agent: string, s: LedgerScope): string => JSON.stringify([s.plan, normaliseRoot(s.root), agent]);
+const scopedKey = (agent: string, s: LedgerScope): string => JSON.stringify([s.project, normaliseRoot(s.root), agent]);
 const anyKey = (agent: string): string => JSON.stringify([agent]);
 
 /** One JSONL file per month, one line per turn, never rewritten (SPEC 16.6). Values are per turn, so a restart zeroes nothing. */
@@ -35,7 +35,7 @@ export class Ledger {
 
   private add(e: LedgerEntry): void {
     const index = this.index!;
-    const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.plan === 'string' ? [scopedKey(e.agent, { plan: e.plan, root: e.root })] : [])];
+    const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.project === 'string' ? [scopedKey(e.agent, { project: e.project, root: e.root })] : [])];
     for (const k of keys) {
       const t = index.get(k) ?? { tokens: 0, turns: 0 };
       index.set(k, { tokens: t.tokens + budgetTokens(e), turns: t.turns + 1 });
@@ -69,20 +69,20 @@ export class Ledger {
     if (this.index) this.add(e); // only once the line is on disk
   }
 
-  /** Reads the files (every query; the totals use the in-memory index instead). With a scope only that plan's lines count. */
+  /** Reads the files (every query; the totals use the in-memory index instead). With a scope only that project's lines count. */
   entries(filter: { agent?: string; scope?: LedgerScope } = {}): LedgerEntry[] {
-    const scope = filter.scope ? { plan: filter.scope.plan, root: normaliseRoot(filter.scope.root) } : undefined;
+    const scope = filter.scope ? { project: filter.scope.project, root: normaliseRoot(filter.scope.root) } : undefined;
     return this.readAll().filter((e) => (!filter.agent || e.agent === filter.agent)
-      && (!scope || (e.plan === scope.plan && typeof e.root === 'string' && normaliseRoot(e.root) === scope.root)));
+      && (!scope || (e.project === scope.project && typeof e.root === 'string' && normaliseRoot(e.root) === scope.root)));
   }
 
-  /** Budget tokens and turns of an agent; with a scope, only within that plan. Files are read once, on the first query. */
+  /** Budget tokens and turns of an agent; with a scope, only within that project. Files are read once, on the first query. */
   totalFor(agent: string, scope?: LedgerScope): Total {
     if (!this.index) {
       const index = new Map<string, Total>();
       // Build the map in a local variable; if readAll() throws, this.index stays undefined so the next call retries.
       for (const e of this.readAll()) {
-        const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.plan === 'string' ? [scopedKey(e.agent, { plan: e.plan, root: e.root })] : [])];
+        const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.project === 'string' ? [scopedKey(e.agent, { project: e.project, root: e.root })] : [])];
         for (const k of keys) {
           const t = index.get(k) ?? { tokens: 0, turns: 0 };
           index.set(k, { tokens: t.tokens + budgetTokens(e), turns: t.turns + 1 });
@@ -117,11 +117,11 @@ export class Ledger {
   }
 }
 
-export function turnEntry(o: { plan: string; root?: string; agent: string; session: string; turn: number; usages: UsageEvent[]; tools: string[]; ts: string }): LedgerEntry | undefined {
+export function turnEntry(o: { project: string; root?: string; agent: string; session: string; turn: number; usages: UsageEvent[]; tools: string[]; ts: string }): LedgerEntry | undefined {
   if (o.usages.length === 0) return undefined;
   const sum = (f: (u: UsageEvent) => number): number => o.usages.reduce((n, u) => n + f(u), 0);
   return {
-    ts: o.ts, plan: o.plan, ...(o.root !== undefined ? { root: o.root } : {}), agent: o.agent, session: o.session, turn: o.turn, model: o.usages[o.usages.length - 1]!.model,
+    ts: o.ts, project: o.project, ...(o.root !== undefined ? { root: o.root } : {}), agent: o.agent, session: o.session, turn: o.turn, model: o.usages[o.usages.length - 1]!.model,
     in: sum((u) => u.input), out: sum((u) => u.output), cache_creation: sum((u) => u.cacheCreation), cache_read: sum((u) => u.cacheRead),
     tools: o.tools, cost: null,
   };

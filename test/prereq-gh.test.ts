@@ -29,7 +29,7 @@ it('the doctor warns about a missing gh but still passes', async () => {
     if (cmd === 'gh') throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     return ok(cmd, a, t);
   };
-  const r = await runDoctor({ configDir: mkdtempSync(join(tmpdir(), 'gh-cfg-')), planRoot: mkdtempSync(join(tmpdir(), 'gh-plan-')), run });
+  const r = await runDoctor({ configDir: mkdtempSync(join(tmpdir(), 'gh-cfg-')), projectRoot: mkdtempSync(join(tmpdir(), 'gh-project-')), run });
   expect(r.checks.find((c) => c.id === 'gh')).toMatchObject({ status: 'warn' });
   expect(r.ok).toBe(true);
 }, 60_000);

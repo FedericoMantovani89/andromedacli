@@ -47,7 +47,7 @@ it('claude.command and mod.enabled are not patchable', () => {
 });
 it('PUT /api/config updates the limits in place and GET /api/options shows the config', async () => {
   const s = await bootServer();
-  expect((await ui(s, '/api/config', 'PUT', { agents: { maxActiveGlobal: 2, maxActivePerPlan: 2 } })).status).toBe(200);
+  expect((await ui(s, '/api/config', 'PUT', { agents: { maxActiveGlobal: 2, maxActivePerProject: 2 } })).status).toBe(200);
   expect((await ui(s, '/api/state')).body.limits.max).toBe(2);
   const o = (await ui(s, '/api/options')).body;
   expect(o.config.agents.maxActiveGlobal).toBe(2);

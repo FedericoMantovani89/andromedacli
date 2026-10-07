@@ -23,7 +23,7 @@ beforeAll(() => {
   mkdirSync(W, { recursive: true });
   mkdirSync(OUT, { recursive: true });
   symlinkSync(OUT, J, 'junction');
-  ctx = { worktree: W, repo: R, branch: 'agent/p/a', planBranch: 'plan/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
+  ctx = { worktree: W, repo: R, branch: 'agent/p/a', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -345,7 +345,7 @@ describe('guard rules — agent must allow', () => {
 const DENY_MAIN: [string, () => Call, string][] = [
   ['hooks path (it would remove the push hook)', () => sh('git config core.hooksPath x'), 'git.hooks-tamper'],
   ['force push', () => sh('git push --force'), 'git.force'],
-  ['force push +ref', () => sh('git push origin +plan/x'), 'git.force'],
+  ['force push +ref', () => sh('git push origin +project/x'), 'git.force'],
   ['delete remote ref', () => sh('git push origin :x'), 'git.delete-ref'],
   ['push tags', () => sh('git push --tags'), 'git.tag'],
   ['tag', () => sh('git tag v1'), 'git.tag'],
@@ -365,7 +365,7 @@ const ALLOW_MAIN: [string, () => Call][] = [
   ['merge', () => sh('git merge x')],
   ['reset --hard', () => sh('git reset --hard')],
   ['rebase', () => sh('git rebase main')],
-  ['push plan branch', () => sh('git push origin plan/x')],
+  ['push project branch', () => sh('git push origin project/x')],
   ['config (not the hooks path)', () => sh('git config user.name x')],
   ['Write outside the repo', () => wr(String.raw`D:\other\x`)],
   ['Write inside .git', () => wr(join(R, '.git', 'info', 'exclude'))],

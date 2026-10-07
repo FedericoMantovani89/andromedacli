@@ -1,9 +1,9 @@
 import { bindText } from './i18n-client';
-import { openNewPlanDialog } from './new-plan';
+import { openNewProjectDialog } from './new-project';
 
 /**
- * The screen of a console with no plan open (SPEC 5.1, 29.2): the plan chrome is hidden and the new-plan dialog asks for a project
- * at once; a button asks again after the dialog was closed. Once a plan exists the page reloads and starts as usual.
+ * The screen of a console with no project open (SPEC 5.1, 29.2): the project chrome is hidden and the new-project dialog asks for a project
+ * at once; a button asks again after the dialog was closed. Once a project exists the page reloads and starts as usual.
  */
 export function showWelcome(o: { reload?: () => void } = {}): void {
   const reload = o.reload ?? ((): void => location.reload());
@@ -25,7 +25,7 @@ export function showWelcome(o: { reload?: () => void } = {}): void {
   choose.type = 'button';
   choose.className = 'welcome-choose';
   bindText(choose, 'welcome.choose');
-  const ask = (): void => openNewPlanDialog(() => undefined, () => reload());
+  const ask = (): void => openNewProjectDialog(() => undefined, () => reload());
   choose.addEventListener('click', ask);
   welcome.replaceChildren(title, text, choose);
   ask(); // the user just opened the console: the question is the first thing they see

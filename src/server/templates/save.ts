@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
-import type { PlanInfo } from '../plan-store';
+import type { ProjectInfo } from '../project-store';
 import { TEMPLATE_ID_RE, userTemplatesDir, type TemplateData } from './load';
 
 export type SaveResult = { ok: true; dir: string } | { ok: false; code: 'template.idInvalid' | 'template.exists' | 'template.invalid'; detail?: string };
@@ -10,12 +10,12 @@ const PROFILE_FILE_RE = /^[a-z0-9]+(-[a-z0-9]+)*\.md$/;
 const MAX_ID = 40;
 
 /**
- * "Save plan as template" (SPEC 21): a COPY of what the plan has (its profiles, main.md, rules.md and the settings in plan.json)
- * in the user's templates folder. Later changes to the plan never touch it. An existing template of the user's is refused unless
+ * "Save project as template" (SPEC 21): a COPY of what the project has (its profiles, main.md, rules.md and the settings in project.json)
+ * in the user's templates folder. Later changes to the project never touch it. An existing template of the user's is refused unless
  * `overwrite` is set.
  */
 export function saveTemplate(o: {
-  planRoot: string; plan: PlanInfo; configDir: string; id: string; name?: unknown; overwrite?: boolean;
+  projectRoot: string; project: ProjectInfo; configDir: string; id: string; name?: unknown; overwrite?: boolean;
 }): SaveResult {
   if (typeof o.id !== 'string' || o.id.length > MAX_ID || !TEMPLATE_ID_RE.test(o.id)) return { ok: false, code: 'template.idInvalid' };
   const name = nameMap(o.name, o.id);
@@ -23,12 +23,12 @@ export function saveTemplate(o: {
   const dir = join(userTemplatesDir(o.configDir), o.id);
   if (existsSync(dir) && o.overwrite !== true) return { ok: false, code: 'template.exists' };
 
-  const p = o.plan;
+  const p = o.project;
   const data: TemplateData = {
     schema: 1,
     id: o.id,
     name,
-    description: { en: `Saved from the plan ${p.name}`, it: `Salvato dal piano ${p.name}` },
+    description: { en: `Saved from the project ${p.name}`, it: `Salvato dal progetto ${p.name}` },
     ...(p.profiles ? { profiles: p.profiles } : {}),
     commands: {
       ...(p.buildCommand ? { build: p.buildCommand } : {}),
@@ -38,13 +38,13 @@ export function saveTemplate(o: {
     git: { ...(p.squash !== undefined ? { squash: p.squash } : {}), ...(p.secretPatterns ? { secretPatterns: p.secretPatterns } : {}) },
     docs: p.docs ?? [],
     defaults: { ...(p.model ? { model: p.model } : {}), ...(p.agentTokens !== undefined ? { agentTokens: p.agentTokens } : {}), ...(p.maxActive !== undefined ? { maxActive: p.maxActive } : {}) },
-    detect: false, // a copy of a working plan keeps its commands as they are
+    detect: false, // a copy of a working project keeps its commands as they are
   };
 
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   writeJsonAtomic(join(dir, 'template.json'), data);
-  const consoleDir = join(o.planRoot, '.console');
+  const consoleDir = join(o.projectRoot, '.console');
   for (const f of ['main.md', 'rules.md']) if (existsSync(join(consoleDir, f))) copyFileSync(join(consoleDir, f), join(dir, f));
   const profiles = join(consoleDir, 'profiles');
   if (existsSync(profiles)) {

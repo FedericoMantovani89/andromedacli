@@ -7,7 +7,7 @@ const spawn = (s: Awaited<ReturnType<typeof bootServer>>, name: string, goal: st
   mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'backend', goal });
 const list = async (s: Awaited<ReturnType<typeof bootServer>>, as: string) => (await mod(s, as, '/v1/tools/list_agents', 'POST', {})).body.agents;
 
-it('main and agents see the same list: everyone of the plan with profile, state and goal', async () => {
+it('main and agents see the same list: everyone of the project with profile, state and goal', async () => {
   const s = await bootServer();
   await spawn(s, 'fix-login-timeout', 'Fix the login timeout');
   const fromMain = await list(s, 'shop-api');
@@ -20,7 +20,7 @@ it('main and agents see the same list: everyone of the plan with profile, state 
 });
 it('a queued agent shows its position', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   await spawn(s, 'first-job', 'a'); await spawn(s, 'second-job', 'b'); await spawn(s, 'third-job', 'c');
   const agents = await list(s, 'shop-api');
   expect(agents.filter((a: any) => a.state === 'queued').map((a: any) => [a.slug, a.queuedPosition])).toEqual([['second-job', 1], ['third-job', 2]]);

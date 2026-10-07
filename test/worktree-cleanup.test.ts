@@ -12,11 +12,11 @@ afterEach(() => { for (const m of made) removeDir(m.base); made = []; });
 async function setup(o: { remote: boolean }) {
   const r = makeRepo({ remote: o.remote });
   made.push(r);
-  const wt = await createAgentWorktree({ repo: r.repo, plan: 'p', slug: 'work' });
+  const wt = await createAgentWorktree({ repo: r.repo, project: 'p', slug: 'work' });
   let removed = 0;
   let active = false;
   const deps: CleanupDeps = {
-    repo: r.repo, plan: 'p', secretPatterns: ['.env'],
+    repo: r.repo, project: 'p', secretPatterns: ['.env'],
     agentGit: (s) => (s === 'work' ? { worktree: wt.path, branch: wt.branch } : undefined),
     isActive: () => active, removed: () => { removed += 1; },
   };

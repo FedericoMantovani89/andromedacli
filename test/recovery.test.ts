@@ -35,12 +35,12 @@ let usage: { used: number; limit: number } | undefined;
 let existing: string[];
 
 const entry = (turn: number, tokens: number, tools: string[], o: Partial<LedgerEntry> = {}): LedgerEntry => ({
-  ts: '2026-10-05T10:00:00Z', plan: 'p', root: t.repo, agent: 'a-job', session: 's1', turn, in: 0, out: tokens, cache_creation: 0, cache_read: 999_999, tools, cost: null, ...o,
+  ts: '2026-10-05T10:00:00Z', project: 'p', root: t.repo, agent: 'a-job', session: 's1', turn, in: 0, out: tokens, cache_creation: 0, cache_read: 999_999, tools, cost: null, ...o,
 });
 
 beforeEach(async () => {
   t = makeRepo();
-  const w = await createAgentWorktree({ repo: t.repo, plan: 'p', slug: 'a-job' });
+  const w = await createAgentWorktree({ repo: t.repo, project: 'p', slug: 'a-job' });
   wt = w.path;
   branch = w.branch;
   writeFileSync(join(wt, 'half.js'), 'half done\n');
@@ -60,12 +60,12 @@ beforeEach(async () => {
 
   ledger = new Ledger(mkdtempSync(join(tmpdir(), 'rec-ledger-')));
   // eight turns: Read in six of them, Grep in two; turn 7 is the heaviest
-  const plan: [number, number, string[]][] = [
+  const project: [number, number, string[]][] = [
     [1, 100, ['Read']], [2, 300, ['Read', 'Grep']], [3, 50, ['Read']], [4, 700, ['Read', 'Bash']],
     [5, 200, ['Read']], [6, 400, ['Read', 'Grep']], [7, 900, ['Bash']], [8, 10, []],
   ];
-  for (const [turn, tokens, tools] of plan) ledger.append(entry(turn, tokens, tools));
-  ledger.append(entry(9, 99_999, ['Read'], { plan: 'other-plan' })); // another plan's agent of the same name never counts
+  for (const [turn, tokens, tools] of project) ledger.append(entry(turn, tokens, tools));
+  ledger.append(entry(9, 99_999, ['Read'], { project: 'other-project' })); // another project's agent of the same name never counts
   ledger.append(entry(10, 88_888, ['Read'], { agent: 'someone-else' }));
 
   command = undefined;
@@ -74,7 +74,7 @@ beforeEach(async () => {
   usage = { used: 1060, limit: 1000 };
   existing = ['a-job'];
   deps = {
-    tickets, ledger, root: t.repo, plan: 'p',
+    tickets, ledger, root: t.repo, project: 'p',
     worktreeOf: (slug) => (slug === 'a-job' ? { worktree: wt, branch } : undefined),
     testCommand: () => command, testTimeoutMs: () => 30_000,
     spawnRecovery: async (rq) => { recoveries.push(rq); return recoveryResult; },

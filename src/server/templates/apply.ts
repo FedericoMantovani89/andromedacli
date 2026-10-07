@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node
 import { isAbsolute, join, resolve } from 'node:path';
 import { PROFILES } from '../../shared/protocol';
 import { git } from '../git/git';
-import { PlanStore } from '../plan-store';
+import { ProjectStore } from '../project-store';
 import { detectProject } from './detect';
 import { findTemplate, TEMPLATE_ID_RE } from './load';
 
@@ -33,7 +33,7 @@ async function isRepo(root: string): Promise<boolean> {
   return (await git(root, ['rev-parse', '--git-dir'])).code === 0;
 }
 
-/** `git init -b main` and an empty first commit, so the plan branch and the worktrees have something to start from. */
+/** `git init -b main` and an empty first commit, so the project branch and the worktrees have something to start from. */
 async function initRepo(root: string): Promise<ApplyResult> {
   if (!(await isRepo(root))) {
     const init = await git(root, ['init', '-b', 'main']);
@@ -51,8 +51,8 @@ async function initRepo(root: string): Promise<ApplyResult> {
 }
 
 /**
- * Makes a plan from a template (SPEC 21.2): the folder (and its repository) if asked, the template's profiles, main.md and rules.md
- * under `.console/`, and the plan.json fields. Every step is idempotent. The project's own CLAUDE.md is never written: it would
+ * Makes a project from a template (SPEC 21.2): the folder (and its repository) if asked, the template's profiles, main.md and rules.md
+ * under `.console/`, and the project.json fields. Every step is idempotent. The project's own CLAUDE.md is never written: it would
  * dirty the user's checkout and would not reach the worktrees (the rules travel in `.console/rules.md` instead).
  */
 export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
@@ -62,13 +62,13 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
   if (!template.valid || !template.data) return { ok: false, code: 'template.invalid', detail: template.reason };
   const data = template.data;
 
-  if (typeof o.root !== 'string' || o.root.trim() === '' || !isAbsolute(o.root)) return { ok: false, code: 'plan.badRoot' };
+  if (typeof o.root !== 'string' || o.root.trim() === '' || !isAbsolute(o.root)) return { ok: false, code: 'project.badRoot' };
   const root = resolve(o.root);
   try {
     if (o.create) mkdirSync(root, { recursive: true });
-    else if (!existsSync(root) || !statSync(root).isDirectory()) return { ok: false, code: 'plan.badRoot' };
+    else if (!existsSync(root) || !statSync(root).isDirectory()) return { ok: false, code: 'project.badRoot' };
   } catch (e) {
-    return { ok: false, code: 'plan.badRoot', detail: e instanceof Error ? e.message : String(e) };
+    return { ok: false, code: 'project.badRoot', detail: e instanceof Error ? e.message : String(e) };
   }
 
   if (o.create || o.init) {
@@ -88,7 +88,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
     copyIfPresent(join(template.dir, 'main.md'), join(consoleDir, 'main.md'));
     copyIfPresent(join(template.dir, 'rules.md'), join(consoleDir, 'rules.md'));
 
-    const store = new PlanStore(root);
+    const store = new ProjectStore(root);
     store.init(o.name);
     // What the user typed beats what was detected, which beats the template's own command.
     const detected = data.detect ? detectProject(root) : {};
@@ -109,7 +109,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
     if (data.git.squash !== undefined) store.setSquash(data.git.squash);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, code: message.startsWith('plan.') ? message.split(':')[0]! : 'plan.badRoot', detail: message };
+    return { ok: false, code: message.startsWith('project.') ? message.split(':')[0]! : 'project.badRoot', detail: message };
   }
   return { ok: true };
 }

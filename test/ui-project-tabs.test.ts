@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { neighbourPlan, renderPlanTabs, titleWithWaiting } from '../src/ui/plan-tabs';
-import type { PlanTab } from '../src/shared/protocol';
+import { neighbourProject, renderProjectTabs, titleWithWaiting } from '../src/ui/project-tabs';
+import type { ProjectTab } from '../src/shared/protocol';
 
-const plan = (name: string, waiting = 0): PlanTab => ({ name, root: `/x/${name}`, waiting, mainStatus: 'running' });
+const project = (name: string, waiting = 0): ProjectTab => ({ name, root: `/x/${name}`, waiting, mainStatus: 'running' });
 const handlers = () => ({ select: vi.fn(), close: vi.fn(), add: vi.fn() });
 
-describe('plan tabs', () => {
-  it('renders one tab per plan, marks the selected one and a dot for a waiting queue', () => {
+describe('project tabs', () => {
+  it('renders one tab per project, marks the selected one and a dot for a waiting queue', () => {
     const el = document.createElement('nav');
-    renderPlanTabs(el, [plan('alpha'), plan('beta', 2)], 'alpha', handlers());
+    renderProjectTabs(el, [project('alpha'), project('beta', 2)], 'alpha', handlers());
     const tabs = [...el.querySelectorAll<HTMLElement>('button.tab')];
     expect(tabs.slice(0, 2).map((t) => t.textContent)).toEqual(['alpha', 'beta']);
-    expect(tabs).toHaveLength(3); // the two plans and the new-plan button
+    expect(tabs).toHaveLength(3); // the two projects and the new-project button
     expect(tabs[0]!.classList.contains('current')).toBe(true);
     expect(tabs[0]!.classList.contains('attention')).toBe(false);
     expect(tabs[1]!.classList.contains('attention')).toBe(true);
@@ -22,7 +22,7 @@ describe('plan tabs', () => {
   it('calls the handlers for select, close and add', () => {
     const el = document.createElement('nav');
     const h = handlers();
-    renderPlanTabs(el, [plan('alpha'), plan('beta')], 'alpha', h);
+    renderProjectTabs(el, [project('alpha'), project('beta')], 'alpha', h);
     el.querySelectorAll<HTMLElement>('button.tab')[1]!.click();
     el.querySelectorAll<HTMLElement>('.tab-close')[0]!.click();
     [...el.querySelectorAll<HTMLElement>('button.tab')].pop()!.click();
@@ -32,15 +32,15 @@ describe('plan tabs', () => {
   });
 
   it('puts the total of waiting questions in the title only when above zero', () => {
-    expect(titleWithWaiting('Console', [plan('a'), plan('b')])).toBe('Console');
-    expect(titleWithWaiting('Console', [plan('a', 1), plan('b', 2)])).toBe('(3) Console');
+    expect(titleWithWaiting('Console', [project('a'), project('b')])).toBe('Console');
+    expect(titleWithWaiting('Console', [project('a', 1), project('b', 2)])).toBe('(3) Console');
   });
 
-  it('finds the neighbour plan and wraps around', () => {
-    const plans = [plan('a'), plan('b'), plan('c')];
-    expect(neighbourPlan(plans, 'a', 1)).toBe('b');
-    expect(neighbourPlan(plans, 'a', -1)).toBe('c');
-    expect(neighbourPlan(plans, 'c', 1)).toBe('a');
-    expect(neighbourPlan([plan('a')], 'a', 1)).toBeUndefined();
+  it('finds the neighbour project and wraps around', () => {
+    const projects = [project('a'), project('b'), project('c')];
+    expect(neighbourProject(projects, 'a', 1)).toBe('b');
+    expect(neighbourProject(projects, 'a', -1)).toBe('c');
+    expect(neighbourProject(projects, 'c', 1)).toBe('a');
+    expect(neighbourProject([project('a')], 'a', 1)).toBeUndefined();
   });
 });

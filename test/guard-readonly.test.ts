@@ -12,7 +12,7 @@ beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'guardro-'));
   W = join(root, 'repo.worktrees', 'review-a-job');
   mkdirSync(W, { recursive: true });
-  ctx = { worktree: W, repo: join(root, 'repo'), branch: 'review/review-a-job', planBranch: 'plan/p', secretPatterns: DEFAULT_SECRET_PATTERNS, readOnly: true };
+  ctx = { worktree: W, repo: join(root, 'repo'), branch: 'review/review-a-job', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS, readOnly: true };
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -86,8 +86,8 @@ const ALLOW: [string, Call][] = [
   ['Read', { tool: 'Read', input: { file_path: 'src/a.ts' } }],
   ['Grep', { tool: 'Grep', input: { pattern: 'x', path: 'src' } }],
   ['Glob', { tool: 'Glob', input: { pattern: '**/*.ts' } }],
-  ['git diff against the plan branch', sh('git diff plan/p...HEAD')],
-  ['git diff --stat', sh('git diff --stat plan/p...HEAD')],
+  ['git diff against the project branch', sh('git diff project/p...HEAD')],
+  ['git diff --stat', sh('git diff --stat project/p...HEAD')],
   ['git log', sh('git log --oneline -n 5')],
   ['git show', sh('git show HEAD')],
   ['git status', sh('git status')],
@@ -96,7 +96,7 @@ const ALLOW: [string, Call][] = [
   ['git grep', sh('git grep TODO')],
   ['git rev-parse', sh('git rev-parse HEAD')],
   ['git cat-file', sh('git cat-file -p HEAD')],
-  ['git merge-base', sh('git merge-base plan/p HEAD')],
+  ['git merge-base', sh('git merge-base project/p HEAD')],
   ['git branch --list', sh('git branch --list')],
   ['git tag -l', sh('git tag -l')],
   ['git config --get', sh('git config --get user.name')],

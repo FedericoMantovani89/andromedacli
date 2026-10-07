@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, modEvent, state, ui, until, type Running } from './helpers';
-import { gitSync, makeRepo, removeDir, type TestRepo } from './git-helpers';
-import { worktreePathFor } from '../src/server/git/worktree';
+import { gitSync, makeRepo, removeDir, type TestRepo, worktreePathFor } from './git-helpers';
 import { transcriptPath } from '../src/server/budget/transcript';
 import { ALERT_TEXT } from '../src/server/budget/service';
 import { CONSOLE_FROM } from '../src/server/questions/queue';
@@ -30,7 +29,7 @@ async function boot(o: { budget?: Record<string, unknown>; spawnBudget?: number 
   repos.push(t);
   const projectsDir = mkdtempSync(join(tmpdir(), 'bud-proj-'));
   scratch.push(projectsDir);
-  const s = await bootServer({ planRoot: t.repo, projectsDir, config: { git: { worktrees: o.worktrees ?? true }, ...(o.budget ? { budget: o.budget } : {}) } });
+  const s = await bootServer({ projectRoot: t.repo, projectsDir, config: { git: { worktrees: o.worktrees ?? true }, ...(o.budget ? { budget: o.budget } : {}) } });
   const body: Record<string, unknown> = { name: SLUG, profile: 'backend', goal: 'make it work' };
   if (o.spawnBudget !== null) body.budget = o.spawnBudget ?? 1000;
   expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', body)).body).toEqual({ status: 'started', name: SLUG });
@@ -169,7 +168,7 @@ it('8. no worktree means no budget in the state; a missing transcript leaves the
 it('a spawn_agent budget that is not an integer between 1000 and 100 000 000 is refused as bad_request', async () => {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true } } });
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
   for (const budget of [12.5, 999, 100_000_001, '5000']) {
     expect((await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: SLUG, profile: 'backend', goal: 'go', budget })).body, String(budget)).toEqual({ status: 'error', code: 'bad_request' });
   }
@@ -181,7 +180,7 @@ it('the periodic tick stops an agent whose grace ran out without another turn', 
   repos.push(t);
   const projectsDir = mkdtempSync(join(tmpdir(), 'bud-proj-'));
   scratch.push(projectsDir);
-  const s = await bootServer({ planRoot: t.repo, projectsDir, tickMs: 200, config: { git: { worktrees: true }, budget: { graceMinutes: 0 } } });
+  const s = await bootServer({ projectRoot: t.repo, projectsDir, tickMs: 200, config: { git: { worktrees: true }, budget: { graceMinutes: 0 } } });
   await mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: SLUG, profile: 'backend', goal: 'go', budget: 1000 });
   const wt = worktreePathFor(t.repo, SLUG);
   await modEvent(s, SLUG, 'session.start', { cwd: wt });

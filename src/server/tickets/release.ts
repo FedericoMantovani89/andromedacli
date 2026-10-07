@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import type { Translate } from '../../shared/i18n';
 import { identityArgs } from '../git/commit';
 import { git } from '../git/git';
-import { changedFiles, ensurePlanWorktree, withPlanLock } from '../git/merge';
+import { worktreesDirFor } from '../git/worktree';
+import { changedFiles, ensureProjectWorktree, withProjectLock } from '../git/merge';
 import { withReleaseToken } from '../git/release-hook';
 import { repoPathOf } from '../git/repos';
 import { reportPath, type ChangedFile } from './report';
@@ -11,9 +12,9 @@ import { runValidation } from './validate';
 
 export interface ReleaseDeps {
   tickets: TicketStore;
-  /** The plan folder. Where `main` lives when the folder is a repository; a ticket with a `repo` releases that sub-folder's repository instead. */
+  /** The project folder. Where `main` lives when the folder is a repository; a ticket with a `repo` releases that sub-folder's repository instead. */
   root: string;
-  plan: string;
+  project: string;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
   language(): { lang: string; t: Translate };
@@ -29,7 +30,7 @@ export type ProposeResult =
   | { status: 'already_asked'; id: string }
   | { status: 'nothing_to_release' }
   | { status: 'tests_failed'; tail: string }
-  | { status: 'refused'; code: 'planbranch_checked_out' | 'git_failed' | 'no_main_branch'; detail?: string };
+  | { status: 'refused'; code: 'project_branch_checked_out' | 'git_failed' | 'no_main_branch'; detail?: string };
 
 /** The queue refuses payloads above 100,000 characters: the reports are shortened to fit, never the tickets or the files. */
 const PAYLOAD_BUDGET = 90_000;
@@ -37,7 +38,7 @@ const MAX_REPORT_CHARS = 20_000;
 const MIN_REPORT_CHARS = 800;
 const MAX_TICKETS = 20;
 
-/** One repository of the release: its name (relative to the plan folder, `''` for the folder itself), where it lives, the branch it goes to, the approved plan branch tip and its merged tickets. */
+/** One repository of the release: its name (relative to the project folder, `''` for the folder itself), where it lives, the branch it goes to, the approved project branch tip and its merged tickets. */
 interface Item { repo: string; path: string; target: string; tip: string; slugs: string[] }
 interface Pending { id: string; items: Item[] }
 type Failure = { code: string; text: string };
@@ -45,10 +46,10 @@ interface Prepared { item: Item; files: ChangedFile[]; extraCommits: number; tes
 
 /**
  * The release to `origin/main` (SPEC 15.5): the console proposes, the user approves once from the queue, and only then the console
- * merges the plan branch into the local `main` of the user's checkout, runs the tests, and pushes with a one-time token that the
+ * merges the project branch into the local `main` of the user's checkout, runs the tests, and pushes with a one-time token that the
  * pre-push hook asks for. Whatever goes wrong, the checkout keeps what the user changed in the meantime.
  *
- * A plan folder that holds several repositories is released with ONE confirmation for all of them: every repository is checked before
+ * A project folder that holds several repositories is released with ONE confirmation for all of them: every repository is checked before
  * anything is merged or pushed (one that fails stops the whole release), then each is merged and pushed in turn.
  */
 export class ReleaseService {
@@ -80,8 +81,8 @@ export class ReleaseService {
     const named = [...groups.keys()].some((rel) => rel !== '');
     for (const rel of [...groups.keys()].sort()) {
       const path = repoPathOf(this.d.root, rel);
-      // The proposal runs the tests in this repository's plan worktree, which a merge is using at times: one at a time.
-      const one = await withPlanLock(path, () => this.prepare(rel, path, groups.get(rel)!));
+      // The proposal runs the tests in this repository's project worktree, which a merge is using at times: one at a time.
+      const one = await withProjectLock(path, () => this.prepare(rel, path, groups.get(rel)!));
       if ('refusal' in one) return one.refusal;
       items.push(one.item);
       files.push(...one.files.map((f) => (rel === '' ? f : { ...f, path: `${rel}/${f.path}` })));
@@ -95,25 +96,25 @@ export class ReleaseService {
       ...(named ? { repos: items.map((i) => ({ repo: i.repo, branch: i.target, tip: i.tip })) } : {}),
     });
     const id = this.d.askConfirm(
-      { text: `Release plan "${this.d.plan}" (${slugs.length} ticket${slugs.length === 1 ? '' : 's'}) to origin/${targets}?`, payload },
+      { text: `Release project "${this.d.project}" (${slugs.length} ticket${slugs.length === 1 ? '' : 's'}) to origin/${targets}?`, payload },
       (answer) => this.answered(answer, { id, items }),
     );
     this.pending = { id, items };
     return { status: 'asked', id };
   }
 
-  /** Everything the proposal needs from one repository: its target branch, the plan worktree, the tests on it, what would be pushed. */
+  /** Everything the proposal needs from one repository: its target branch, the project worktree, the tests on it, what would be pushed. */
   private async prepare(rel: string, path: string, tickets: Ticket[]): Promise<{ refusal: ProposeResult } | Prepared> {
     const target = await this.targetBranch(path);
     if (!target) return { refusal: { status: 'refused', code: 'no_main_branch', ...(rel ? { detail: rel } : {}) } };
-    const plan = await ensurePlanWorktree(path, this.d.plan);
-    if (!plan.ok) return { refusal: { status: 'refused', code: plan.code, detail: plan.detail } };
-    const tip = (await git(plan.path, ['rev-parse', 'HEAD'])).stdout.trim();
+    const project = await ensureProjectWorktree(path, this.d.project, worktreesDirFor(this.d.root, path));
+    if (!project.ok) return { refusal: { status: 'refused', code: project.code, detail: project.detail } };
+    const tip = (await git(project.path, ['rev-parse', 'HEAD'])).stdout.trim();
 
     const command = this.d.testCommand()?.trim();
     let tests: { ok: boolean; command: string; tail: string } | undefined;
     if (command) {
-      const run = await runValidation({ cwd: plan.path, command, timeoutMs: this.d.testTimeoutMs() });
+      const run = await runValidation({ cwd: project.path, command, timeoutMs: this.d.testTimeoutMs() });
       tests = { ok: run.ok, command, tail: run.tail };
       if (!run.ok) return { refusal: { status: 'tests_failed', tail: run.tail } };
     }
@@ -122,16 +123,16 @@ export class ReleaseService {
   }
 
   /**
-   * What the push would publish: the plan branch, and also any commit that is on the local main but not on origin yet (the release
+   * What the push would publish: the project branch, and also any commit that is on the local main but not on origin yet (the release
    * pushes the whole branch). Compared with `origin/<main>` when there is one.
    */
   private async whatWouldBePushed(repo: string, target: string): Promise<{ files: ChangedFile[]; extraCommits: number }> {
     const hasOrigin = (await git(repo, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${target}`])).code === 0;
     const base = hasOrigin ? `origin/${target}` : target;
-    const fromPlan = (await changedFiles(repo, base, `plan/${this.d.plan}`)) ?? [];
+    const fromProject = (await changedFiles(repo, base, `project/${this.d.project}`)) ?? [];
     const fromMain = hasOrigin ? ((await changedFiles(repo, base, target)) ?? []) : [];
     const byPath = new Map<string, ChangedFile>();
-    for (const f of [...fromMain, ...fromPlan]) if (!f.path.startsWith('.console/')) byPath.set(f.path, byPath.get(f.path) ?? f);
+    for (const f of [...fromMain, ...fromProject]) if (!f.path.startsWith('.console/')) byPath.set(f.path, byPath.get(f.path) ?? f);
     const extra = hasOrigin ? Number((await git(repo, ['rev-list', '--count', `origin/${target}..${target}`])).stdout.trim()) : 0;
     return { files: [...byPath.values()], extraCommits: Number.isFinite(extra) ? extra : 0 };
   }
@@ -140,7 +141,7 @@ export class ReleaseService {
     let limit = MAX_REPORT_CHARS;
     for (;;) {
       const payload = {
-        plan: this.d.plan, branch: o.target, tip: o.tip, files: o.files, extraCommits: o.extraCommits, tests: o.tests,
+        project: this.d.project, branch: o.target, tip: o.tip, files: o.files, extraCommits: o.extraCommits, tests: o.tests,
         ...(o.repos ? { repos: o.repos } : {}),
         tickets: o.shown.map((t) => this.ticketSummary(t, limit)),
       };
@@ -158,7 +159,7 @@ export class ReleaseService {
   private answered(answer: string, p: Pending): void {
     if (answer === 'reject') {
       this.pending = undefined;
-      this.d.notifyMain(`The user rejected the release of plan "${this.d.plan}". Nothing was merged or pushed; the tickets stay merged in the plan branch.`);
+      this.d.notifyMain(`The user rejected the release of project "${this.d.project}". Nothing was merged or pushed; the tickets stay merged in the project branch.`);
     } else if (answer === 'approve') {
       this.pending = undefined;
       this.inFlight = this.inFlight.then(() => this.perform(p)).catch(() => undefined).finally(() => this.d.changed?.());
@@ -171,7 +172,7 @@ export class ReleaseService {
   }
 
   private refuse(code: string, text: string): void {
-    this.d.notifyMain(`Release of plan "${this.d.plan}" refused (${code}): ${text}`);
+    this.d.notifyMain(`Release of project "${this.d.project}" refused (${code}): ${text}`);
   }
 
   /**
@@ -182,7 +183,7 @@ export class ReleaseService {
     return (await git(repo, ['reset', '--keep', '-q', before])).code === 0;
   }
 
-  /** `[abc-fe] ` for a repository inside the plan folder; nothing for the plan folder itself (the messages stay what they were). */
+  /** `[abc-fe] ` for a repository inside the project folder; nothing for the project folder itself (the messages stay what they were). */
   private label(item: Item): string { return item.repo === '' ? '' : `[${item.repo}] `; }
 
   private async perform(p: Pending): Promise<void> {
@@ -196,21 +197,21 @@ export class ReleaseService {
     for (const item of p.items) {
       const result = await this.releaseOne(item);
       if ('code' in result) {
-        const left = p.items.slice(p.items.indexOf(item)).map((i) => i.repo || '(plan folder)');
+        const left = p.items.slice(p.items.indexOf(item)).map((i) => i.repo || '(project folder)');
         const tail = p.items.length > 1 ? `${done.length > 0 ? ` Already released: ${done.join(', ')}.` : ''} Not released: ${left.join(', ')}.` : '';
         return this.refuse(result.code, `${this.label(item)}${result.text}${tail}`);
       }
-      done.push(item.repo || '(plan folder)');
+      done.push(item.repo || '(project folder)');
       notes.push(result.note);
     }
     const count = p.items.reduce((n, i) => n + i.slugs.length, 0);
     const targets = [...new Set(p.items.map((i) => i.target))].join(', ');
     const note = notes.join('');
     const where = p.items.length > 1 ? ` in ${p.items.length} repositories` : '';
-    this.d.notifyMain(`Plan "${this.d.plan}" released: ${count} ticket(s) merged into ${targets}${where}${note ? '' : ' and pushed to origin'}.${note}`);
+    this.d.notifyMain(`Project "${this.d.project}" released: ${count} ticket(s) merged into ${targets}${where}${note ? '' : ' and pushed to origin'}.${note}`);
   }
 
-  /** The checks that need no change in any repository: the checkout is on main, clean, and the plan branch is where the user saw it. */
+  /** The checks that need no change in any repository: the checkout is on main, clean, and the project branch is where the user saw it. */
   private async preflight(item: Item): Promise<Failure | undefined> {
     const root = item.path;
     const target = await this.targetBranch(root);
@@ -219,12 +220,12 @@ export class ReleaseService {
     if (head.stdout.trim() !== target) return { code: 'release.notOnMain', text: `the checkout is not on ${target}; switch to it and propose again. Nothing was pushed and the checkout was left as it was.` };
     const dirty = await git(root, ['status', '--porcelain', '--untracked-files=no']);
     if (dirty.stdout.trim() !== '') return { code: 'release.dirty', text: 'the checkout has uncommitted changes to tracked files; commit or stash them and propose again. Nothing was pushed and the checkout was left as it was.' };
-    const tip = (await git(root, ['rev-parse', `refs/heads/plan/${this.d.plan}`])).stdout.trim();
-    if (tip !== item.tip) return { code: 'release.planMoved', text: 'the plan branch moved after the proposal, so what you approved is not what would be released; propose again. Nothing was pushed and the checkout was left as it was.' };
+    const tip = (await git(root, ['rev-parse', `refs/heads/project/${this.d.project}`])).stdout.trim();
+    if (tip !== item.tip) return { code: 'release.projectMoved', text: 'the project branch moved after the proposal, so what you approved is not what would be released; propose again. Nothing was pushed and the checkout was left as it was.' };
     return undefined;
   }
 
-  /** Merges the approved plan tip into one repository's main, runs the tests, pushes, and marks its tickets released. */
+  /** Merges the approved project tip into one repository's main, runs the tests, pushes, and marks its tickets released. */
   private async releaseOne(item: Item): Promise<Failure | { note: string }> {
     const root = item.path;
     const target = item.target;
@@ -235,18 +236,18 @@ export class ReleaseService {
       const fastForward = (await git(root, ['merge-base', '--is-ancestor', 'HEAD', item.tip])).code === 0;
       const merged = fastForward
         ? await git(root, ['merge', '--ff-only', '-q', item.tip])
-        : await git(root, [...(await identityArgs(root)), 'merge', '--no-ff', '--no-edit', '-q', '-m', `Release plan ${this.d.plan}`, item.tip]);
+        : await git(root, [...(await identityArgs(root)), 'merge', '--no-ff', '--no-edit', '-q', '-m', `Release project ${this.d.project}`, item.tip]);
       if (merged.code !== 0) {
         await git(root, ['merge', '--abort']);
         const undone = await this.undo(root, before);
-        return { code: 'release.conflict', text: `the plan branch does not merge cleanly into ${target}.${undone ? ' Nothing was pushed and the checkout was left as it was.' : ` Your own edits made it impossible to undo completely: check ${target}.`}` };
+        return { code: 'release.conflict', text: `the project branch does not merge cleanly into ${target}.${undone ? ' Nothing was pushed and the checkout was left as it was.' : ` Your own edits made it impossible to undo completely: check ${target}.`}` };
       }
       const command = this.d.testCommand()?.trim();
       if (command) {
         const run = await runValidation({ cwd: root, command, timeoutMs: this.d.testTimeoutMs() });
         if (!run.ok) {
           const undone = await this.undo(root, before);
-          return { code: 'release.testsFailed', text: `the tests fail on ${target} after merging the plan branch. Output:\n${run.tail.trim().slice(-800)}\n${undone ? `The merge was undone: ${target} is back where it was. Nothing was pushed.` : `The merge could NOT be undone because tracked files were edited while the tests ran (your edits were kept): ${target} contains the merge, but nothing was pushed.`}` };
+          return { code: 'release.testsFailed', text: `the tests fail on ${target} after merging the project branch. Output:\n${run.tail.trim().slice(-800)}\n${undone ? `The merge was undone: ${target} is back where it was. Nothing was pushed.` : `The merge could NOT be undone because tracked files were edited while the tests ran (your edits were kept): ${target} contains the merge, but nothing was pushed.`}` };
         }
       }
     }

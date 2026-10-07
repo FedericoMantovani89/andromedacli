@@ -51,12 +51,12 @@ it('the test button says ok:false when no toast can be shown', async () => {
 it('a question from an agent raises a toast whose click opens the queue on that item', async () => {
   const r = recorder();
   const s = await bootServer({ notifier: r.notifier, config: { notifications: { groupSeconds: 1 } } });
-  s.setLimits({ global: 9, perPlan: 9 });
+  s.setLimits({ global: 9, perProject: 9 });
   await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
   const { id } = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { question: 'Which color?' })).body;
   await until(() => r.sent.length === 1, 6000);
   expect(r.sent[0]!.message).toBe('fix-login: Which color?');
-  expect(r.sent[0]!.open).toBe(`http://127.0.0.1:${s.port}/?token=${s.token}&plan=shop-api#queue=${id}`);
+  expect(r.sent[0]!.open).toBe(`http://127.0.0.1:${s.port}/?token=${s.token}&project=shop-api#queue=${id}`);
 });
 
 it('PUT /api/config saves the notification settings, applies them at once and refuses bad values', async () => {
@@ -84,7 +84,7 @@ it('PUT /api/config saves the notification settings, applies them at once and re
 it('a disabled type raises no toast', async () => {
   const r = recorder();
   const s = await bootServer({ notifier: r.notifier, config: { notifications: { groupSeconds: 1, enabled: { question: false } } } });
-  s.setLimits({ global: 9, perPlan: 9 });
+  s.setLimits({ global: 9, perProject: 9 });
   await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'backend' });
   await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { question: 'Which color?' });
   await new Promise((done) => setTimeout(done, 1500));

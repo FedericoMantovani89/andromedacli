@@ -10,7 +10,7 @@ const bundles = loadBundles();
 const translator = (lang: string) => createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') });
 
 const base = (over: Partial<ReportInput> = {}): ReportInput => ({
-  slug: 'add-multiply', plan: 'shop-api', branch: 'agent/shop-api/add-multiply', lang: 'en', t: translator('en'),
+  slug: 'add-multiply', project: 'shop-api', branch: 'agent/shop-api/add-multiply', lang: 'en', t: translator('en'),
   goal: 'Add multiply(a, b) to src/math.js with a test.',
   steps: [
     { n: 1, title: 'Study the code', done: true, note: 'math.js is tiny; tests use node:test' },
@@ -30,7 +30,7 @@ const base = (over: Partial<ReportInput> = {}): ReportInput => ({
 describe('buildReport', () => {
   it('has frontmatter with the language and the sections of SPEC 15.6, in English', () => {
     const text = buildReport(base());
-    expect(text.startsWith('---\nticket: add-multiply\nplan: shop-api\nbranch: agent/shop-api/add-multiply\nlang: en\n')).toBe(true);
+    expect(text.startsWith('---\nticket: add-multiply\nproject: shop-api\nbranch: agent/shop-api/add-multiply\nlang: en\n')).toBe(true);
     for (const h of ['## Objective', '## Checklist (5/5)', '## Files touched', '## Tests', '## Documentation', '## Decisions and doubts']) expect(text, h).toContain(h);
     expect(text).toContain('Add multiply(a, b) to src/math.js with a test.');
   });
@@ -106,7 +106,7 @@ describe('buildReport', () => {
     expect(text).toMatch(/Round 2: passed/);
   });
   it('a frontmatter value that is not plain is not written (it could break the header)', () => {
-    const text = buildReport(base({ slug: 'a\nlang: evil', plan: 'p---', branch: 'b\r\nx' }));
+    const text = buildReport(base({ slug: 'a\nlang: evil', project: 'p---', branch: 'b\r\nx' }));
     expect(text.split('\n---\n')[0]).not.toContain('evil');
     expect(text.split('\n').filter((l) => l.startsWith('lang:'))).toEqual(['lang: en']);
   });
@@ -122,7 +122,7 @@ describe('squashMessage', () => {
     expect(m).toContain('Files: 3 changed (+12 -1)');
     expect(m).toContain('Tests: passed (node --test)');
     expect(m).toContain('Steps: 5/5');
-    expect(m.trimEnd().split('\n').slice(-3)).toEqual(['Agent: add-multiply', 'Ticket: add-multiply', 'Piano: shop-api']);
+    expect(m.trimEnd().split('\n').slice(-3)).toEqual(['Agent: add-multiply', 'Ticket: add-multiply', 'Progetto: shop-api']);
   });
   it('keeps a long goal short and uses only its first line in the subject', () => {
     const m = sq({ goal: `${'word '.repeat(60)}\nsecond line` });

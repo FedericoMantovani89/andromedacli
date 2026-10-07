@@ -8,7 +8,7 @@ import { makeRepo, gitSync, branchesOf } from './git-helpers';
 
 async function setup() {
   const t = makeRepo({ remote: true });
-  const wt = await createAgentWorktree({ repo: t.repo, plan: 'shop-api', slug: 'fix-login' });
+  const wt = await createAgentWorktree({ repo: t.repo, project: 'shop-api', slug: 'fix-login' });
   await installPushHook({ repo: t.repo, worktree: wt.path, branch: wt.branch, slug: 'fix-login' });
   const commit = (msg: string) => {
     writeFileSync(join(wt.path, `f-${Math.random().toString(36).slice(2)}.txt`), msg);
@@ -28,7 +28,7 @@ it('allows the push of the agent\'s own branch', async () => {
 it('refuses any other ref (another branch name, main)', async () => {
   const { wt, remote, commit } = await setup();
   commit('one');
-  for (const ref of ['HEAD:refs/heads/other', 'HEAD:refs/heads/main', 'HEAD:refs/heads/plan/shop-api']) {
+  for (const ref of ['HEAD:refs/heads/other', 'HEAD:refs/heads/main', 'HEAD:refs/heads/project/shop-api']) {
     const r = await git(wt.path, ['push', 'origin', ref]);
     expect(r.code, ref).not.toBe(0);
     expect(r.stderr).toMatch(/refusing/);
@@ -64,12 +64,12 @@ it('does not touch the main worktree: it can still push anything it wants', asyn
 });
 it('the hook lives outside the worktree and is bound to that worktree only', async () => {
   const { repo, wt } = await setup();
-  const other = await createAgentWorktree({ repo, plan: 'shop-api', slug: 'other-job' });
+  const other = await createAgentWorktree({ repo, project: 'shop-api', slug: 'other-job' });
   expect((await git(wt.path, ['config', '--worktree', '--get', 'core.hooksPath'])).stdout.trim()).toContain('console-hooks/fix-login');
   expect((await git(other.path, ['config', '--worktree', '--get', 'core.hooksPath'])).code).not.toBe(0);
 });
 it('rejects a branch name that could inject shell into the hook script', async () => {
   const t = makeRepo({ remote: true });
-  const wt = await createAgentWorktree({ repo: t.repo, plan: 'p-one', slug: 'a-job' });
+  const wt = await createAgentWorktree({ repo: t.repo, project: 'p-one', slug: 'a-job' });
   await expect(installPushHook({ repo: t.repo, worktree: wt.path, branch: 'x"; rm -rf /; "', slug: 'a-job' })).rejects.toThrow(/branch/);
 });

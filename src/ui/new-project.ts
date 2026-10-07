@@ -21,7 +21,7 @@ export const SAVE_TEMPLATE_LABEL = k('templates.save.open');
 /** A template's text in the interface language, English when it has none. */
 const pick = (texts: Record<string, string>): string => texts[language()] ?? texts.en ?? '';
 
-/** A plan name proposed from the folder: its last segment as lowercase words joined by dashes. */
+/** A project name proposed from the folder: its last segment as lowercase words joined by dashes. */
 function nameFromFolder(folder: string): string {
   const last = folder.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? '';
   return last.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -79,14 +79,14 @@ function showDialog(...children: HTMLElement[]): void {
 }
 
 /**
- * The new-plan dialog (SPEC 21, 29.2): a template, a folder and a name on one screen; the build, test and lint commands are proposed
- * from what the folder contains. Create makes the plan through `POST /api/plans`; the new tab appears through the state.
+ * The new-project dialog (SPEC 21, 29.2): a template, a folder and a name on one screen; the build, test and lint commands are proposed
+ * from what the folder contains. Create makes the project through `POST /api/projects`; the new tab appears through the state.
  */
-export function openNewPlanDialog(_getState: () => StateMessage | undefined, onCreated?: (name: string) => void): void {
+export function openNewProjectDialog(_getState: () => StateMessage | undefined, onCreated?: (name: string) => void): void {
   const form = document.createElement('form');
-  form.className = 'new-plan-form';
+  form.className = 'new-project-form';
   const title = document.createElement('h2');
-  bindText(title, 'plans.new.title');
+  bindText(title, 'projects.new.title');
 
   const template = document.createElement('select');
   template.name = 'template';
@@ -97,7 +97,7 @@ export function openNewPlanDialog(_getState: () => StateMessage | undefined, onC
   template.addEventListener('change', showDescription);
 
   const folder = textInput('folder');
-  const create = checkbox('create', k('plans.new.newFolder'));
+  const create = checkbox('create', k('projects.new.newFolder'));
   const name = textInput('name');
   let nameEdited = false;
   name.addEventListener('input', () => { nameEdited = true; });
@@ -114,21 +114,21 @@ export function openNewPlanDialog(_getState: () => StateMessage | undefined, onC
     if (!nameEdited) name.value = nameFromFolder(root);
     note.textContent = '';
     if (root === '') return;
-    const res = await api<Detected | ApiError>(`/api/plans/detect?root=${encodeURIComponent(root)}`);
+    const res = await api<Detected | ApiError>(`/api/projects/detect?root=${encodeURIComponent(root)}`);
     if (res.status !== 200) return; // a folder that does not exist yet (a new one) has nothing to read
     const found = res.body as Detected;
-    if (!found.source) { bindText(note, 'plans.new.detect.none'); return; }
+    if (!found.source) { bindText(note, 'projects.new.detect.none'); return; }
     build.value = found.build ?? '';
     test.value = found.test ?? '';
     lint.value = found.lint ?? '';
-    bindText(note, 'plans.new.detect.found', { source: found.source });
+    bindText(note, 'projects.new.detect.found', { source: found.source });
   };
   folder.addEventListener('blur', () => { void detect(); });
   // The native folder window (the console runs on the user's own machine, so it can open one: a page cannot learn a full path).
   const browse = document.createElement('button');
   browse.type = 'button';
   browse.className = 'browse-folder';
-  bindText(browse, 'plans.new.browse');
+  bindText(browse, 'projects.new.browse');
   const browseNote = document.createElement('p');
   browseNote.className = 'settings-note browse-note';
   browse.addEventListener('click', () => {
@@ -166,7 +166,7 @@ export function openNewPlanDialog(_getState: () => StateMessage | undefined, onC
     error.textContent = '';
     submit.disabled = true;
     const typed = (v: string): string | undefined => (v.trim() === '' ? undefined : v.trim());
-    void api<ApiError>('/api/plans', {
+    void api<ApiError>('/api/projects', {
       method: 'POST',
       body: {
         root: folder.value.trim(), ...(name.value.trim() ? { name: name.value.trim() } : {}), templateId: template.value,
@@ -180,16 +180,16 @@ export function openNewPlanDialog(_getState: () => StateMessage | undefined, onC
 
   const folderRow = document.createElement('div');
   folderRow.className = 'folder-row';
-  folderRow.append(field(k('plans.new.folder'), folder), browse);
+  folderRow.append(field(k('projects.new.folder'), folder), browse);
   const commands = document.createElement('div');
   commands.className = 'commands';
-  commands.append(field(k('plans.new.build'), build), field(k('plans.new.test'), test), field(k('plans.new.lint'), lint));
-  form.append(title, field(k('plans.new.template'), template), description, folderRow, browseNote, create.row, field(k('plans.new.name'), name), commands, note, error, box);
+  commands.append(field(k('projects.new.build'), build), field(k('projects.new.test'), test), field(k('projects.new.lint'), lint));
+  form.append(title, field(k('projects.new.template'), template), description, folderRow, browseNote, create.row, field(k('projects.new.name'), name), commands, note, error, box);
   showDialog(form);
-  focusElementFromUser(folder, 'user'); // the user just clicked "new plan": the cursor may go into the first field
+  focusElementFromUser(folder, 'user'); // the user just clicked "new project": the cursor may go into the first field
 }
 
-/** "Save plan as template": a copy of the current plan's profiles, rules and settings, kept in the user's templates (SPEC 21). */
+/** "Save project as template": a copy of the current project's profiles, rules and settings, kept in the user's templates (SPEC 21). */
 export function openSaveTemplateDialog(_getState: () => StateMessage | undefined): void {
   const form = document.createElement('form');
   const title = document.createElement('h2');
@@ -207,7 +207,7 @@ export function openSaveTemplateDialog(_getState: () => StateMessage | undefined
     error.textContent = '';
     done.textContent = '';
     submit.disabled = true;
-    void api<ApiError>('/api/plans/save-template', {
+    void api<ApiError>('/api/projects/save-template', {
       method: 'POST',
       body: { id: id.value.trim(), ...(name.value.trim() ? { name: name.value.trim() } : {}), overwrite: overwrite.input.checked },
     }).then((res) => {

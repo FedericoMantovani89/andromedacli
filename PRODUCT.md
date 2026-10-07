@@ -10,7 +10,7 @@ web
 Developers who run several Claude Code sessions at once on their own machine and want to see and steer them in one place. Long sessions, many hours in front of the console. Intended to be published as a product for external users.
 
 ## Product Purpose
-AndromedaCli is a local web console that runs and shows several Claude Code sessions: a fixed "main" on the left, manually launched agents on the right. It also handles the user's question queue, review and merge of agent work, budget and quota, multiple plans, notifications, templates and settings. Success: the user always knows which agent is doing what, what needs their answer, and what it costs.
+AndromedaCli is a local web console that runs and shows several Claude Code sessions: a fixed "main" on the left, manually launched agents on the right. It also handles the user's question queue, review and merge of agent work, budget and quota, multiple projects, notifications, templates and settings. Success: the user always knows which agent is doing what, what needs their answer, and what it costs.
 
 ## Positioning
 One Node process owns every `claude` process; the browser only displays, so closing the tab never touches a session. Agent state comes from structured events, not from reading the terminal.

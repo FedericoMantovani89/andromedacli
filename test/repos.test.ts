@@ -8,13 +8,13 @@ import { makeMultiRepo, makeRepo, removeDir } from './git-helpers';
 const bases: string[] = [];
 afterEach(() => { while (bases.length) removeDir(bases.pop()!); });
 
-it('a plan root that is a repository is the single repo ""', () => {
+it('a project root that is a repository is the single repo ""', () => {
   const t = makeRepo(); bases.push(t.base);
   expect(discoverRepos(t.repo)).toEqual(['']);
   expect(resolveRepo(t.repo, undefined)).toMatchObject({ ok: true, rel: '' });
   expect(resolveRepo(t.repo, '')).toMatchObject({ ok: true, rel: '' });
 });
-it('a plan root inside a bigger repository still counts as a repo (as before)', () => {
+it('a project root inside a bigger repository still counts as a repo (as before)', () => {
   const t = makeRepo(); bases.push(t.base);
   const sub = join(t.repo, 'packages', 'x'); mkdirSync(sub, { recursive: true });
   expect(discoverRepos(sub)).toEqual(['']);
@@ -45,14 +45,14 @@ it('only an exact discovered name is accepted', () => {
     expect(resolveRepo(m.root, bad), bad).toEqual({ ok: false, code: 'git.unknownRepo', repos: ['abc-be', 'abc-fe'] });
   }
 });
-it('a plan root that is a repo ignores a repo name that is not "" (nothing to choose)', () => {
+it('a project root that is a repo ignores a repo name that is not "" (nothing to choose)', () => {
   const t = makeRepo(); bases.push(t.base);
   mkdirSync(join(t.repo, 'sub', '.git'), { recursive: true });
   writeFileSync(join(t.repo, 'sub', '.git', 'HEAD'), 'ref: refs/heads/main\n');
   expect(discoverRepos(t.repo)).toEqual(['']);
   expect(resolveRepo(t.repo, 'sub')).toEqual({ ok: false, code: 'git.unknownRepo', repos: [''] });
 });
-it('repoPathOf joins a name to the plan root and maps "" to the root', () => {
+it('repoPathOf joins a name to the project root and maps "" to the root', () => {
   expect(repoPathOf('/p/root', '')).toMatch(/root$/);
   expect(repoPathOf('/p/root', undefined)).toBe(repoPathOf('/p/root', ''));
   expect(repoPathOf('/p/root', 'abc-fe').replace(/\\/g, '/')).toMatch(/root\/abc-fe$/);

@@ -26,10 +26,10 @@ async function boot(limit = 4) {
   const configDir = mkdtempSync(join(tmpdir(), 'e2e2-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false } }));
   const s = await startServer({
-    port: 0, planRoot: mkdtempSync(join(tmpdir(), 'e2e2-plan-')), configDir, planName: 'shop-api',
+    port: 0, projectRoot: mkdtempSync(join(tmpdir(), 'e2e2-project-')), configDir, projectName: 'shop-api',
     claudeCommand: [process.execPath, fixture], modDir: null,
   });
-  s.setLimits({ global: limit, perPlan: limit });
+  s.setLimits({ global: limit, perProject: limit });
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
       method, headers: { authorization: `Bearer ${token}`, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
@@ -100,7 +100,7 @@ try {
     await until(async () => (await owner(page)) === 'shop-api');
     const q = await asMod('ask-agent', '/v1/tools/ask_user', 'POST', { question: 'Existing table or a new one?', options: ['Existing', 'New'] });
     const polling = asMod('ask-agent', `/v1/questions/${q.json.id}?wait=15`);
-    check('the plan tab shows a dot and the button counts the question',
+    check('the project tab shows a dot and the button counts the question',
       await until(async () => (await page.locator('#tabs .tab.attention').count()) === 1 && (await page.locator('#queue-btn').innerText()) === 'Queue (1)'));
     check('the agent shows Waiting for you', await until(async () => (await page.locator(`${panel('ask-agent')} .panel-state`).innerText()) === 'Waiting for you'));
     await page.keyboard.press('Alt+Q');
@@ -177,7 +177,7 @@ try {
     check('a queued name is reserved', (await spawn('c-job')).json.code === 'slug.duplicate');
     await event('a-job', 'session.start'); await event('a-job', 'turn.start'); await event('a-job', 'turn.complete', { answer: 'done' });
     check('it starts by itself when a slot frees', await until(async () => (await page.locator(panel('c-job')).count()) === 1 && (await agents()).find((a) => a.slug === 'c-job')?.status === 'running'));
-    s.setLimits({ global: 1, perPlan: 1 });
+    s.setLimits({ global: 1, perProject: 1 });
     await sleep(300);
     check('lowering the limit stops nothing', (await agents()).every((a) => a.status === 'running'));
     check('and the next request waits', (await spawn('d-job')).json.status === 'queued');

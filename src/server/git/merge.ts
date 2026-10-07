@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { identityArgs } from './commit';
 import { git } from './git';
-import { commonDir, ensurePlanBranch, withRepoLock } from './worktree';
+import { commonDir, ensureProjectBranch, withRepoLock } from './worktree';
 import type { ChangedFile } from '../tickets/report';
 
 const fwd = (p: string): string => p.replace(/\\/g, '/');
@@ -26,50 +26,54 @@ export async function changedFiles(cwd: string, base: string, head: string): Pro
   return files;
 }
 
-const planLocks = new Map<string, Promise<unknown>>();
+const projectLocks = new Map<string, Promise<unknown>>();
 
 /**
- * One user of the console's `.plan` worktree at a time: a merge (which stages, commits and runs the tests there) and a release
+ * One user of the console's `.project` worktree at a time: a merge (which stages, commits and runs the tests there) and a release
  * proposal (which runs the tests there) must not reset or clean it under each other.
  */
-export function withPlanLock<T>(repo: string, fn: () => Promise<T>): Promise<T> {
+export function withProjectLock<T>(repo: string, fn: () => Promise<T>): Promise<T> {
   const key = fwd(repo).toLowerCase();
-  const run = (planLocks.get(key) ?? Promise.resolve()).then(fn, fn);
-  planLocks.set(key, run.catch(() => undefined));
+  const run = (projectLocks.get(key) ?? Promise.resolve()).then(fn, fn);
+  projectLocks.set(key, run.catch(() => undefined));
   return run;
 }
 
-/** The console's own worktree on the plan branch, where tickets are merged. A leading dot can never be an agent's name. */
-export const planWorktreePath = (repo: string): string => join(dirname(repo), `${basename(repo)}.worktrees`, '.plan');
+/** The console's own worktree on the project branch, where tickets are merged. A leading dot can never be an agent's name. */
+export const projectWorktreePath = (repo: string, dir?: string): string => {
+  const earlier = join(dirname(repo), `${basename(repo)}.worktrees`, '.project');
+  // An existing checkout in the earlier layout (a project started before the move) is kept; a new one goes under the project's .console.
+  return dir === undefined || existsSync(earlier) ? earlier : join(dir, '.project');
+};
 
-export type PlanWorktree = { ok: true; path: string } | { ok: false; code: 'planbranch_checked_out' | 'git_failed'; detail?: string };
+export type ProjectWorktree = { ok: true; path: string } | { ok: false; code: 'project_branch_checked_out' | 'git_failed'; detail?: string };
 
 /**
- * Makes sure `<repo>.worktrees/.plan` is a clean checkout of `plan/<plan>`: created when missing, and any half-done merge left by
+ * Makes sure `<project>/.console/worktrees/.project` (earlier projects: `<repo>.worktrees/.project`) is a clean checkout of `project/<project>`: created when missing, and any half-done merge left by
  * a crash is thrown away (the worktree is the console's own and its branch tip is committed state). Refuses when somebody else
- * (the user's checkout) has the plan branch checked out, because a branch cannot be checked out twice.
+ * (the user's checkout) has the project branch checked out, because a branch cannot be checked out twice.
  */
-export async function ensurePlanWorktree(repo: string, plan: string): Promise<PlanWorktree> {
+export async function ensureProjectWorktree(repo: string, project: string, dir?: string): Promise<ProjectWorktree> {
   try {
-    await ensurePlanBranch(repo, plan);
+    await ensureProjectBranch(repo, project);
   } catch (e) {
     return { ok: false, code: 'git_failed', detail: e instanceof Error ? e.message : String(e) };
   }
   return withRepoLock(repo, async () => {
-    const branch = `plan/${plan}`;
-    const path = planWorktreePath(repo);
+    const branch = `project/${project}`;
+    const path = projectWorktreePath(repo, dir);
     await git(repo, ['worktree', 'prune']); // a folder somebody deleted must not stay registered: that would block every merge
     const listed = await git(repo, ['worktree', 'list', '--porcelain']);
     if (listed.code !== 0) return { ok: false, code: 'git_failed', detail: listed.stderr.trim() } as const;
     const entries = listed.stdout.split(/\r?\n\r?\n/).map((block) => ({
       path: /^worktree (.+)$/m.exec(block)?.[1] ?? '', branch: /^branch (.+)$/m.exec(block)?.[1],
     }));
-    if (entries.some((e) => e.branch === `refs/heads/${branch}` && !same(e.path, path))) return { ok: false, code: 'planbranch_checked_out' } as const;
+    if (entries.some((e) => e.branch === `refs/heads/${branch}` && !same(e.path, path))) return { ok: false, code: 'project_branch_checked_out' } as const;
     if (!entries.some((e) => same(e.path, path))) {
       if (existsSync(path)) rmSync(path, { recursive: true, force: true });
       await git(repo, ['worktree', 'prune']);
       const added = await git(repo, ['worktree', 'add', '-q', fwd(path), branch]);
-      if (added.code !== 0) return { ok: false, code: /already (checked out|used)/i.test(added.stderr) ? 'planbranch_checked_out' : 'git_failed', detail: added.stderr.trim() } as const;
+      if (added.code !== 0) return { ok: false, code: /already (checked out|used)/i.test(added.stderr) ? 'project_branch_checked_out' : 'git_failed', detail: added.stderr.trim() } as const;
     }
     await git(path, ['merge', '--abort']); // fails when there is nothing to abort: fine
     await git(path, ['reset', '--hard', '-q']);
@@ -100,10 +104,10 @@ async function commitStaged(cwd: string, message: string): Promise<{ ok: true } 
 }
 
 /**
- * Merges `sha` into the branch checked out in `wt` (the console's plan worktree): squashed into one commit, or kept behind a merge
+ * Merges `sha` into the branch checked out in `wt` (the console's project worktree): squashed into one commit, or kept behind a merge
  * commit. On a conflict nothing is forced: the worktree is put back exactly where it was and the conflicting files are returned.
  */
-export async function mergeIntoPlan(o: { wt: string; sha: string; message: string; squash: boolean }): Promise<MergeOutcome> {
+export async function mergeIntoProject(o: { wt: string; sha: string; message: string; squash: boolean }): Promise<MergeOutcome> {
   const prevRes = await git(o.wt, ['rev-parse', 'HEAD']);
   if (prevRes.code !== 0) return { ok: false, kind: 'failed', detail: prevRes.stderr.trim() };
   const prev = prevRes.stdout.trim();
@@ -131,11 +135,11 @@ export async function resetTo(wt: string, sha: string): Promise<void> {
 }
 
 /**
- * Starts the merge of the plan branch into an author's branch, inside the author's worktree, and leaves it in the conflict state.
+ * Starts the merge of the project branch into an author's branch, inside the author's worktree, and leaves it in the conflict state.
  * Agents may not run `git merge` (the guard refuses it), so the console prepares the conflict and the author only edits the files
  * and closes its steps: the next console commit concludes the merge.
  */
-export async function startMergeForAuthor(cwd: string, planBranch: string): Promise<string[]> {
-  await git(cwd, ['merge', '--no-ff', '--no-commit', planBranch]);
+export async function startMergeForAuthor(cwd: string, projectBranch: string): Promise<string[]> {
+  await git(cwd, ['merge', '--no-ff', '--no-commit', projectBranch]);
   return (await git(cwd, ['diff', '--name-only', '--diff-filter=U'])).stdout.split(/\r?\n/).filter(Boolean);
 }

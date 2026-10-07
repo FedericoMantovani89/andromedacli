@@ -2,7 +2,7 @@ import { it, expect } from 'vitest';
 import { buildClaudeLaunch } from '../src/server/pty/claude-launch';
 
 const base = {
-  command: ['claude'], role: 'agent' as const, slug: 'fix-login', plan: 'shop-api',
+  command: ['claude'], role: 'agent' as const, slug: 'fix-login', project: 'shop-api',
   url: 'http://127.0.0.1:7391', token: 'SESSION-TOKEN', bypass: false, baseEnv: { PATH: 'p' }, platform: 'linux' as const,
 };
 

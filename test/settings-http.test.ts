@@ -92,7 +92,7 @@ it('a launch that started before the change keeps the value it started with', as
   repos.push(t);
   let release!: () => void;
   const gate = new Promise<void>((ok) => { release = ok; });
-  const s = await bootServer({ planRoot: t.repo, config: { git: { worktrees: true } }, afterWorktreeCreated: () => gate });
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } }, afterWorktreeCreated: () => gate });
   const spawning = mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name: 'slow-job', profile: 'backend', goal: 'g' });
   await until(async () => (await state(s)).agents.some((a: any) => a.slug === 'slow-job'));
   await put(s, { agents: { bypassPermissions: true } });
@@ -116,46 +116,46 @@ it('the guard mode of a running session does not change under it; a session laun
   expect((await force('third-job')).body.decision).toBe('deny');
 });
 
-it('PUT /api/plan sets, shows and clears the test command', async () => {
+it('PUT /api/project sets, shows and clears the test command', async () => {
   const s = await bootServer();
-  expect((await state(s)).plan.testCommand).toBeUndefined();
-  const r = await ui(s, '/api/plan', 'PUT', { testCommand: '  npx vitest run ' });
+  expect((await state(s)).project.testCommand).toBeUndefined();
+  const r = await ui(s, '/api/project', 'PUT', { testCommand: '  npx vitest run ' });
   expect(r.status).toBe(200);
   expect(r.body).toEqual({ testCommand: 'npx vitest run' });
-  expect((await state(s)).plan).toEqual({ name: 'shop-api', testCommand: 'npx vitest run' });
-  expect((await ui(s, '/api/plan', 'PUT', { testCommand: '' })).body).toEqual({});
-  expect((await state(s)).plan.testCommand).toBeUndefined();
+  expect((await state(s)).project).toEqual({ name: 'shop-api', testCommand: 'npx vitest run' });
+  expect((await ui(s, '/api/project', 'PUT', { testCommand: '' })).body).toEqual({});
+  expect((await state(s)).project.testCommand).toBeUndefined();
 });
-it('PUT /api/plan refuses a bad command with a user-facing code, and needs the UI token', async () => {
+it('PUT /api/project refuses a bad command with a user-facing code, and needs the UI token', async () => {
   const s = await bootServer();
   for (const testCommand of ['x'.repeat(501), 'a\nb', 5, null, ['a']]) {
-    const r = await ui(s, '/api/plan', 'PUT', { testCommand });
+    const r = await ui(s, '/api/project', 'PUT', { testCommand });
     expect(r.status, String(testCommand).slice(0, 10)).toBe(422);
-    expect(r.body.code).toBe('plan.testCommandInvalid');
+    expect(r.body.code).toBe('project.testCommandInvalid');
   }
-  expect((await ui(s, '/api/plan', 'PUT', {})).status).toBe(400);
-  expect((await req(s, '/api/plan', { method: 'PUT', body: { testCommand: 'x' } })).status).toBe(401);
-  expect((await mod(s, 'shop-api', '/api/plan', 'PUT', { testCommand: 'x' })).status).toBe(401);
+  expect((await ui(s, '/api/project', 'PUT', {})).status).toBe(400);
+  expect((await req(s, '/api/project', { method: 'PUT', body: { testCommand: 'x' } })).status).toBe(401);
+  expect((await mod(s, 'shop-api', '/api/project', 'PUT', { testCommand: 'x' })).status).toBe(401);
 });
 
-it('PUT /api/plan sets and shows squash, alone or with the test command, and refuses anything else', async () => {
+it('PUT /api/project sets and shows squash, alone or with the test command, and refuses anything else', async () => {
   const s = await bootServer();
-  expect((await state(s)).plan.squash).toBeUndefined();
-  expect((await ui(s, '/api/plan', 'PUT', { squash: false })).body).toEqual({ squash: false });
-  expect((await state(s)).plan).toMatchObject({ name: 'shop-api', squash: false });
-  expect((await ui(s, '/api/plan', 'PUT', { squash: true, testCommand: 'npm test' })).body).toEqual({ testCommand: 'npm test', squash: true });
-  expect((await state(s)).plan).toMatchObject({ squash: true, testCommand: 'npm test' });
+  expect((await state(s)).project.squash).toBeUndefined();
+  expect((await ui(s, '/api/project', 'PUT', { squash: false })).body).toEqual({ squash: false });
+  expect((await state(s)).project).toMatchObject({ name: 'shop-api', squash: false });
+  expect((await ui(s, '/api/project', 'PUT', { squash: true, testCommand: 'npm test' })).body).toEqual({ testCommand: 'npm test', squash: true });
+  expect((await state(s)).project).toMatchObject({ squash: true, testCommand: 'npm test' });
   for (const squash of ['yes', 1, null, [true]]) {
-    const r = await ui(s, '/api/plan', 'PUT', { squash });
+    const r = await ui(s, '/api/project', 'PUT', { squash });
     expect(r.status, String(squash)).toBe(422);
-    expect(r.body.code).toBe('plan.squashInvalid');
+    expect(r.body.code).toBe('project.squashInvalid');
   }
-  expect((await ui(s, '/api/plan', 'PUT', { somethingElse: 1 })).status).toBe(400);
-  expect((await state(s)).plan.squash).toBe(true); // refused calls changed nothing
+  expect((await ui(s, '/api/project', 'PUT', { somethingElse: 1 })).status).toBe(400);
+  expect((await state(s)).project.squash).toBe(true); // refused calls changed nothing
 });
 it('a bad squash next to a good test command changes neither', async () => {
   const s = await bootServer();
-  const r = await ui(s, '/api/plan', 'PUT', { testCommand: 'npm test', squash: 'no' });
+  const r = await ui(s, '/api/project', 'PUT', { testCommand: 'npm test', squash: 'no' });
   expect(r.status).toBe(422);
-  expect((await state(s)).plan.testCommand).toBeUndefined();
+  expect((await state(s)).project.testCommand).toBeUndefined();
 });

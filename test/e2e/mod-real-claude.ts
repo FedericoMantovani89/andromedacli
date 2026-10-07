@@ -8,12 +8,12 @@ import { join } from 'node:path';
 
 process.env.CONSOLE_TEST = '1';
 const { startServer } = await import('../../src/server/index');
-const planRoot = process.argv[2];
-if (!planRoot) throw new Error('usage: mod-real-claude.ts <trusted-folder>');
+const projectRoot = process.argv[2];
+if (!projectRoot) throw new Error('usage: mod-real-claude.ts <trusted-folder>');
 
 const configDir = mkdtempSync(join(tmpdir(), 'real-cfg-'));
 writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false }, claude: { command: ['claude', '--model', 'haiku'] } }));
-rmSync(join(planRoot, '.console'), { recursive: true, force: true });
+rmSync(join(projectRoot, '.console'), { recursive: true, force: true });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const ESC = String.fromCharCode(27);
@@ -25,7 +25,7 @@ async function until(f: () => Promise<boolean>, ms: number): Promise<boolean> {
 }
 
 const started = Date.now();
-const s = await startServer({ port: 0, planRoot, configDir, planName: 'modtest' });
+const s = await startServer({ port: 0, projectRoot, configDir, projectName: 'modtest' });
 const ui = async (path: string, method = 'GET', body?: unknown) => {
   const r = await fetch(`${s.url}${path}`, {
     method, headers: { authorization: `Bearer ${s.token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined,
@@ -108,8 +108,8 @@ try {
   }
 } finally {
   await s.close();
-  rmSync(join(planRoot, '.console'), { recursive: true, force: true });
-  for (const f of ['permtest.txt', 'denytest.txt']) rmSync(join(planRoot, f), { force: true });
+  rmSync(join(projectRoot, '.console'), { recursive: true, force: true });
+  for (const f of ['permtest.txt', 'denytest.txt']) rmSync(join(projectRoot, f), { force: true });
 }
 const failed = results.filter(([, ok]) => !ok).length;
 console.log(`${failed === 0 ? 'REAL MOD CONTRACT PASSED' : `${failed} FAILED`} in ${Math.round((Date.now() - started) / 1000)} s`);

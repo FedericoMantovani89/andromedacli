@@ -20,10 +20,10 @@ let worktrees: Map<string, AgentGit>;
 
 beforeEach(() => {
   m = makeMultiRepo(['abc-fe', 'abc-be']);
-  tickets = new TicketStore(m.root); // plan state lives in the plan folder, which is NOT a repository
+  tickets = new TicketStore(m.root); // project state lives in the project folder, which is NOT a repository
   worktrees = new Map();
   svc = new MergeService({
-    tickets, root: m.root, plan: 'p',
+    tickets, root: m.root, project: 'p',
     worktreeOf: (slug) => worktrees.get(slug),
     testCommand: () => undefined, testTimeoutMs: () => 30_000, squash: () => true,
     language: () => ({ lang: 'en', t: createTranslator({ lang: 'en', messages: bundles.get('en') ?? {}, fallback: bundles.get('en') }) }),
@@ -37,7 +37,7 @@ afterEach(() => removeDir(m.base));
 /** An approved ticket in one of the repos: a worktree with one commit of work, review passed. */
 async function approvedTicket(slug: string, repoName: string, files: Record<string, string>): Promise<{ wt: string; branch: string }> {
   const repo = m.repos[repoName]!.repo;
-  const w = await createAgentWorktree({ repo, plan: 'p', slug });
+  const w = await createAgentWorktree({ repo, project: 'p', slug });
   for (const [name, content] of Object.entries(files)) {
     mkdirSync(join(w.path, name, '..'), { recursive: true });
     writeFileSync(join(w.path, name), content);
@@ -59,20 +59,20 @@ async function approvedTicket(slug: string, repoName: string, files: Record<stri
   return { wt: w.path, branch: w.branch };
 }
 
-it("merges a ticket of abc-fe into abc-fe's plan branch, even though the plan folder is not a repository", async () => {
+it("merges a ticket of abc-fe into abc-fe's project branch, even though the project folder is not a repository", async () => {
   const { wt, branch } = await approvedTicket('fe-job', 'abc-fe', { 'src/a.js': 'a\n' });
   const r = await svc.mergeTicket('fe-job');
   expect(r).toMatchObject({ status: 'merged' });
   const fe = m.repos['abc-fe']!.repo;
-  expect(gitSync(fe, 'show', 'plan/p:src/a.js')).toBe('a');
+  expect(gitSync(fe, 'show', 'project/p:src/a.js')).toBe('a');
   expect(existsSync(wt)).toBe(false); // worktree removed
   expect(gitSync(fe, 'branch', '--list', branch)).toBe(''); // author branch deleted
-  expect(gitSync(m.repos['abc-be']!.repo, 'branch', '--list', 'plan/p')).toBe(''); // the other repo is untouched
+  expect(gitSync(m.repos['abc-be']!.repo, 'branch', '--list', 'project/p')).toBe(''); // the other repo is untouched
 });
 it('two tickets in two repos merge independently', async () => {
   await approvedTicket('fe-job', 'abc-fe', { 'f.js': 'f\n' });
   await approvedTicket('be-job', 'abc-be', { 'b.js': 'b\n' });
   expect(await svc.mergeTicket('fe-job')).toMatchObject({ status: 'merged' });
   expect(await svc.mergeTicket('be-job')).toMatchObject({ status: 'merged' });
-  expect(gitSync(m.repos['abc-be']!.repo, 'show', 'plan/p:b.js')).toBe('b');
+  expect(gitSync(m.repos['abc-be']!.repo, 'show', 'project/p:b.js')).toBe('b');
 });

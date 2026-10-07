@@ -44,7 +44,7 @@ function setup(over: Partial<NotificationsConfig> = {}, o: { available?: boolean
   const svc = new NotificationService({
     config: () => config, notifier, presence, clock,
     translate: () => createTranslator({ lang: 'en', messages: en }),
-    clickUrl: (id) => `http://127.0.0.1:1/?token=t&plan=p${id ? `#queue=${id}` : ''}`,
+    clickUrl: (id) => `http://127.0.0.1:1/?token=t&project=p${id ? `#queue=${id}` : ''}`,
     isPending: (id) => pending.has(id),
     pushBrowser: (m) => browser.push(m),
   });
@@ -61,7 +61,7 @@ describe('NotificationService: what notifies', () => {
     s.svc.onItem(s.item('q1'));
     expect(s.sent).toHaveLength(0); // buffered
     await s.advance(5000);
-    expect(s.sent).toEqual([{ title: 'Question for you', message: 'fix-login: Which color?', open: 'http://127.0.0.1:1/?token=t&plan=p#queue=q1', sound: true }]);
+    expect(s.sent).toEqual([{ title: 'Question for you', message: 'fix-login: Which color?', open: 'http://127.0.0.1:1/?token=t&project=p#queue=q1', sound: true }]);
   });
   it('a long text is shortened to 120 characters; console items show no sender', async () => {
     const s = setup();
@@ -235,7 +235,7 @@ describe('interrupted agents', () => {
     s.svc.onRegistryChange(agent('interrupted'));
     s.svc.onRegistryChange(agent('interrupted'));
     await s.advance(5000);
-    expect(s.sent).toEqual([{ title: 'Agent interrupted', message: 'Agent "fix-login" was interrupted', open: 'http://127.0.0.1:1/?token=t&plan=p', sound: true }]);
+    expect(s.sent).toEqual([{ title: 'Agent interrupted', message: 'Agent "fix-login" was interrupted', open: 'http://127.0.0.1:1/?token=t&project=p', sound: true }]);
     // it works again and is interrupted again: a new announcement
     s.svc.onRegistryChange(agent('working'));
     s.svc.onRegistryChange(agent('interrupted'));

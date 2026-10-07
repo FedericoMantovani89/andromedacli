@@ -77,7 +77,7 @@ export function closeOverlay(): void {
   window.dispatchEvent(new CustomEvent('overlayclosed'));
 }
 
-/** Opens the Options dialog (tabs: models, budget, git, guard, plans, language, prerequisites, plugins...; see options.ts). */
+/** Opens the Options dialog (tabs: models, budget, git, guard, projects, language, prerequisites, plugins...; see options.ts). */
 export function openSettings(getState: () => StateMessage | undefined): void {
   void openOptions(getState);
 }

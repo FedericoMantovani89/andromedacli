@@ -25,7 +25,7 @@ it('a bad name or profile comes back as an error code the main can read, and not
 });
 it('over the limit the request is queued, visible as "queued", with no process', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   expect((await spawnTool(s, 'first-job')).body.status).toBe('started');
   const second = (await spawnTool(s, 'second-job')).body;
   expect(second).toEqual({ status: 'queued', name: 'second-job', position: 1 });
@@ -35,13 +35,13 @@ it('over the limit the request is queued, visible as "queued", with no process',
 });
 it('a queued name is reserved: asking for it again is a duplicate', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   await spawnTool(s, 'first-job'); await spawnTool(s, 'second-job');
   expect((await spawnTool(s, 'second-job')).body).toMatchObject({ status: 'error', code: 'slug.duplicate' });
 });
 it('the queued agent starts by itself when the first one finishes its goal', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   await spawnTool(s, 'first-job'); await spawnTool(s, 'second-job');
   await modEvent(s, 'first-job', 'session.start');
   await modEvent(s, 'first-job', 'turn.start');
@@ -53,16 +53,16 @@ it('the queued agent starts by itself when the first one finishes its goal', asy
 });
 it('lowering the limit stops nothing that is running', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 3, perPlan: 3 });
+  s.setLimits({ global: 3, perProject: 3 });
   await spawnTool(s, 'one-job'); await spawnTool(s, 'two-job');
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   const st = await state(s);
   expect(st.agents.every((a: any) => a.status === 'running')).toBe(true);
   expect((await spawnTool(s, 'three-job')).body.status).toBe('queued');
 });
 it('a process that dies while working frees its slot for the queue', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   await spawnTool(s, 'first-job'); await spawnTool(s, 'second-job');
   await modEvent(s, 'first-job', 'turn.start');
   s.writeToSession('first-job', 'quit\r');
@@ -71,7 +71,7 @@ it('a process that dies while working frees its slot for the queue', async () =>
 });
 it('the UI button goes through the same flow: 201 when started, 202 with the position when queued', async () => {
   const s = await bootServer();
-  s.setLimits({ global: 1, perPlan: 1 });
+  s.setLimits({ global: 1, perProject: 1 });
   const a = await ui(s, '/api/agents', 'POST', { slug: 'first-job', profile: 'backend' });
   expect(a.status).toBe(201);
   const b = await ui(s, '/api/agents', 'POST', { slug: 'second-job', profile: 'backend' });
@@ -111,7 +111,7 @@ it('a queued replacement whose start fails later hands its ticket to the user (n
   const registry = new AgentRegistry();
   registry.register({ slug: 'fix-login-r2', role: 'agent', profile: 'backend', queued: true });
   const ctx = {
-    tickets, inbox, registry, tokens: new SessionTokens(), planName: 'shop-api', broadcastState: () => {},
+    tickets, inbox, registry, tokens: new SessionTokens(), projectName: 'shop-api', broadcastState: () => {},
     review: { abandonReview: () => false }, recovery: { abandon: () => false },
   } as unknown as Parameters<typeof failQueuedStart>[0];
   failQueuedStart(ctx, { slug: 'fix-login-r2', profile: 'backend', source: 'main', resumeBranch: 'agent/shop-api/fix-login' });

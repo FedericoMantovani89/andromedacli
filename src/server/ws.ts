@@ -2,7 +2,7 @@ import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { extractToken, isAllowedHost, isAllowedOrigin, tokensEqual } from './security';
-import { buildState, type Context, type PlanResolver } from './http';
+import { buildState, type Context, type ProjectResolver } from './http';
 import type { ResizeMessage } from '../shared/protocol';
 
 function reject(socket: Duplex, status: number, reason: string): void {
@@ -11,28 +11,28 @@ function reject(socket: Duplex, status: number, reason: string): void {
 }
 
 /** Two socket kinds (SPEC 4.1): binary terminal bytes per session, and JSON UI state. */
-export function attachWebSockets(server: Server, source: Context | PlanResolver): { broadcastState(): void; broadcastJson(payload: unknown, plan?: string): void; closePlan(name: string): void; closeAll(): void } {
-  const resolve: PlanResolver = typeof source === 'function' ? source : () => source;
+export function attachWebSockets(server: Server, source: Context | ProjectResolver): { broadcastState(): void; broadcastJson(payload: unknown, project?: string): void; closeProject(name: string): void; closeAll(): void } {
+  const resolve: ProjectResolver = typeof source === 'function' ? source : () => source;
   const wss = new WebSocketServer({ noServer: true });
-  // Each UI socket belongs to the plan it asked for (`?plan=`) and gets that plan's state; terminals too.
+  // Each UI socket belongs to the project it asked for (`?project=`) and gets that project's state; terminals too.
   const uiSockets = new Map<WebSocket, string>();
   const termSockets = new Map<WebSocket, string>();
-  const planOf = (url: URL): Context | undefined => resolve(url.searchParams.get('plan') ?? undefined);
+  const projectOf = (url: URL): Context | undefined => resolve(url.searchParams.get('project') ?? undefined);
 
-  // Any change in any plan pushes to every socket: the tab dots of the other plans need it.
+  // Any change in any project pushes to every socket: the tab dots of the other projects need it.
   const broadcastState = () => {
-    for (const [ws, plan] of uiSockets) {
+    for (const [ws, project] of uiSockets) {
       if (ws.readyState !== ws.OPEN) continue;
-      const planCtx = resolve(plan);
-      if (planCtx) ws.send(JSON.stringify(buildState(planCtx)));
-      else ws.close(); // its plan was closed
+      const projectCtx = resolve(project);
+      if (projectCtx) ws.send(JSON.stringify(buildState(projectCtx)));
+      else ws.close(); // its project was closed
     }
   };
 
-  /** A message about one plan (a reading entry) only goes to the sockets of that plan. */
-  const broadcastJson = (payload: unknown, plan?: string) => {
+  /** A message about one project (a reading entry) only goes to the sockets of that project. */
+  const broadcastJson = (payload: unknown, project?: string) => {
     const text = JSON.stringify(payload);
-    for (const [ws, p] of uiSockets) if (ws.readyState === ws.OPEN && (plan === undefined || p === plan)) ws.send(text);
+    for (const [ws, p] of uiSockets) if (ws.readyState === ws.OPEN && (project === undefined || p === project)) ws.send(text);
   };
 
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -52,13 +52,13 @@ export function attachWebSockets(server: Server, source: Context | PlanResolver)
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
     const token = extractToken(req.headers, url);
     if (!token || !tokensEqual(token, first.token)) return reject(socket, 401, 'Unauthorized');
-    const ctx = planOf(url);
+    const ctx = projectOf(url);
     if (!ctx) return reject(socket, 404, 'Not Found');
 
     const term = /^\/ws\/term\/([a-z0-9-]+)$/.exec(url.pathname);
     if (url.pathname === '/ws/ui') {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        uiSockets.set(ws, ctx.planName);
+        uiSockets.set(ws, ctx.projectName);
         ws.on('close', () => uiSockets.delete(ws));
         ws.send(JSON.stringify(buildState(ctx)));
       });
@@ -66,12 +66,12 @@ export function attachWebSockets(server: Server, source: Context | PlanResolver)
     }
     if (term) {
       const id = term[1]!;
-      // A plan's own sessions first, then the console-wide utility terminals (assisted installs), which take no keyboard input.
+      // A project's own sessions first, then the console-wide utility terminals (assisted installs), which take no keyboard input.
       const utility = ctx.ptys.status(id) === 'unknown' && ctx.utilityPtys.status(id) !== 'unknown';
       const pm = utility ? ctx.utilityPtys : ctx.ptys;
       if (pm.status(id) === 'unknown') return reject(socket, 404, 'Not Found');
       wss.handleUpgrade(req, socket, head, (ws) => {
-        termSockets.set(ws, ctx.planName);
+        termSockets.set(ws, ctx.projectName);
         ws.on('close', () => termSockets.delete(ws));
         const snapshot = pm.snapshot(id);
         if (snapshot.length > 0) ws.send(snapshot, { binary: true });
@@ -97,7 +97,7 @@ export function attachWebSockets(server: Server, source: Context | PlanResolver)
   return {
     broadcastState,
     broadcastJson,
-    closePlan: (name) => { for (const m of [uiSockets, termSockets]) for (const [ws, plan] of m) if (plan === name) ws.terminate(); },
+    closeProject: (name) => { for (const m of [uiSockets, termSockets]) for (const [ws, project] of m) if (project === name) ws.terminate(); },
     closeAll: () => { for (const ws of wss.clients) ws.terminate(); wss.close(); },
   };
 }

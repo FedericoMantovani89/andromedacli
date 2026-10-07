@@ -10,7 +10,7 @@ export type CleanupResult = { status: 'ok'; removed: string; branch: string } | 
 
 export interface CleanupDeps {
   repo: string;
-  plan: string;
+  project: string;
   secretPatterns: string[];
   /** The agent's worktree and branch as the console knows them; undefined for an unknown agent or one with no worktree. */
   agentGit(slug: string): { worktree: string; branch: string } | undefined;
@@ -30,7 +30,7 @@ export async function cleanupWorktree(d: CleanupDeps, slug: string): Promise<Cle
   if (!where) return { status: 'refused', code: 'unknown' };
   if (d.isActive(slug)) return { status: 'refused', code: 'still_active' };
 
-  const wip = await commitWip({ worktree: where.worktree, slug, plan: d.plan, reason: 'cleanup', secretPatterns: d.secretPatterns });
+  const wip = await commitWip({ worktree: where.worktree, slug, project: d.project, reason: 'cleanup', secretPatterns: d.secretPatterns });
   if (!wip.ok) return { status: 'refused', code: 'not_saved', detail: `${wip.code}${wip.files ? `: ${wip.files.join(', ')}` : wip.detail ? `: ${wip.detail}` : ''}` };
 
   const remotes = await git(where.worktree, ['remote']);

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { AgentRecord } from '../plan-store';
+import type { AgentRecord } from '../project-store';
 import type { AgentRegistry, Role } from './registry';
 import type { TicketStore, Ticket } from '../tickets/store';
 import { canMove, type TicketStatus } from '../tickets/flow';

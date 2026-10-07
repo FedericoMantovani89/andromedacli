@@ -13,33 +13,33 @@ export function initToken(): string {
 
 export const token = initToken();
 
-const PLAN_KEY = 'console.plan';
+const PROJECT_KEY = 'console.project';
 
-/** The plan on screen: every request and socket of the page names it (`?plan=`); undefined means the first plan. */
-let selectedPlan: string | undefined = (() => {
-  try { return sessionStorage.getItem(PLAN_KEY) ?? undefined; } catch { return undefined; }
+/** The project on screen: every request and socket of the page names it (`?project=`); undefined means the first project. */
+let selectedProject: string | undefined = (() => {
+  try { return sessionStorage.getItem(PROJECT_KEY) ?? undefined; } catch { return undefined; }
 })();
 
-export const getSelectedPlan = (): string | undefined => selectedPlan;
+export const getSelectedProject = (): string | undefined => selectedProject;
 
-export function setSelectedPlan(name: string | undefined): void {
-  selectedPlan = name;
+export function setSelectedProject(name: string | undefined): void {
+  selectedProject = name;
   try {
-    if (name === undefined) sessionStorage.removeItem(PLAN_KEY);
-    else sessionStorage.setItem(PLAN_KEY, name);
+    if (name === undefined) sessionStorage.removeItem(PROJECT_KEY);
+    else sessionStorage.setItem(PROJECT_KEY, name);
   } catch { /* storage may be blocked: the selection is just not remembered */ }
 }
 
-/** Adds `plan=<selected>` to a path, except on the routes that are not about one plan. */
-function withPlan(path: string): string {
-  if (selectedPlan === undefined || path.startsWith('/api/plans')) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}plan=${encodeURIComponent(selectedPlan)}`;
+/** Adds `project=<selected>` to a path, except on the routes that are not about one project. */
+function withProject(path: string): string {
+  if (selectedProject === undefined || path.startsWith('/api/projects')) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}project=${encodeURIComponent(selectedProject)}`;
 }
 
 export interface ApiResult<T> { status: number; body: T }
 
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<ApiResult<T>> {
-  const res = await fetch(withPlan(path), {
+  const res = await fetch(withProject(path), {
     method: init.method ?? 'GET',
     headers: { authorization: `Bearer ${token}`, ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}) },
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
@@ -49,7 +49,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   return { status: res.status, body: body as T };
 }
 
-/** A terminal socket names its own plan (it reconnects on its own, whatever tab is on screen by then). */
-export function wsUrl(path: string, plan: string | undefined = selectedPlan): string {
-  return `ws://${location.host}${path}?token=${encodeURIComponent(token)}${plan !== undefined ? `&plan=${encodeURIComponent(plan)}` : ''}`;
+/** A terminal socket names its own project (it reconnects on its own, whatever tab is on screen by then). */
+export function wsUrl(path: string, project: string | undefined = selectedProject): string {
+  return `ws://${location.host}${path}?token=${encodeURIComponent(token)}${project !== undefined ? `&project=${encodeURIComponent(project)}` : ''}`;
 }

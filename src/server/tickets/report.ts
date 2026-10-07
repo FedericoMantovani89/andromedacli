@@ -8,7 +8,7 @@ export interface ChangedFile { path: string; /** null for a binary file */ added
 
 export interface ReportInput {
   slug: string;
-  plan: string;
+  project: string;
   branch: string;
   goal?: string;
   steps: Step[];
@@ -68,7 +68,7 @@ export function buildReport(i: ReportInput): string {
   const { t } = i;
   const na = t('common.notAvailable');
   const out: string[] = [];
-  out.push('---', `ticket: ${plain(i.slug)}`, `plan: ${plain(i.plan)}`, `branch: ${plain(i.branch)}`, `lang: ${plain(i.lang)}`);
+  out.push('---', `ticket: ${plain(i.slug)}`, `project: ${plain(i.project)}`, `branch: ${plain(i.branch)}`, `lang: ${plain(i.lang)}`);
   if (i.generatedAt && TIMESTAMP.test(i.generatedAt)) out.push(`generated: ${i.generatedAt}`);
   out.push('---', '', `# ${plain(i.slug)}`, '');
 
@@ -138,7 +138,7 @@ export function squashMessage(i: ReportInput): string {
     lines.push('Notes:');
     for (const s of notes) lines.push(`- step ${s.n}: ${cut(oneLine(s.note!), 120)}`);
   }
-  lines.push('', `Agent: ${plain(i.slug)}`, `Ticket: ${plain(i.slug)}`, `Piano: ${plain(i.plan)}`);
+  lines.push('', `Agent: ${plain(i.slug)}`, `Ticket: ${plain(i.slug)}`, `Progetto: ${plain(i.project)}`);
   const passed = [...i.verdicts].reverse().find((v) => v.pass);
   if (passed) lines.push(`Reviewed-by: ${plain(passed.reviewer)} (round ${passed.round})`);
   return `${lines.join('\n')}\n`;

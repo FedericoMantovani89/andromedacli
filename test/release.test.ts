@@ -2,7 +2,7 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
-import { ensurePlanWorktree } from '../src/server/git/merge';
+import { ensureProjectWorktree } from '../src/server/git/merge';
 import { installReleaseHook } from '../src/server/git/release-hook';
 import { loadBundles } from '../src/server/i18n-bundles';
 import { createTranslator } from '../src/shared/i18n';
@@ -27,7 +27,7 @@ beforeEach(async () => {
   command = `node -e "process.exit(require('fs').existsSync('BAD') ? 1 : 0)"`;
   main = []; asked = [];
   svc = new ReleaseService({
-    tickets, root: t.repo, plan: 'p',
+    tickets, root: t.repo, project: 'p',
     testCommand: () => command, testTimeoutMs: () => 30_000,
     language: () => ({ lang: 'en', t: createTranslator({ lang: 'en', messages: bundles.get('en') ?? {}, fallback: bundles.get('en') }) }),
     notifyMain: (text) => { main.push(text); },
@@ -36,14 +36,14 @@ beforeEach(async () => {
 });
 afterEach(() => removeDir(t.base));
 
-/** What merge_ticket leaves behind: a commit on the plan branch and a ticket in `merged`. */
+/** What merge_ticket leaves behind: a commit on the project branch and a ticket in `merged`. */
 async function mergedTicket(slug: string, file: string, content = `${slug}\n`): Promise<string> {
-  const plan = await ensurePlanWorktree(t.repo, 'p');
-  if (!plan.ok) throw new Error(plan.code);
-  writeFileSync(join(plan.path, file), content);
-  gitSync(plan.path, 'add', '-A');
-  gitSync(plan.path, '-c', 'user.name=T', '-c', 'user.email=t@e.x', 'commit', '-q', '-m', `ticket ${slug}: work`);
-  const sha = gitSync(plan.path, 'rev-parse', 'HEAD');
+  const project = await ensureProjectWorktree(t.repo, 'p');
+  if (!project.ok) throw new Error(project.code);
+  writeFileSync(join(project.path, file), content);
+  gitSync(project.path, 'add', '-A');
+  gitSync(project.path, '-c', 'user.name=T', '-c', 'user.email=t@e.x', 'commit', '-q', '-m', `ticket ${slug}: work`);
+  const sha = gitSync(project.path, 'rev-parse', 'HEAD');
   tickets.setChecklist(slug, [{ n: 1, title: 'Study', done: true, note: `note of ${slug}` }]);
   tickets.setGoal(slug, `Goal of ${slug}`);
   tickets.setTests(slug, { ok: true, command, tail: '', sha, at: 'x' });
@@ -57,7 +57,7 @@ async function mergedTicket(slug: string, file: string, content = `${slug}\n`): 
 }
 const remoteMain = (): string => gitSync(t.remote, 'rev-parse', 'main');
 const localMain = (): string => gitSync(t.repo, 'rev-parse', 'main');
-const planTip = (): string => gitSync(t.repo, 'rev-parse', 'plan/p');
+const projectTip = (): string => gitSync(t.repo, 'rev-parse', 'project/p');
 const settled = async (): Promise<void> => { await new Promise((r) => setTimeout(r, 50)); await svc.idle(); };
 
 describe('proposeRelease', () => {
@@ -72,7 +72,7 @@ describe('proposeRelease', () => {
     expect(r).toMatchObject({ status: 'asked' });
     expect(asked).toHaveLength(1);
     const p = asked[0]!.payload;
-    expect(p).toMatchObject({ plan: 'p', branch: 'main', tip: planTip() });
+    expect(p).toMatchObject({ project: 'p', branch: 'main', tip: projectTip() });
     expect(p.tickets.map((x: any) => x.slug).sort()).toEqual(['a-job', 'b-job']);
     expect(p.tickets[0]).toMatchObject({ goal: expect.stringContaining('Goal of'), verdicts: [expect.objectContaining({ pass: true })] });
     expect(p.tickets.find((x: any) => x.slug === 'a-job').report).toContain('report text of a-job');
@@ -88,7 +88,7 @@ describe('proposeRelease', () => {
     expect((second as { id?: string }).id).toBe((first as { id?: string }).id);
     expect(asked).toHaveLength(1);
   });
-  it('does not bother the user when the tests of the plan branch are red', async () => {
+  it('does not bother the user when the tests of the project branch are red', async () => {
     await mergedTicket('a-job', 'BAD');
     const r = await svc.proposeRelease();
     expect(r).toMatchObject({ status: 'tests_failed' });
@@ -109,10 +109,10 @@ describe('the user answers', () => {
     expect(main.join('\n')).toMatch(/rejected/i);
     expect(await svc.proposeRelease()).toMatchObject({ status: 'asked' }); // a new proposal is possible afterwards
   });
-  it('approve: main moves to the plan tip locally and on origin, and the tickets are released', async () => {
+  it('approve: main moves to the project tip locally and on origin, and the tickets are released', async () => {
     await mergedTicket('a-job', 'a.txt');
     await mergedTicket('b-job', 'b.txt');
-    const tip = planTip();
+    const tip = projectTip();
     await svc.proposeRelease();
     asked[0]!.answer('approve');
     await settled();
@@ -157,11 +157,11 @@ describe('the user answers', () => {
     gitSync(t.repo, 'checkout', '-q', '-b', 'something-else');
     asked[0]!.answer('approve');
     await settled();
-    expect(remoteMain()).not.toBe(planTip());
+    expect(remoteMain()).not.toBe(projectTip());
     expect(gitSync(t.repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('something-else');
     expect(main.join('\n')).toMatch(/release\.notOnMain|not on main/i);
   });
-  it('a plan branch that moved after the proposal is not released: the user approved something else', async () => {
+  it('a project branch that moved after the proposal is not released: the user approved something else', async () => {
     await mergedTicket('a-job', 'a.txt');
     await svc.proposeRelease();
     await mergedTicket('b-job', 'b.txt'); // merged after the proposal
@@ -170,7 +170,7 @@ describe('the user answers', () => {
     await settled();
     expect(remoteMain()).toBe(before);
     expect(tickets.get('a-job')!.status).toBe('merged');
-    expect(main.join('\n')).toMatch(/release\.planMoved|moved/i);
+    expect(main.join('\n')).toMatch(/release\.projectMoved|moved/i);
   });
   it('tests that turn red on main after the merge undo it: main is back, nothing is pushed', async () => {
     await mergedTicket('a-job', 'a.txt');
@@ -197,12 +197,12 @@ describe('the user answers', () => {
     await settled();
     expect(tickets.get('a-job')!.status).toBe('merged');
     expect(main.join('\n')).toMatch(/release\.pushFailed|push/i);
-    expect(localMain()).toBe(planTip()); // merged locally
+    expect(localMain()).toBe(projectTip()); // merged locally
     renameSync(`${t.remote}.away`, t.remote);
     expect(await svc.proposeRelease()).toMatchObject({ status: 'asked' });
     asked[1]!.answer('approve');
     await settled();
-    expect(remoteMain()).toBe(planTip());
+    expect(remoteMain()).toBe(projectTip());
     expect(tickets.get('a-job')!.status).toBe('released');
   });
   it('without a remote the release is a local merge, and says so', async () => {
@@ -211,7 +211,7 @@ describe('the user answers', () => {
     await svc.proposeRelease();
     asked[0]!.answer('approve');
     await settled();
-    expect(localMain()).toBe(planTip());
+    expect(localMain()).toBe(projectTip());
     expect(tickets.get('a-job')!.status).toBe('released');
     expect(main.join('\n')).toMatch(/no remote/i);
   });
@@ -221,7 +221,7 @@ describe('the user answers', () => {
     asked[0]!.answer('maybe');
     await settled();
     expect(tickets.get('a-job')!.status).toBe('merged');
-    expect(remoteMain()).not.toBe(planTip());
+    expect(remoteMain()).not.toBe(projectTip());
   });
 });
 
@@ -271,10 +271,10 @@ describe('review findings: release', () => {
     await settled();
     expect(tickets.list().filter((x) => x.status === 'released')).toHaveLength(22);
   });
-  it('releases the commit that was approved, not whatever the plan branch name points to later', async () => {
+  it('releases the commit that was approved, not whatever the project branch name points to later', async () => {
     await mergedTicket('a-job', 'a.txt');
     await svc.proposeRelease();
-    const approved = planTip();
+    const approved = projectTip();
     asked[0]!.answer('approve');
     await settled();
     expect(remoteMain()).toBe(approved);

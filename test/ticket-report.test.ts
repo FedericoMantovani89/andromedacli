@@ -25,14 +25,14 @@ const COUNTER = `node -e "const fs=require('fs');const f='runs.txt';fs.appendFil
 
 beforeEach(async () => {
   t = makeRepo({ remote: true });
-  const w = await createAgentWorktree({ repo: t.repo, plan: 'p', slug: 'a-job' });
+  const w = await createAgentWorktree({ repo: t.repo, project: 'p', slug: 'a-job' });
   wt = w.path;
   branch = w.branch;
   tickets = new TicketStore(t.repo);
   command = 'node -e "process.exit(0)"';
   lang = 'en';
   svc = new ReviewService({
-    tickets, root: t.repo, plan: 'p',
+    tickets, root: t.repo, project: 'p',
     worktreeOf: (slug) => (slug === 'a-job' ? { worktree: wt, branch } : undefined),
     testCommand: () => command, testTimeoutMs: () => 30_000,
     language: () => ({ lang, t: createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') }) }),
@@ -98,7 +98,7 @@ describe('ticketReport', () => {
   });
   it('a worktree that is gone is reported as such', async () => {
     deliver({ 'src/a.js': 'x\n' });
-    const gone = new ReviewService({ tickets, root: t.repo, plan: 'p', worktreeOf: () => undefined, testCommand: () => command, testTimeoutMs: () => 1000, language: () => ({ lang, t: (k: string) => k }), spawnReviewer: async () => ({ ok: true }), existingSlugs: () => [], authorAlive: () => true, notifyMain: () => {}, notifyAuthor: () => {}, askUser: () => {}, endReviewer: () => {} });
+    const gone = new ReviewService({ tickets, root: t.repo, project: 'p', worktreeOf: () => undefined, testCommand: () => command, testTimeoutMs: () => 1000, language: () => ({ lang, t: (k: string) => k }), spawnReviewer: async () => ({ ok: true }), existingSlugs: () => [], authorAlive: () => true, notifyMain: () => {}, notifyAuthor: () => {}, askUser: () => {}, endReviewer: () => {} });
     expect(await gone.ticketReport('a-job')).toMatchObject({ ok: false, code: 'no_worktree' });
   });
   it('refuses to run the tests on a dirty worktree or when the branch moved after delivery', async () => {
