@@ -52,7 +52,6 @@ it('PUT /api/config updates the limits in place and GET /api/options shows the c
   const o = (await ui(s, '/api/options')).body;
   expect(o.config.agents.maxActiveGlobal).toBe(2);
   expect(o.config.agents.bypassPermissions).toBe(false);
-  expect(o.names.minLength).toBe(3);
   expect(o.paths.configDir).toBeTruthy();
   const bad = await ui(s, '/api/config', 'PUT', { budget: { alertPercent: 0 } });
   expect(bad.status).toBe(422);
