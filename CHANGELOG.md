@@ -8,6 +8,8 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- Options: the panel has a visible scrollbar and a shadow at the edge that still has content behind it, so a long tab shows there is more below.
+- Options, Budget and limits: the token budget, the alert/restriction/stop levels and the usage-limit levels are horizontal sliders with the value in a read-only box at the right. Levels that must stay in order stop at their neighbour and are sent as one request; the footnote now says which settings apply to new agents.
 - Options, Profiles: profiles can be created, edited and deleted from the dialog (files in the config folder, all fields: name, description, model, token budget, read only, instructions). A shipped profile is edited as a copy and restored one by one or all at once; a profile only the project has stays read only here. New routes `GET /api/profiles`, `PUT|DELETE /api/profiles/<name>`, `POST /api/profiles/restore`; the new-agent menu lists every profile.
 - After Save in Options, a Yes/No question offers to restart the sessions when a setting Claude reads only at launch changed (bypass, guard mode, agent model) or a program installed since is not on the PATH of the running console. Yes (`POST /api/restart`) ends and starts again every project's sessions (the main resumes its conversation, the agents that were running are resumed), refreshes the PATH from the system on Windows, and loads the page again from the splash; the console, its port and token stay.
 - The divider between main and the agents can be dragged (20-80%) to widen or narrow either side; double-click resets to half; the position is remembered in the browser.

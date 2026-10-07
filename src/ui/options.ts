@@ -60,6 +60,11 @@ const note = (key: string, params?: Record<string, string | number>): HTMLElemen
   bindText(p, key, params);
   return p;
 };
+const footnote = (key: string): HTMLElement => {
+  const p = note(key);
+  p.classList.add('options-footnote');
+  return p;
+};
 const heading = (key: string): HTMLElement => {
   const h = el('h3', 'options-heading');
   bindText(h, key);
@@ -148,6 +153,73 @@ const fields = (env: Env, defs: FieldDef[]): HTMLElement => {
   return box;
 };
 
+interface SliderDef { path: string; label: string; min: number; max: number; step: number; format?: (n: number) => string }
+
+/** A horizontal slider with its value shown at the right in a read-only box. `onValue` runs with the value after every move. */
+function createSlider(def: SliderDef, start: number, onValue: (n: number, slider: HTMLInputElement) => number): { row: HTMLElement; set(n: number): void; get(): number } {
+  const row = el('div', 'options-slider');
+  const text = el('span', 'options-slider-label');
+  bindText(text, def.label);
+  const input = el('input');
+  input.type = 'range';
+  input.name = def.path;
+  input.min = String(def.min);
+  input.step = String(def.step);
+  // A saved value beyond the usual range stays reachable: the scale grows to hold it.
+  input.max = String(Math.max(def.max, start));
+  const out = el('output', 'options-slider-value');
+  const fmt = def.format ?? ((n: number) => String(n));
+  const paint = (): void => {
+    const n = Number(input.value);
+    out.textContent = fmt(n);
+    input.style.setProperty('--fill', `${((n - Number(input.min)) / (Number(input.max) - Number(input.min))) * 100}%`);
+  };
+  const set = (n: number): void => { input.value = String(n); paint(); };
+  input.value = String(start);
+  paint();
+  input.addEventListener('input', () => { set(onValue(Number(input.value), input)); });
+  const line = el('div', 'options-slider-line');
+  line.append(input, out);
+  row.append(text, line);
+  return { row, set, get: () => Number(input.value) };
+}
+
+const groupNumber = (n: number): string => new Intl.NumberFormat(language()).format(n);
+
+/** One slider for one config entry (staged like any field). */
+function sliderField(env: Env, def: SliderDef): HTMLElement {
+  const start = Number(getPath(env.options?.config, def.path) ?? def.min);
+  const s = createSlider(def, start, (n) => { saveEntry(env, def.path, n); return n; });
+  return s.row;
+}
+
+/**
+ * Sliders that must stay in order (alert below restriction below stop): moving one stops at its neighbour, and the whole group is sent as one
+ * request, because the server checks the order of the group and a value sent alone could be refused against the old values of the others.
+ * `gaps[i]` is the least distance from slider i to slider i+1.
+ */
+function sliderGroup(env: Env, defs: SliderDef[], gaps: number[]): HTMLElement {
+  const box = el('div', 'options-slider-group');
+  const values = defs.map((d) => Number(getPath(env.options?.config, d.path) ?? d.min));
+  const sliders: ReturnType<typeof createSlider>[] = [];
+  const stage = (): void => {
+    const patch: Record<string, unknown> = {};
+    defs.forEach((d, i) => { setPath(patch, d.path, values[i]); if (env.options) setPath(env.options.config, d.path, values[i]); });
+    env.stage(`config:${defs[0]!.path}+`, () => api<ApiError>('/api/config', { method: 'PUT', body: patch }));
+  };
+  defs.forEach((d, i) => {
+    sliders.push(createSlider(d, values[i]!, (n) => {
+      const lo = i > 0 ? values[i - 1]! + gaps[i - 1]! : d.min;
+      const hi = i < defs.length - 1 ? values[i + 1]! - gaps[i]! : Number.POSITIVE_INFINITY;
+      values[i] = Math.min(Math.max(n, lo), hi);
+      stage();
+      return values[i]!;
+    }));
+    box.append(sliders[i]!.row);
+  });
+  return box;
+}
+
 const unavailable = (env: Env): HTMLElement | undefined => (env.options ? undefined : note(k('options.loadFailed')));
 
 function budgetTab(env: Env): HTMLElement {
@@ -161,13 +233,13 @@ function budgetTab(env: Env): HTMLElement {
     ]),
     note(k('options.agents.maxActive.help')),
     heading(k('options.budget.tokens')),
-    fields(env, [
-      { path: 'budget.agentTokens', label: k('options.budget.agentTokens'), kind: 'number' },
-      { path: 'budget.alertPercent', label: k('options.budget.alertPercent'), kind: 'number' },
-      { path: 'budget.limitPercent', label: k('options.budget.limitPercent'), kind: 'number' },
-      { path: 'budget.stopPercent', label: k('options.budget.stopPercent'), kind: 'number' },
-      { path: 'budget.graceMinutes', label: k('options.budget.graceMinutes'), kind: 'number' },
-    ]),
+    sliderField(env, { path: 'budget.agentTokens', label: k('options.budget.agentTokens'), min: 50_000, max: 2_000_000, step: 50_000, format: groupNumber }),
+    sliderGroup(env, [
+      { path: 'budget.alertPercent', label: k('options.budget.alertPercent'), min: 5, max: 200, step: 5, format: (n) => `${n} %` },
+      { path: 'budget.limitPercent', label: k('options.budget.limitPercent'), min: 5, max: 200, step: 5, format: (n) => `${n} %` },
+      { path: 'budget.stopPercent', label: k('options.budget.stopPercent'), min: 5, max: 200, step: 5, format: (n) => `${n} %` },
+    ], [5, 0]),
+    fields(env, [{ path: 'budget.graceMinutes', label: k('options.budget.graceMinutes'), kind: 'number' }]),
     heading(k('options.budget.loops')),
     fields(env, [
       { path: 'budget.loop.sameCall', label: k('options.budget.loop.sameCall'), kind: 'number' },
@@ -177,14 +249,16 @@ function budgetTab(env: Env): HTMLElement {
       { path: 'budget.loop.silenceMinutes', label: k('options.budget.loop.silenceMinutes'), kind: 'number' },
     ]),
     heading(k('options.budget.quota')),
+    sliderGroup(env, [
+      { path: 'budget.quota.halvePercent', label: k('options.budget.quota.halvePercent'), min: 5, max: 100, step: 5, format: (n) => `${n} %` },
+      { path: 'budget.quota.freezePercent', label: k('options.budget.quota.freezePercent'), min: 5, max: 100, step: 5, format: (n) => `${n} %` },
+      { path: 'budget.quota.stopPercent', label: k('options.budget.quota.stopPercent'), min: 5, max: 100, step: 5, format: (n) => `${n} %` },
+    ], [5, 5]),
     fields(env, [
-      { path: 'budget.quota.halvePercent', label: k('options.budget.quota.halvePercent'), kind: 'number' },
-      { path: 'budget.quota.freezePercent', label: k('options.budget.quota.freezePercent'), kind: 'number' },
-      { path: 'budget.quota.stopPercent', label: k('options.budget.quota.stopPercent'), kind: 'number' },
       { path: 'budget.quota.staggerSeconds', label: k('options.budget.quota.staggerSeconds'), kind: 'number' },
       { path: 'budget.quota.staggerGroup', label: k('options.budget.quota.staggerGroup'), kind: 'number' },
     ]),
-    note(k('settings.appliesToNew')),
+    footnote(k('options.budget.appliesToNew')),
   );
   return box;
 }

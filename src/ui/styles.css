@@ -322,3 +322,34 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .options-profiles-top.options-profile-bar { top: -18px; margin-top: -18px; padding-top: 18px; }
 .options-profile-actions.options-profile-bar { bottom: -8px; margin-bottom: -8px; padding-bottom: 8px; border-top: 1px solid var(--seam); }
 .options-profile-actions.options-profile-bar { justify-content: space-between; }
+
+/* Sliders (Options, Budget and limits): a filled track and a round thumb, with the value in a read-only box at the right. */
+.options-slider-group { display: grid; gap: 12px; }
+.options-slider { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+.options-slider-line { display: flex; align-items: center; gap: 14px; }
+.options-slider-value { flex: 0 0 auto; min-width: 6.5rem; padding: 6px 10px; text-align: right; font: 13px var(--mono); color: var(--text);
+  background: var(--bg, transparent); border: 1px solid var(--seam); border-radius: var(--radius); }
+.dialog input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1 1 auto; min-width: 0; width: auto; height: 22px; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer; --fill: 50%; }
+.dialog input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) 0, var(--accent) var(--fill), var(--seam-strong) var(--fill), var(--seam-strong) 100%); }
+.dialog input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--seam-strong); }
+.dialog input[type="range"]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent); }
+.dialog input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; border: 2px solid var(--accent);
+  background: var(--surface); box-shadow: 0 1px 4px rgba(0, 0, 0, .5); transition: transform .12s ease; }
+.dialog input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); background: var(--surface); }
+.dialog input[type="range"]:hover::-webkit-slider-thumb, .dialog input[type="range"]:focus-visible::-webkit-slider-thumb { transform: scale(1.18); background: var(--accent); }
+.dialog input[type="range"]:focus-visible { outline: none; }
+@media (prefers-reduced-motion: reduce) { .dialog input[type="range"]::-webkit-slider-thumb { transition: none; } }
+
+/* The options panel: a scrollbar that can be seen (the page-wide one is thin and dark) and a shadow at the edge that still has more behind it. */
+.options-panel { scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: var(--muted) var(--raised);
+  background:
+    linear-gradient(var(--surface) 30%, rgba(17, 20, 26, 0)) top / 100% 36px no-repeat local,
+    linear-gradient(rgba(17, 20, 26, 0), var(--surface) 70%) bottom / 100% 36px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0)) top / 100% 12px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0)) bottom / 100% 12px no-repeat scroll,
+    var(--surface); }
+.options-panel::-webkit-scrollbar { width: 14px; }
+.options-panel::-webkit-scrollbar-track { background: var(--raised); border-radius: 7px; }
+.options-panel::-webkit-scrollbar-thumb { background: var(--muted); border: 3px solid var(--raised); border-radius: 7px; min-height: 40px; }
+.options-panel::-webkit-scrollbar-thumb:hover { background: var(--text); }

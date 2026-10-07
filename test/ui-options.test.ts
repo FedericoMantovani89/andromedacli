@@ -100,7 +100,7 @@ describe('options dialog', () => {
   it('a refused save shows the error, keeps the dialog open and keeps what was typed', async () => {
     await openOptions(() => state);
     document.querySelector<HTMLElement>('.options-tab[data-tab="budget"]')!.click();
-    const input = document.querySelector<HTMLInputElement>('input[name="budget.alertPercent"]')!;
+    const input = document.querySelector<HTMLInputElement>('input[name="budget.graceMinutes"]')!;
     putStatus = 422;
     input.value = '150';
     input.dispatchEvent(new Event('change'));
@@ -150,6 +150,25 @@ describe('options dialog', () => {
     document.querySelector<HTMLElement>('button[name="cancelProfile"]')!.click();
     await flush();
     expect(saveBtn.hidden).toBe(false);
+  });
+  it('the budget levels are sliders with a read-only value; one stops at its neighbour and the trio is sent as one request', async () => {
+    await openOptions(() => state, 'budget');
+    const slider = (name: string) => document.querySelector<HTMLInputElement>(`input[type="range"][name="${name}"]`)!;
+    const value = (name: string) => slider(name).nextElementSibling as HTMLElement;
+    expect(value('budget.stopPercent').tagName).toBe('OUTPUT');
+    expect(value('budget.alertPercent').textContent).toBe('80 %');
+    const move = (name: string, to: number) => { slider(name).value = String(to); slider(name).dispatchEvent(new Event('input')); };
+    move('budget.alertPercent', 150); // past the restriction level (100): it stops five below it
+    expect(slider('budget.alertPercent').value).toBe('95');
+    expect(value('budget.alertPercent').textContent).toBe('95 %');
+    move('budget.stopPercent', 120);
+    await clickSave();
+    expect(puts).toEqual([{ budget: { alertPercent: 95, limitPercent: 100, stopPercent: 120 } }]);
+  });
+  it('the token budget slider shows the number with the language separators', async () => {
+    await openOptions(() => state, 'budget');
+    const out = document.querySelector<HTMLInputElement>('input[type="range"][name="budget.agentTokens"]')!.nextElementSibling as HTMLElement;
+    expect(out.textContent).toMatch(/^400\D?000$/);
   });
   it('the models menu offers Default and real models only, never an alias', async () => {
     await openOptions(() => state, 'models');
