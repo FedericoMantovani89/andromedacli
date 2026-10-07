@@ -12,6 +12,20 @@ interface Entry {
 
 const SCROLLBACK_BYTES = 4 * 1024 * 1024;
 
+type PtyOptions = { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> };
+
+/**
+ * On Windows the ConPTY that comes with node-pty (OpenConsole) instead of the one in the system: the old one (Windows 10) drops the
+ * alternate-screen and mouse requests of an application, so Claude Code in fullscreen mode never got the mouse wheel. If the bundled
+ * one cannot start, the system's is used as before.
+ */
+export function spawnPty(file: string, args: string[], o: PtyOptions, spawn: typeof nodePty.spawn = nodePty.spawn, platform: string = process.platform): nodePty.IPty {
+  if (platform === 'win32') {
+    try { return spawn(file, args, { ...o, useConptyDll: true }); } catch { /* the bundled ConPTY is missing or failed: use the system's */ }
+  }
+  return spawn(file, args, o);
+}
+
 /** Owns every terminal process. Browser tabs only subscribe; closing a tab never touches a process (SPEC 4.4). */
 export class PtyManager {
   private readonly entries = new Map<string, Entry>();
@@ -24,7 +38,7 @@ export class PtyManager {
   spawn(o: SpawnOptions): void {
     const old = this.entries.get(o.id);
     if (old && !old.exited) throw new Error(`pty ${o.id} already exists`);
-    const pty = nodePty.spawn(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
+    const pty = spawnPty(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
     const entry: Entry = { pty, ring: old?.ring ?? new ByteRing(SCROLLBACK_BYTES), subs: old?.subs ?? new Set(), exited: false, cols: o.cols, rows: o.rows };
     this.entries.set(o.id, entry);
     pty.onData((data) => {
