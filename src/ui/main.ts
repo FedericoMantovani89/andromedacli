@@ -52,6 +52,53 @@ function renderChrome(s: StateMessage): void {
   document.title = titleWithCount(document.title, s.queue.length); // the number of things waiting (6C replaces it with the all-projects total)
 }
 
+const SPLIT_KEY = 'console.split';
+
+/** The draggable divider between main and the agents: sets the main column's share (clamped 20-80%), remembered per browser. Terminals refit through their ResizeObserver. */
+function makeSplitHandle(ws: HTMLElement): HTMLElement {
+  const handle = document.createElement('div');
+  handle.className = 'split-handle';
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-orientation', 'vertical');
+  const set = (pct: number): number => {
+    const p = Math.min(80, Math.max(20, pct));
+    ws.style.setProperty('--split', `${p}fr`);
+    ws.style.setProperty('--split-rest', `${100 - p}fr`);
+    return p;
+  };
+  try {
+    const saved = Number(localStorage.getItem(SPLIT_KEY));
+    if (saved >= 20 && saved <= 80) set(saved);
+  } catch { /* storage may be blocked: keep the default half */ }
+  let current = 50;
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    ws.classList.add('resizing');
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    const box = ws.getBoundingClientRect();
+    if (box.width <= 0) return;
+    current = set(((e.clientX - box.left) / box.width) * 100);
+  });
+  const end = (e: PointerEvent): void => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    handle.releasePointerCapture(e.pointerId);
+    handle.classList.remove('dragging');
+    ws.classList.remove('resizing');
+    try { localStorage.setItem(SPLIT_KEY, String(current)); } catch { /* not remembered */ }
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+  handle.addEventListener('dblclick', () => {
+    current = set(50);
+    try { localStorage.removeItem(SPLIT_KEY); } catch { /* ignore */ }
+  });
+  return handle;
+}
+
 /** Makes the workspace of a project the first time it is shown: its own pair of columns inside `#workspace`, hidden until selected. */
 function createProjectWorkspace(s: StateMessage): { ws: Workspace; el: HTMLElement } {
   const el = document.createElement('div');
@@ -61,7 +108,7 @@ function createProjectWorkspace(s: StateMessage): { ws: Workspace; el: HTMLEleme
   mainCol.className = 'project-main';
   const agentsCol = document.createElement('section');
   agentsCol.className = 'project-agents';
-  el.append(mainCol, agentsCol);
+  el.append(mainCol, makeSplitHandle(el), agentsCol);
   $('workspace').append(el);
   const ws = new Workspace(mainCol, agentsCol, s.main.slug, s.project.name);
   ws.setNewAgentControl(createNewAgentControl(() => state?.profiles ?? [], () => ws.activate(ws.active), () => state?.repos ?? []));

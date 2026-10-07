@@ -7,6 +7,9 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Added
+- The divider between main and the agents can be dragged (20-80%) to widen or narrow either side; double-click resets to half; the position is remembered in the browser.
+
 ### Changed
 - Choosing a folder in the new-project dialog (Browse or typing it) fills the project name from the folder name; a name the user typed is kept. A rule makes the `hidden` attribute win even over a class that sets `display` (the name field of the dialog had been showing when it should not).
 - First-start wizard: one heading (the step name, with a quiet "First start · step n of m" line above it), no Skip button, Back on the left, the recheck button in the middle and Next on the right; the last step is an optional Git step (offering `git init`) shown only when the chosen folder is not a repository, replacing the "First project" step. The prerequisites recheck button is centred in Options too.
