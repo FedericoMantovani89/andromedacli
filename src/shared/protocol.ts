@@ -8,7 +8,7 @@ export type Profile = (typeof PROFILES)[number];
 /** Error codes the user can act on: each one needs an `error.<code>` text in every language (checked at build). */
 export const USER_ERROR_CODES = [
   'slug.missing', 'slug.format', 'slug.length', 'slug.generic', 'slug.reserved', 'slug.duplicate',
-  'profile.invalid', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
+  'profile.invalid', 'profile.fieldInvalid', 'profile.notFound', 'model.invalid', 'prereq.blocked', 'agent.spawnFailed',
   'git.notRepo', 'git.alreadyRepo', 'git.noCommits', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
   'folder.pickBusy', 'project.duplicate', 'project.badRoot', 'project.badName', 'project.notFound',
   'install.busy', 'install.unavailable',

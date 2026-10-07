@@ -5,6 +5,7 @@ import { bindText, k, language, setLanguage, setTitle, t } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
 import { openInstallDialog } from './install-dialog';
 import { openRestartDialog } from './restart-dialog';
+import { renderProfilesTab } from './options-profiles';
 import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
 import { openSaveTemplateDialog } from './new-project';
@@ -45,6 +46,8 @@ interface Env {
   getState(): StateMessage | undefined;
   /** Remembers a change until Save: one request per key, the last one wins. Nothing is sent before Save. */
   stage(key: string, run: () => Promise<{ status: number; body: unknown }>): void;
+  /** The Profiles tab is showing its own form (with its own buttons): the dialog's Save is hidden meanwhile. */
+  profileEditing(on: boolean): void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
@@ -378,17 +381,7 @@ function profilesTab(env: Env): HTMLElement {
   const box = el('div', 'settings-agents');
   const bad = unavailable(env);
   if (bad) { box.append(bad); return box; }
-  for (const p of env.options!.profiles) {
-    const row = el('div', 'options-row');
-    const name = el('span');
-    name.textContent = p.name;
-    const source = el('span', 'settings-note');
-    if (p.source) bindText(source, `options.profiles.source.${p.source}`);
-    else bindText(source, 'common.notAvailable');
-    row.append(name, source);
-    box.append(row);
-  }
-  box.append(note(k('options.profiles.folder'), { path: env.options!.paths.profilesDir }));
+  renderProfilesTab(box, env.options!.paths.profilesDir, (on) => env.profileEditing(on));
   return box;
 }
 
@@ -626,6 +619,9 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   bindText(title, 'settings.title');
   const error = el('div', 'form-error');
   const pending = new Map<string, () => Promise<{ status: number; body: unknown }>>();
+  let editingProfile = false;
+  let current: OptionTab = first;
+  let syncSave = (): void => undefined; // set once the Save button exists
   const startLanguage = getState()?.language;
   const env: Env = {
     state: getState(), options: loaded.status === 200 ? (loaded.body as OptionsPayload) : null, error, getState,
@@ -635,6 +631,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
       return true;
     },
     stage: (key, run) => { pending.delete(key); pending.set(key, run); },
+    profileEditing: (on) => { editingProfile = on; syncSave(); },
   };
   const tabs = el('div', 'options-tabs');
   tabs.setAttribute('role', 'tablist');
@@ -646,6 +643,8 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   const show = (tab: OptionTab): void => {
     for (const [id, b] of buttons) { b.setAttribute('aria-selected', String(id === tab)); b.classList.toggle('selected', id === tab); }
     error.textContent = '';
+    current = tab;
+    syncSave();
     env.state = getState() ?? env.state; // the dialog may stay open while projects and settings change
     let view = built.get(tab);
     if (!view || LIVE.includes(tab)) { view = BUILDERS[tab](env); built.set(tab, view); }
@@ -692,6 +691,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
       else closeOverlay();
     })();
   });
+  syncSave = (): void => { save.hidden = editingProfile && current === 'profiles'; };
   dialog.append(title, x, tabs, panel, error, save);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;

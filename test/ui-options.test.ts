@@ -27,6 +27,7 @@ beforeEach(() => {
     if (url === '/api/options') return json(200, structuredClone(options)); // a fresh copy: staged edits change the object they are given
     if (url === '/api/models') return json(200, { models: [{ id: 'opus', label: 'opus', alias: true }], source: 'shipped', current: '', missing: false });
     if (url === '/api/plugins') return json(200, { source: 'shipped', plugins: [] });
+    if (url === '/api/profiles') return json(200, [{ name: 'backend', description: 'Backend', body: 'x', readOnly: false, source: 'shipped', shipped: true, userFile: false, projectOverrides: false }]);
     return json(404, null);
   }));
 });
@@ -134,6 +135,21 @@ describe('options dialog', () => {
     input.dispatchEvent(new Event('change'));
     await clickSave();
     expect(document.querySelector('.restart-dialog')).toBeNull();
+  });
+  it('the dialog Save is hidden while a profile is being edited, and back with Annulla', async () => {
+    await openOptions(() => state, 'profiles');
+    await flush();
+    const saveBtn = document.querySelector<HTMLButtonElement>('button[name="saveOptions"]')!;
+    expect(saveBtn.hidden).toBe(false);
+    document.querySelector<HTMLElement>('button[name="newProfile"]')!.click();
+    expect(saveBtn.hidden).toBe(true);
+    document.querySelector<HTMLElement>('.options-tab[data-tab="git"]')!.click();
+    expect(saveBtn.hidden).toBe(false); // another tab: the dialog's Save is back
+    document.querySelector<HTMLElement>('.options-tab[data-tab="profiles"]')!.click();
+    expect(saveBtn.hidden).toBe(true); // the form is still open there
+    document.querySelector<HTMLElement>('button[name="cancelProfile"]')!.click();
+    await flush();
+    expect(saveBtn.hidden).toBe(false);
   });
   it('the models menu offers Default and real models only, never an alias', async () => {
     await openOptions(() => state, 'models');

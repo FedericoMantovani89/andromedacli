@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { configDir } from './config';
 
@@ -55,6 +55,90 @@ export function loadProfile(name: string, projectRoot: string, userDir: string =
   return readProfile(join(projectRoot, '.andromedacli', 'profiles', `${name}.md`), name, 'project')
     ?? readProfile(join(userDir, `${name}.md`), name, 'user')
     ?? readProfile(join(promptsDir(), 'profiles', `${name}.md`), name, 'shipped');
+}
+
+const shippedDir = (): string => join(promptsDir(), 'profiles');
+const SHIPPED_ORDER = ['backend', 'dba', 'frontend', 'reviewer', 'recovery'];
+
+function namesIn(dir: string): string[] {
+  try { return readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).filter((n) => NAME_RE.test(n)); } catch { return []; }
+}
+
+/** Every profile a project can use: the shipped ones first (in their usual order), then the others by name (the user's and the project's). */
+export function listProfileNames(projectRoot: string, userDir: string = join(configDir(), 'profiles')): string[] {
+  const shipped = namesIn(shippedDir());
+  const all = new Set([...shipped, ...namesIn(userDir), ...namesIn(join(projectRoot, '.andromedacli', 'profiles'))]);
+  const rank = (n: string): number => (SHIPPED_ORDER.includes(n) ? SHIPPED_ORDER.indexOf(n) : SHIPPED_ORDER.length);
+  return [...all].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
+/** What the Profiles tab shows and edits: the user's layer (the user's file, else the shipped one) plus where the name is defined. */
+export interface ProfileView extends Omit<Profile, 'source'> {
+  /** Where the version in force for this project comes from. */
+  source: Profile['source'];
+  /** There is a shipped profile of this name (so it cannot be deleted, only restored). */
+  shipped: boolean;
+  /** The user's own file exists. */
+  userFile: boolean;
+  /** The project has its own profile of this name: it wins over the one edited here. */
+  projectOverrides: boolean;
+}
+
+export function describeProfiles(projectRoot: string, userDir: string = join(configDir(), 'profiles')): ProfileView[] {
+  const views: ProfileView[] = [];
+  for (const name of listProfileNames(projectRoot, userDir)) {
+    const inForce = loadProfile(name, projectRoot, userDir);
+    if (!inForce) continue;
+    const layer = readProfile(join(userDir, `${name}.md`), name, 'user') ?? readProfile(join(shippedDir(), `${name}.md`), name, 'shipped') ?? inForce;
+    views.push({
+      ...layer, source: inForce.source, shipped: existsSync(join(shippedDir(), `${name}.md`)),
+      userFile: existsSync(join(userDir, `${name}.md`)), projectOverrides: inForce.source === 'project',
+    });
+  }
+  return views;
+}
+
+export interface ProfileInput { name: string; description: string; model: string; budgetTokens: number | null; readOnly: boolean; body: string }
+const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
+const MAX_BODY = 32 * 1024;
+
+/** The entry as the form sends it, or the name of the first field that is not acceptable. */
+export function validateProfileInput(v: unknown): { ok: true; input: ProfileInput } | { ok: false; field: string } {
+  if (typeof v !== 'object' || v === null) return { ok: false, field: 'profile' };
+  const o = v as Record<string, unknown>;
+  if (typeof o.name !== 'string' || !NAME_RE.test(o.name) || o.name.length > 40) return { ok: false, field: 'name' };
+  if (typeof o.description !== 'string' || o.description.length > 200 || /[\r\n]/.test(o.description)) return { ok: false, field: 'description' };
+  const model = typeof o.model === 'string' ? o.model.trim() : '';
+  if (model !== '' && model !== 'default' && !MODEL_RE.test(model)) return { ok: false, field: 'model' };
+  const budget = o.budgetTokens;
+  if (budget !== null && budget !== undefined && !(typeof budget === 'number' && Number.isInteger(budget) && budget >= 1000 && budget <= 100_000_000)) return { ok: false, field: 'budgetTokens' };
+  if (typeof o.readOnly !== 'boolean') return { ok: false, field: 'readOnly' };
+  if (typeof o.body !== 'string' || o.body.trim() === '' || o.body.length > MAX_BODY) return { ok: false, field: 'body' };
+  return { ok: true, input: { name: o.name, description: o.description.trim(), model: model === 'default' ? '' : model, budgetTokens: budget ?? null, readOnly: o.readOnly, body: o.body.replace(/\r\n/g, '\n').trim() } };
+}
+
+/** Writes the user's own file for a profile (a copy of a shipped one when the name is a shipped name): the same format the shipped files use. */
+export function saveUserProfile(userDir: string, p: ProfileInput): void {
+  const consoleLines = [...(p.budgetTokens !== null ? [`  budget_tokens: ${p.budgetTokens}`] : []), ...(p.readOnly ? ['  read_only: true'] : [])];
+  const head = ['---', `name: ${p.name}`, `description: ${p.description}`, `model: ${p.model === '' ? 'default' : p.model}`, ...(consoleLines.length > 0 ? ['console:', ...consoleLines] : []), '---'];
+  mkdirSync(userDir, { recursive: true });
+  writeFileSync(join(userDir, `${p.name}.md`), `${head.join('\n')}\n\n${p.body}\n`, 'utf8');
+}
+
+/** Removes the user's file of one profile (a shipped name goes back to the shipped text); false when there was none. */
+export function removeUserProfile(userDir: string, name: string): boolean {
+  if (!NAME_RE.test(name)) return false;
+  const file = join(userDir, `${name}.md`);
+  if (!existsSync(file)) return false;
+  unlinkSync(file);
+  return true;
+}
+
+/** Puts every shipped profile back to its shipped text (the user's copies of those names go); the user's own other profiles stay. */
+export function restoreShippedProfiles(userDir: string): number {
+  let n = 0;
+  for (const name of namesIn(shippedDir())) if (removeUserProfile(userDir, name)) n += 1;
+  return n;
 }
 
 /** Language name in English, for the prompts ("Italian"); "auto" and unknown codes fall back to English. */

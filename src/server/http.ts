@@ -7,13 +7,13 @@ import { ProjectStore } from './project-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
 import { extractToken, isAllowedHost, tokensEqual } from './security';
 import { GENERIC_WORDS, SLUG_MAX, SLUG_MIN, validateSlug } from '../shared/slug';
-import { PROFILES, type HostInfo, type ProjectTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
+import { type HostInfo, type ProjectTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
 import { applyConfigPatch, loadConfig } from './config';
 import type { PickFolderResult } from './pick-folder';
 import type { Notifier } from './notify/notifier';
 import { parsePresence, type Presence } from './notify/presence';
 import type { NotificationService } from './notify/service';
-import { loadProfile } from './profiles';
+import { describeProfiles, listProfileNames, loadProfile, removeUserProfile, restoreShippedProfiles, saveUserProfile, validateProfileInput } from './profiles';
 import type { ModelCatalog } from './catalog/models';
 import type { PluginCatalog } from './catalog/plugins';
 import { fail, readBody, send } from './http-util';
@@ -191,7 +191,7 @@ export function buildState(ctx: Context): StateMessage {
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? PROFILES,
+    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(squash !== undefined ? { squash } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: offeredProfiles ?? listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles')),
     prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
     queue: ctx.questions.pending(),
     ...(ctx.projects ? { projects: ctx.projects.list() } : {}),
@@ -393,9 +393,33 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const profilesDir = join(dir, 'profiles');
       return send(res, 200, {
         config, errors, paths: { configDir: dir, profilesDir, templatesDir: join(dir, 'templates') }, server: { port: ctx.getPort() },
-        profiles: PROFILES.map((name) => ({ name, source: loadProfile(name, ctx.projectRoot, profilesDir)?.source ?? null })),
+        profiles: listProfileNames(ctx.projectRoot, profilesDir).map((name) => ({ name, source: loadProfile(name, ctx.projectRoot, profilesDir)?.source ?? null })),
         names: { minLength: SLUG_MIN, maxLength: SLUG_MAX, banned: GENERIC_WORDS },
       });
+    }
+    // Profiles (Options, Profiles): the user's own files in the config folder; a shipped name is edited as a copy and restored by removing it.
+    const userProfiles = join(dirname(ctx.configPath), 'profiles');
+    if (req.method === 'GET' && path === '/api/profiles') return send(res, 200, describeProfiles(ctx.projectRoot, userProfiles));
+    if (req.method === 'POST' && path === '/api/profiles/restore') {
+      const restored = restoreShippedProfiles(userProfiles);
+      ctx.broadcastState();
+      return send(res, 200, { restored });
+    }
+    const oneProfile = /^\/api\/profiles\/([a-z0-9-]+)$/.exec(path);
+    if (oneProfile && req.method === 'PUT') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const checked = validateProfileInput(body);
+      if (!checked.ok) return fail(res, 422, 'profile.fieldInvalid', { field: checked.field });
+      if (checked.input.name !== oneProfile[1]) return fail(res, 422, 'profile.fieldInvalid', { field: 'name' });
+      saveUserProfile(userProfiles, checked.input);
+      ctx.broadcastState();
+      return send(res, 200, describeProfiles(ctx.projectRoot, userProfiles).find((p) => p.name === checked.input.name) ?? {});
+    }
+    if (oneProfile && req.method === 'DELETE') {
+      if (!removeUserProfile(userProfiles, oneProfile[1]!)) return fail(res, 404, 'profile.notFound');
+      ctx.broadcastState();
+      return send(res, 200, { name: oneProfile[1] });
     }
     if (req.method === 'GET' && path === '/api/models') return send(res, 200, await ctx.models.list());
     if (req.method === 'POST' && path === '/api/models/refresh') return send(res, 200, await ctx.models.list(true));
@@ -409,6 +433,7 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const b = body as Record<string, unknown>;
       const hasCommand = 'testCommand' in b;
       const hasSquash = 'squash' in b;
+      const knownProfiles = listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'));
       const projectFields = PROJECT_FIELDS.filter((f) => f in b); // Phase 6D: build/lint commands, profiles, model, budget, limit, docs, secrets
       if (!hasCommand && !hasSquash && projectFields.length === 0) return fail(res, 400, 'bad_request');
       // Everything is checked before anything is written: a bad entry changes nothing.
@@ -417,11 +442,11 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       for (const f of projectFields) {
         const v = typeof b[f] === 'string' ? (b[f] as string).trim() : b[f];
         const clears = v === null || v === '' || (Array.isArray(v) && v.length === 0);
-        if (!clears && !isValidProjectField(f, v, PROFILES)) return fail(res, 422, 'project.fieldInvalid', { field: f });
+        if (!clears && !isValidProjectField(f, v, knownProfiles)) return fail(res, 422, 'project.fieldInvalid', { field: f });
       }
       if (hasCommand) ctx.store.setTestCommand(b.testCommand as string);
       if (hasSquash) ctx.store.setSquash(b.squash as boolean);
-      if (projectFields.length > 0) ctx.store.setFields(Object.fromEntries(projectFields.map((f) => [f, b[f]])), PROFILES);
+      if (projectFields.length > 0) ctx.store.setFields(Object.fromEntries(projectFields.map((f) => [f, b[f]])), knownProfiles);
       ctx.broadcastState();
       const saved = ctx.store.project;
       return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...Object.fromEntries(projectFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
