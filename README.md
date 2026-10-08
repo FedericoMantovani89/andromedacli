@@ -25,7 +25,7 @@ One coding agent can handle a task. Several at once create a different job: who 
 - **Node.js 22 or newer** and **git**.
 - **Claude Code** (`claude`) installed and logged in. Open the folder you will work on once with `claude` so you have accepted its workspace-trust dialog.
 
-Run `npm run console -- doctor` at any time to check these prerequisites and the security setup. In the app, *Options → Prerequisites* shows the same table and can install what is missing after you approve each command.
+Run `npm run console -- doctor` at any time to check these prerequisites and the security setup. In the app, *Options → Prerequisites* shows the same table (required tools first, then optional helpers such as Python, ripgrep, fd, jq, ctags, uv and ShellCheck) and can install what is missing after you approve each command. The console never reads the system PATH, only the one it was started with: after installing a program, start the console again from a new terminal. Installed helpers are named in the prompt of the main and of every agent, and the tab shows how often they were used.
 
 ## Quick start
 
@@ -52,9 +52,9 @@ Useful options:
 
 ## Using it
 
-1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.andromedacli/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and build/test/lint commands, detected from `pom.xml`, Gradle or `package.json`.
+1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.andromedacli/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and commands, detected from `pom.xml`, Gradle or `package.json`; or start from the settings of a project that is already open. A folder that is not a git repository can be initialised, or cloned from an address, in *Options → Git*. A project with no tests can switch them off (*Inhibit the tests for this project*): reports then say "not run", never "passed".
 2. **Talk to the main.** The left panel is a normal Claude Code session that knows the console's tools. Describe what you want; the main decides which jobs to start.
-3. **Agents appear on the right.** The main starts one agent per job (profiles: `backend`, `dba`, `frontend`, plus the read-only `reviewer` and `recovery`), or you press *new agent* yourself. Four panels fit; more collapse into bars. Agents above the active limit wait in a queue and start by themselves.
+3. **Agents appear on the right.** The main starts one agent per job (profile `developer` by default, any you add in *Options → Profiles*, plus the read-only `reviewer` and `recovery` that the console starts itself), or you press *new agent* yourself. Four panels fit; more collapse into bars. Agents above the active limit wait in a queue and start by themselves.
 4. **Answer the queue.** Open the drawer with the *Queue* button (`Alt+Q`). It collects questions to you, tool permissions, merge conflicts, budget decisions and the release confirmation.
 5. **Review and merge.** When an agent delivers a ticket the console reruns your tests on exactly that commit, a read-only reviewer reads the diff, and the main merges approved tickets one at a time into `project/<name>`. Reaching your real `main` takes one confirmation from you; the console then merges and pushes with a one-time token that the repository's pre-push hook checks.
 
@@ -90,7 +90,7 @@ Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read pane
 
 ## Configuration
 
-Settings live in `%APPDATA%ndromedacli\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog: models, profiles, budget and limits, names, project, git, guard, mod, notifications, language, prerequisites, plugins and server. An invalid entry never blocks the console: the default is used and the problem is shown.
+Settings live in `%APPDATA%\andromedacli\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog, which has two groups. *Global*: models, profiles, budget and limits, guard, notifications, language, prerequisites and plugins (the values here are the defaults for new projects). *This project*: the project's own settings (test command, model, limits, template, copy from another open project) and git (initialise or clone). One **Save** applies every change, after checking all of them: if one is refused, nothing is saved and every refusal is listed with the limits. An invalid entry in the file never blocks the console: the default is used and the problem is shown.
 
 The interface is translated through `src/i18n/messages_<lang>.properties` (English and Italian today; a new language is just a new file).
 
@@ -109,10 +109,12 @@ The interface is translated through `src/i18n/messages_<lang>.properties` (Engli
 ## Development
 
 ```bash
-npm test                      # unit and integration tests (the full run takes about 12 minutes)
+npm test                      # the full suite (about 10 minutes); it also leaves the stamp the commit gate looks for
 npx vitest run test/slug.test.ts
 npm run check                 # i18n parity, no literal UI text, no stray .focus(), then tsc
 npm run build                 # bundles the UI into dist/ui
+npm run shot -- --tab git     # a screenshot of the real UI from a throw-away console
+npm run hooks                 # installs the pre-commit hook (check, and a CHANGELOG line for a product change)
 npx tsx test/e2e/phase6.spec.ts   # browser acceptance in Edge (fake agents, no quota used)
 ```
 
@@ -120,7 +122,7 @@ Rules worth knowing before a change: all code, comments and docs are in English;
 
 ## Status
 
-The console base, the mod channel, git worktrees and tickets, review and merge, budget and limits, and multiple projects with resume, notifications and templates are built and covered by tests and browser acceptance runs with fake agents. The budget, quota-sleep and restart flows have not yet had a long run against the real Claude Code, so expect rough edges there. External providers (other coding agents) are planned as an optional next phase.
+The console base, the mod channel, git worktrees and tickets, review and merge, budget and limits, and multiple projects with resume, notifications and templates are built and covered by tests and browser acceptance runs with fake agents. The channel between the console and real Claude Code sessions (the main starting agents, goals, questions, permissions) passes a contract run with the real `claude`. The git-worktree, review and merge, budget, quota-sleep and restart flows have not yet had a long run against the real Claude Code, so expect rough edges there. External providers (other coding agents) are planned as an optional next phase.
 
 ## License
 
