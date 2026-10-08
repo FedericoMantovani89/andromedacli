@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import type { Context } from '../http';
 import { buildClaudeLaunch, SESSION_ID_RE } from '../pty/claude-launch';
+import { hasGitignore } from '../git/gitignore';
+import { helperToolsText } from '../helper-tools';
 import { loadProfile, renderAgentPrompt, type Profile } from '../profiles';
 import { validateSlug } from '../../shared/slug';
 import { checkSpawnable, createAgentWorktree, createReviewWorktree, discardAgentWorktree, GitError, removeWorktree, worktreesDirFor } from '../git/worktree';
@@ -148,7 +150,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
     url: `http://127.0.0.1:${ctx.getPort()}`, token: ctx.tokens.issue(r.slug), bypass, baseEnv: process.env,
     pluginDir: ctx.modDir, displayName: `${r.slug} ${ctx.projectName} AndromedaCli`,
     allowedTools: ctx.modDir ? (r.review ? REVIEWER_TOOLS : r.recovery ? RECOVERY_TOOLS : AGENT_TOOLS) : undefined,
-    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, project: ctx.projectName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), projectRoot: ctx.projectRoot, docs: projectFields.docs }),
+    appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, project: ctx.projectName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), projectRoot: ctx.projectRoot, docs: projectFields.docs, helpers: helperToolsText(ctx.getPrereq()), noGitignore: !hasGitignore(cwd) }),
     // request > profile > project (Phase 6D) > the global choice in Options (Phase 6E) > Claude Code's own default (no --model)
     model: r.model ?? profile.model ?? projectFields.model ?? ctx.models.agentModel(),
     ...(r.resume ? { resumeId: r.resume.sessionId } : {}),

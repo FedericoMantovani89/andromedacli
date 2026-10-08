@@ -159,6 +159,17 @@ function writePrompt(outDir: string, name: string, text: string): string {
 
 const MAX_PROJECT_TEXT = 32 * 1024;
 
+/**
+ * No .gitignore: the console commits with `git add -A`, so anything an agent installs or builds (node_modules, build output) would end up in
+ * its commits. The main asks the user, once per repository; an agent that finds none keeps its work clean and does not decide it alone.
+ */
+function gitignoreTextForMain(repos: string[] | undefined): string | undefined {
+  if (!repos || repos.length === 0) return undefined;
+  const names = repos.map((r) => (r === '' ? 'the project folder' : r)).join(', ');
+  return `No .gitignore was found in: ${names}. The console commits everything that is not ignored, so dependencies and build output (node_modules, target, dist...) would end up in the agents' commits. Before the first ticket for each of them, ask the user with ask_user whether a .gitignore should be created, and suggest what fits the stack (dependencies, build output, caches, .env and editor folders). If they say yes, put "create the .gitignore" in the goal of that repository's first ticket; if they say no, do not ask again.`;
+}
+const GITIGNORE_AGENT = 'This repository has no .gitignore. Do not create or edit one unless your goal says so, and keep dependencies and build output (node_modules, target, dist...) out of your work: if they cannot be avoided, say so in the note of the documentation step so the main can ask the user.';
+
 /** A project's own text file (`.andromedacli/main.md`, `.andromedacli/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
 function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.md'): string | undefined {
   if (!projectRoot) return undefined;
@@ -173,26 +184,26 @@ function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.m
 }
 
 /** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `projectRoot`, the project's main.md and rules.md follow. */
-export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[] }): string {
+export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[]; helpers?: string; /** Repositories (relative names, '' for the project folder) with no .gitignore that were not yet brought up. */ noGitignore?: string[] }): string {
   const template = readFileSync(join(promptsDir(), 'main.md'), 'utf8');
   const base = fill(template, { project: o.project, workLanguage: o.workLanguage });
   // A project folder that holds several repositories: every agent works in exactly one, which the main must name.
   const repoText = o.repos && o.repos.length > 1
     ? `This project folder holds several git repositories: ${o.repos.join(', ')}. Every agent works in exactly one of them: pass its name as "repo" to spawn_agent. Work that touches two repositories needs one agent for each.`
     : undefined;
-  const extra = [repoText, projectText(o.projectRoot, 'main.md'), projectText(o.projectRoot, 'rules.md')].filter((x): x is string => x !== undefined);
+  const extra = [repoText, gitignoreTextForMain(o.noGitignore), o.helpers, projectText(o.projectRoot, 'main.md'), projectText(o.projectRoot, 'rules.md')].filter((x): x is string => x !== undefined);
   return writePrompt(o.outDir, `main-${o.project}.md`, extra.length > 0 ? `${base.trimEnd()}\n\n${extra.join('\n\n')}\n` : base);
 }
 
 /** An agent's system-prompt addition: its profile plus who it is and what the console offers it. */
-export function renderAgentPrompt(o: { profile: Profile; slug: string; project: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean; projectRoot?: string; docs?: string[] }): string {
+export function renderAgentPrompt(o: { profile: Profile; slug: string; project: string; outDir: string; git?: { worktree: string; branch: string }; review?: boolean; recovery?: boolean; projectRoot?: string; docs?: string[]; helpers?: string; /** The agent's checkout has no .gitignore. */ noGitignore?: boolean }): string {
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
   const rulesFile = o.review ? 'reviewer-git.md' : o.recovery ? 'recovery-git.md' : 'agent-git.md';
   const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, project: o.project }) : '';
   const text = fill(template, { slug: o.slug, project: o.project, profile: o.profile.body, git: gitRules });
   // The project's rules reach every session; the documents to update concern only the one that writes the work (not a review or a recovery).
   const docs = o.docs && o.docs.length > 0 && !o.review && !o.recovery ? `At the last step update: ${o.docs.join(', ')}.` : undefined;
-  const extra = [projectText(o.projectRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
+  const extra = [o.helpers, o.noGitignore && !o.review && !o.recovery ? GITIGNORE_AGENT : undefined, projectText(o.projectRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
   const full = extra.length > 0 ? `${text.trimEnd()}\n\n${extra.join('\n\n')}\n` : text;
   return writePrompt(o.outDir, `agent-${o.slug}.md`, full.replace(/\n{3,}/g, '\n\n'));
 }

@@ -18,8 +18,12 @@ it('reports ok with versions parsed from each tool', async () => {
   const r = await runChecks(fake({
     node: { code: 0, stdout: 'v24.15.0' }, git: { code: 0, stdout: 'git version 2.53.0.windows.3' },
     claude: { code: 0, stdout: '2.1.289 (Claude Code)' }, gh: { code: 0, stdout: 'gh version 2.40.0 (2023-12-13)' },
+    python: { code: 0, stdout: 'Python 3.14.4' }, rg: { code: 0, stdout: 'ripgrep 15.2.0' }, ctags: { code: 0, stdout: 'Universal Ctags 6.1.0, Copyright (C) 2015' },
+    jq: { code: 0, stdout: 'jq-1.7.1' }, fd: { code: 0, stdout: 'fd 10.2.0' }, shellcheck: { code: 0, stdout: 'ShellCheck - shell script analysis tool\nversion: 0.10.0' }, uv: { code: 0, stdout: 'uv 0.5.11' },
   }));
-  expect(r.map((c) => [c.id, c.status, c.version])).toEqual([['node', 'ok', '24.15.0'], ['git', 'ok', '2.53.0'], ['claude', 'ok', '2.1.289'], ['gh', 'ok', '2.40.0']]);
+  expect(r.map((c) => [c.id, c.status, c.version])).toEqual([['node', 'ok', '24.15.0'], ['git', 'ok', '2.53.0'], ['claude', 'ok', '2.1.289'], ['gh', 'ok', '2.40.0'],
+    ['python', 'ok', '3.14.4'], ['rg', 'ok', '15.2.0'], ['ctags', 'ok', '6.1.0'],
+    ['jq', 'ok', '1.7.1'], ['fd', 'ok', '10.2.0'], ['shellcheck', 'ok', '0.10.0'], ['uv', 'ok', '0.5.11']]);
   expect(r.filter((c) => c.required).map((c) => c.id)).toEqual(['node', 'git', 'claude']);
 });
 it('flags Claude Code below 2.1.287 and Node below 22 as outdated', async () => {
@@ -82,4 +86,13 @@ it('installer locations exist only on Windows and only for the tools the install
   expect(installLocations('gh', {}, 'linux')).toEqual([]);
   expect(installLocations('claude', {}, 'win32')).toEqual([]);
   expect(installLocations('gh', { ProgramFiles: 'C:/PF' }, 'win32')[0]).toMatch(/GitHub CLI/);
+});
+
+it('the optional helpers are never required and are judged only by running their version command, never by looking into folders', async () => {
+  const optional = ['python', 'rg', 'ctags', 'jq', 'fd', 'shellcheck', 'uv'];
+  const asked: string[] = [];
+  const r = await runChecks(async (cmd, args) => { asked.push(`${cmd} ${args.join(' ')}`); throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); }, { locate: (id) => { if (optional.includes(id)) throw new Error(`a folder must not be looked into for ${id}`); return []; } });
+  for (const id of optional) expect(r.find((c) => c.id === id)).toMatchObject({ required: false, status: 'missing' });
+  for (const cmd of ['python', 'rg', 'ctags', 'jq', 'fd', 'shellcheck', 'uv']) expect(asked).toContain(`${cmd} --version`);
+  for (const id of optional) expect(installLocations(id as never, { LOCALAPPDATA: 'C:/L' }, 'win32')).toEqual([]);
 });

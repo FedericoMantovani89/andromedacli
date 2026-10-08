@@ -3,6 +3,7 @@ import { api } from './api';
 import { bindText, k, t } from './i18n-client';
 import { errorText } from './new-agent';
 import { loadModelSelect } from './model-select';
+import { createSlider, groupNumber, infoIcon } from './options';
 
 /** What `GET /api/profiles` returns for one profile (the user's layer, plus where the version in force comes from). */
 interface ProfileRow {
@@ -33,7 +34,7 @@ const button = (name: string, key: string): HTMLButtonElement => {
  * actions, like "apply template": each one is sent when its own button is pressed, not by the dialog's Save. A change applies to the
  * agents launched afterwards.
  */
-export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on: boolean) => void): void {
+export function renderProfilesTab(box: HTMLElement, folder: string, defaultBudget: number, editing: (on: boolean) => void): void {
   const error = el('div', 'form-error');
   const body = el('div', 'options-profiles');
   box.append(body, error);
@@ -91,7 +92,9 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
       if (!window.confirm(t(k('options.profiles.confirmRestoreAll')))) return;
       void run(api('/api/profiles/restore', { method: 'POST' })).then((ok) => { if (ok) void showList(); });
     });
-    body.append(restore, note(k('options.profiles.appliesLater')), note(k('options.profiles.folder'), { path: folder }));
+    const foot = el('div', 'options-profiles-foot');
+    foot.append(note(k('options.profiles.appliesLater')), note(k('options.profiles.folder'), { path: folder }));
+    body.append(restore, foot);
   };
 
   const showForm = (existing: ProfileRow | undefined): void => {
@@ -106,7 +109,19 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
       label.append(span, input);
       if (!helpKey) return label;
       const wrap = el('div', 'options-field-wrap');
-      wrap.append(label, note(helpKey));
+      const help = note(helpKey);
+      if (input instanceof HTMLInputElement && input.maxLength > 0) {
+        // Typing and pasting stop at maxLength by themselves (a paste is cut); the counter just shows where we are.
+        const counter = el('span', 'settings-note options-counter');
+        const show = (): void => { counter.textContent = `${Math.min(input.value.length, input.maxLength)}/${input.maxLength}`; };
+        input.addEventListener('input', show);
+        show();
+        const line = el('div', 'options-help-line');
+        line.append(help, counter);
+        wrap.append(label, line);
+        return wrap;
+      }
+      wrap.append(label, help);
       return wrap;
     };
     const name = el('input');
@@ -115,6 +130,11 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
     name.maxLength = 40;
     name.value = existing?.name ?? '';
     name.disabled = existing !== undefined; // the name is the file: a rename would be a new profile
+    name.addEventListener('input', () => { // only lowercase is valid: typed or pasted capitals become lowercase, the caret stays
+      const at = name.selectionStart;
+      name.value = name.value.toLowerCase();
+      if (at !== null) name.setSelectionRange(at, at);
+    });
     const description = el('input');
     description.name = 'profileDescription';
     description.autocomplete = 'off';
@@ -123,11 +143,13 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
     const model = el('select');
     model.name = 'profileModel';
     loadModelSelect(model, existing?.model ?? '', k('options.models.default'));
-    const budget = el('input');
-    budget.name = 'profileBudget';
-    budget.type = 'number';
-    budget.min = '1000';
-    budget.value = existing?.budgetTokens !== undefined ? String(existing.budgetTokens) : '';
+    // The budget: a slider like the one in Budget and limits, starting at the console's default. Left untouched on a profile that has no
+    // budget of its own it is not saved, so the profile keeps following the default.
+    let budgetTouched = false;
+    const budgetSlider = createSlider({ path: 'profileBudget', label: k('options.profiles.budget'), min: 50_000, max: 2_000_000, step: 50_000, format: groupNumber },
+      existing?.budgetTokens ?? defaultBudget, (n) => { budgetTouched = true; return n; });
+    const budgetBox = el('div', 'options-field-wrap');
+    budgetBox.append(budgetSlider.row);
     const readOnly = el('input');
     readOnly.type = 'checkbox';
     readOnly.name = 'profileReadOnly';
@@ -135,7 +157,7 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
     const readOnlyRow = el('label', 'settings-switch');
     const readOnlyText = el('span');
     bindText(readOnlyText, 'options.profiles.readOnly');
-    readOnlyRow.append(readOnly, readOnlyText);
+    readOnlyRow.append(readOnly, readOnlyText, infoIcon(k('options.profiles.readOnly.help')));
     const text = el('textarea');
     text.name = 'profileBody';
     text.rows = 12;
@@ -145,10 +167,9 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
     const cancel = button('cancelProfile', k('options.profiles.cancel'));
     cancel.addEventListener('click', () => { error.textContent = ''; void showList(); });
     save.addEventListener('click', () => {
-      const budgetRaw = budget.value.trim();
       const payload = {
         name: name.value.trim(), description: description.value, model: model.value,
-        budgetTokens: budgetRaw === '' ? null : Number(budgetRaw), readOnly: readOnly.checked, body: text.value,
+        budgetTokens: existing?.budgetTokens === undefined && !budgetTouched ? null : budgetSlider.get(), readOnly: readOnly.checked, body: text.value,
       };
       save.disabled = true;
       void run(api(`/api/profiles/${encodeURIComponent(payload.name)}`, { method: 'PUT', body: payload })).then((ok) => {
@@ -159,11 +180,11 @@ export function renderProfilesTab(box: HTMLElement, folder: string, editing: (on
     const actions = el('div', 'options-profile-actions options-profile-bar');
     actions.append(cancel, save);
     body.append(
-      field(k('options.profiles.name'), name, existing ? undefined : k('options.profiles.name.help')),
+      field(k('options.profiles.name'), name, k('options.profiles.name.help')),
       field(k('options.profiles.description'), description),
       field(k('options.profiles.model'), model),
-      field(k('options.profiles.budget'), budget, k('options.profiles.budget.help')),
-      readOnlyRow, note(k('options.profiles.readOnly.help')),
+      budgetBox,
+      readOnlyRow,
       field(k('options.profiles.body'), text, k('options.profiles.body.help')),
       actions,
     );

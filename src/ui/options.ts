@@ -1,9 +1,10 @@
 import type { ApiError, PrereqResult, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { errorText } from './new-agent';
-import { bindText, k, language, setLanguage, setTitle, t } from './i18n-client';
+import { bindText, k, language, retranslate, setLanguage, setTitle, t } from './i18n-client';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
 import { openInstallDialog } from './install-dialog';
+import { infoIcon } from './info-icon';
 import { openRestartDialog } from './restart-dialog';
 import { renderProfilesTab } from './options-profiles';
 import { fillModelSelect, loadModelSelect } from './model-select';
@@ -33,9 +34,17 @@ interface PluginRow {
   conflicts: Record<string, string>[]; cost: { contextTokens: number | null } | null; notTested: boolean; installCommand: string;
 }
 interface PluginList { source: string; updated?: string; plugins: PluginRow[] }
+/** Where a plugin stands for the open project (asked of Claude Code); `null` as a whole when it could not be read. */
+interface PluginStatus { state: 'installed' | 'project' | 'disabled' | 'other_project' | 'not_installed'; version?: string }
+type InstalledMap = Record<string, PluginStatus> | null;
 
 /** Every tab of the dialog, in order. Only options that exist today are here (no providers, snapshots, Rizzo Flow...). */
-export const OPTION_TABS = ['models', 'profiles', 'budget', 'projects', 'git', 'guard', 'mod', 'notifications', 'language', 'prerequisites', 'plugins', 'server'] as const;
+/** The left column: what holds for the whole console first, then what belongs to the open project (each group has a small heading). */
+export const OPTION_GROUPS = [
+  { id: 'global', tabs: ['models', 'profiles', 'budget', 'guard', 'notifications', 'language', 'prerequisites', 'plugins'] },
+  { id: 'project', tabs: ['projects', 'git'] },
+] as const;
+export const OPTION_TABS = OPTION_GROUPS.flatMap((g) => g.tabs);
 export type OptionTab = (typeof OPTION_TABS)[number];
 
 interface Env {
@@ -45,7 +54,8 @@ interface Env {
   fail(res: { status: number; body: unknown }): boolean;
   getState(): StateMessage | undefined;
   /** Remembers a change until Save: one request per key, the last one wins. Nothing is sent before Save. */
-  stage(key: string, run: () => Promise<{ status: number; body: unknown }>): void;
+  /** `run(true)` only asks whether the change would be accepted (nothing is written); `run(false)` saves it. */
+  stage(key: string, run: (dry: boolean) => Promise<{ status: number; body: unknown }>): void;
   /** The Profiles tab is showing its own form (with its own buttons): the dialog's Save is hidden meanwhile. */
   profileEditing(on: boolean): void;
 }
@@ -60,13 +70,7 @@ const note = (key: string, params?: Record<string, string | number>): HTMLElemen
   bindText(p, key, params);
   return p;
 };
-/** The (i) icon whose tooltip explains an option in detail (the text is a key; it follows the language). */
-const infoIcon = (key: string): HTMLElement => {
-  const icon = el('span', 'info-icon');
-  setTitle(icon, key);
-  icon.tabIndex = 0;
-  return icon;
-};
+export { infoIcon };
 const footnote = (key: string): HTMLElement => {
   const p = note(key);
   p.classList.add('options-footnote');
@@ -92,10 +96,23 @@ const setPath = (obj: Record<string, unknown>, path: string, value: unknown): vo
 const toPatch = (path: string, value: unknown): Record<string, unknown> =>
   path.split('.').reduceRight<unknown>((acc, p) => ({ [p]: acc }), value) as Record<string, unknown>;
 
+/** The label key of every numeric entry built so far, so an error can name the field the user sees instead of its path. */
+export const FIELD_LABELS = new Map<string, string>();
+
+/** Text of a refused request; a config entry is named by its label and its limits are written out (thousands separated). */
+function failText(err: ApiError): string {
+  const params = err.params ? { ...err.params } : undefined;
+  const label = typeof params?.path === 'string' ? FIELD_LABELS.get(params.path) : undefined;
+  if (params && label) params.path = t(label);
+  if (params && typeof params.min === 'number') params.min = groupNumber(params.min);
+  if (params && typeof params.max === 'number') params.max = groupNumber(params.max);
+  return errorText({ code: err.code, params: params as ApiError['params'] });
+}
+
 /** Stages one config entry (sent by Save); the cached config follows at once so a tab built again shows the pending value. */
 function saveEntry(env: Env, path: string, value: unknown): void {
   if (env.options) setPath(env.options.config, path, value);
-  env.stage(`config:${path}`, () => api<ApiError>('/api/config', { method: 'PUT', body: toPatch(path, value) }));
+  env.stage(`config:${path}`, (dry) => api<ApiError>(dry ? '/api/config?dryRun=1' : '/api/config', { method: 'PUT', body: toPatch(path, value) }));
 }
 
 type FieldKind = 'number' | 'text' | 'bool' | 'lines';
@@ -104,6 +121,7 @@ interface FieldDef { path: string; label: string; kind: FieldKind; help?: string
 /** One editable entry: a change is staged for Save (PUT /api/config); a value that is not a number is refused at once. */
 function createField(env: Env, def: FieldDef): HTMLElement {
   const row = el('label', def.kind === 'bool' ? 'settings-switch' : 'options-field');
+  FIELD_LABELS.set(def.path, def.label);
   const text = el('span');
   bindText(text, def.label);
   const current = getPath(env.options?.config, def.path);
@@ -164,8 +182,9 @@ const fields = (env: Env, defs: FieldDef[]): HTMLElement => {
 interface SliderDef { path: string; label: string; min: number; max: number; step: number; format?: (n: number) => string }
 
 /** A horizontal slider with its value shown at the right in a read-only box. `onValue` runs with the value after every move. */
-function createSlider(def: SliderDef, start: number, onValue: (n: number, slider: HTMLInputElement) => number): { row: HTMLElement; set(n: number): void; get(): number } {
+export function createSlider(def: SliderDef, start: number, onValue: (n: number, slider: HTMLInputElement) => number): { row: HTMLElement; set(n: number): void; get(): number } {
   const row = el('div', 'options-slider');
+  FIELD_LABELS.set(def.path, def.label);
   const text = el('span', 'options-slider-label');
   bindText(text, def.label);
   const input = el('input');
@@ -192,7 +211,7 @@ function createSlider(def: SliderDef, start: number, onValue: (n: number, slider
   return { row, set, get: () => Number(input.value) };
 }
 
-const groupNumber = (n: number): string => new Intl.NumberFormat(language()).format(n);
+export const groupNumber = (n: number): string => new Intl.NumberFormat(language()).format(n);
 
 /** One slider for one config entry (staged like any field). */
 function sliderField(env: Env, def: SliderDef): HTMLElement {
@@ -202,8 +221,9 @@ function sliderField(env: Env, def: SliderDef): HTMLElement {
 }
 
 /**
- * Sliders that must stay in order (alert below restriction below stop): moving one stops at its neighbour, and the whole group is sent as one
- * request, because the server checks the order of the group and a value sent alone could be refused against the old values of the others.
+ * Sliders that must stay in order (alert below restriction below stop): a slider that reaches its neighbour pushes it (and the next one) along,
+ * in both directions, and stops only when the whole chain reaches the end of the scale. The whole group is sent as one request, because the
+ * server checks the order of the group and a value sent alone could be refused against the old values of the others.
  * `gaps[i]` is the least distance from slider i to slider i+1.
  */
 function sliderGroup(env: Env, defs: SliderDef[], gaps: number[]): HTMLElement {
@@ -213,13 +233,19 @@ function sliderGroup(env: Env, defs: SliderDef[], gaps: number[]): HTMLElement {
   const stage = (): void => {
     const patch: Record<string, unknown> = {};
     defs.forEach((d, i) => { setPath(patch, d.path, values[i]); if (env.options) setPath(env.options.config, d.path, values[i]); });
-    env.stage(`config:${defs[0]!.path}+`, () => api<ApiError>('/api/config', { method: 'PUT', body: patch }));
+    env.stage(`config:${defs[0]!.path}+`, (dry) => api<ApiError>(dry ? '/api/config?dryRun=1' : '/api/config', { method: 'PUT', body: patch }));
   };
+  const sum = (from: number, to: number): number => gaps.slice(from, to).reduce((a, g) => a + g, 0);
+  const last = defs.length - 1;
   defs.forEach((d, i) => {
     sliders.push(createSlider(d, values[i]!, (n) => {
-      const lo = i > 0 ? values[i - 1]! + gaps[i - 1]! : d.min;
-      const hi = i < defs.length - 1 ? values[i + 1]! - gaps[i]! : Number.POSITIVE_INFINITY;
+      // The slider can go as far as the whole chain still fits between the ends of the scale.
+      const lo = defs[0]!.min + sum(0, i);
+      const hi = Math.max(defs[last]!.max, values[last]!) - sum(i, last);
       values[i] = Math.min(Math.max(n, lo), hi);
+      for (let j = i + 1; j <= last; j++) values[j] = Math.max(values[j]!, values[j - 1]! + gaps[j - 1]!);
+      for (let j = i - 1; j >= 0; j--) values[j] = Math.min(values[j]!, values[j + 1]! - gaps[j]!);
+      sliders.forEach((sl, j) => { if (j !== i) sl.set(values[j]!); });
       stage();
       return values[i]!;
     }));
@@ -272,58 +298,26 @@ function budgetTab(env: Env): HTMLElement {
 }
 
 /** Whether git is installed (from the prerequisite checks) and, when it is not, the exact command the console would run to install it. */
-function gitToolSection(env: Env): HTMLElement {
-  const box = el('div', 'options-git-tool');
-  box.append(heading(k('options.git.program')));
-  const row = el('div', 'prereq-row');
-  const status = el('span');
-  const detail = el('span');
-  const command = el('p', 'settings-note');
-  const install = el('button');
-  install.type = 'button';
-  install.name = 'installGit';
-  bindText(install, 'prereq.install');
-  const recheck = el('button');
-  recheck.type = 'button';
-  recheck.name = 'recheckGit';
-  bindText(recheck, 'prereq.recheck');
-  const show = (results: PrereqResult[] | null): void => {
-    const git = results?.find((r) => r.id === 'git');
-    if (!git) { status.className = 'prereq-unknown'; bindText(status, 'common.notAvailable'); detail.textContent = ''; } // unknown is never "ok"
-    else { status.className = `prereq-${git.status}`; bindText(status, `prereq.status.${git.status}`); detail.textContent = git.version ?? ''; }
-    const missing = git !== undefined && (git.status === 'missing' || git.status === 'error');
-    install.hidden = !missing;
-    command.hidden = !missing;
-    if (missing) {
-      void api<{ display?: string }>('/api/prereq/git/install').then((res) => {
-        if (res.status === 200 && res.body.display) bindText(command, 'options.git.installCommand', { command: res.body.display });
-        else bindText(command, 'prereq.install.manual.git');
-      });
-    }
-  };
-  show(env.state?.prereq ?? null);
-  install.addEventListener('click', () => openInstallDialog('git', () => recheck.click()));
-  recheck.addEventListener('click', () => {
-    void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => { if (res.status === 200) show(res.body); else env.fail(res); });
-  });
-  row.append(el('span'), status, detail, install, recheck);
-  bindText(row.firstElementChild as HTMLElement, 'prereq.git');
-  box.append(row, command);
-  return box;
-}
-
 function gitTab(env: Env): HTMLElement {
   const box = el('div', 'settings-agents');
   const bad = unavailable(env);
   if (bad) { box.append(bad); return box; }
-  box.append(gitToolSection(env), renderGitProject(env.state, env.fail, heading(k('options.git.project'))));
+  // Nothing about the program while git is there. When it is not (missing, unreadable, installed but not visible yet) one red line sends the
+  // user to Prerequisites; it is checked again every time the tab is shown, so it goes away after an install.
+  const missing = el('p', 'form-error options-git-missing');
+  bindText(missing, 'options.git.missing');
+  const syncMissing = (): void => {
+    const git = env.state?.prereq?.find((r) => r.id === 'git');
+    if (git !== undefined && git.status !== 'ok') box.prepend(missing); else missing.remove(); // unknown (checks not finished): nothing to say yet
+  };
+  box.addEventListener('optionsshow', syncMissing);
+  syncMissing();
+  box.append(renderGitProject(env.state, env.fail, heading(k('options.git.project'))));
   box.append(
     fields(env, [
       { path: 'git.worktrees', label: k('options.git.worktrees'), kind: 'bool', help: k('options.git.worktrees.help') },
       { path: 'git.testTimeoutMinutes', label: k('options.git.testTimeoutMinutes'), kind: 'number' },
-      { path: 'git.secretPatterns', label: k('options.git.secretPatterns'), kind: 'lines', help: k('options.git.secretPatterns.help') },
     ]),
-    note(k('settings.appliesToNew')),
   );
   return box;
 }
@@ -360,7 +354,7 @@ function guardTab(env: Env): HTMLElement {
   guard.value = state?.settings.guardMode ?? 'enforce';
   guard.addEventListener('change', () => saveEntry(env, 'guard.mode', guard.value));
   guardRow.append(guardText, guard);
-  box.append(bypassRow, warning, guardRow, note(k('settings.appliesToNew')));
+  box.append(bypassRow, warning, guardRow);
   return box;
 }
 
@@ -377,13 +371,24 @@ function projectsTab(env: Env): HTMLElement {
   squashRow.append(squash, squashText, infoIcon(k('settings.squash.help')));
   squash.addEventListener('change', () => {
     const wanted = squash.checked;
-    env.stage('project:squash', () => api<ApiError>('/api/project', { method: 'PUT', body: { squash: wanted } }));
+    env.stage('project:squash', (dry) => api<ApiError>(dry ? '/api/project?dryRun=1' : '/api/project', { method: 'PUT', body: { squash: wanted } }));
   });
+
+  // Inhibit the tests: nothing runs them (validation step, review, merge, release) and the reports say "not run". For a project that has none.
+  const offRow = el('label', 'settings-switch');
+  const off = el('input');
+  off.type = 'checkbox';
+  off.name = 'testsDisabled';
+  off.checked = state?.project.testsDisabled === true;
+  const offText = el('span');
+  bindText(offText, 'settings.testsDisabled');
+  offRow.append(off, offText, infoIcon(k('settings.testsDisabled.help')));
 
   const testForm = el('form', 'settings-test');
   const testLabel = el('label');
-  const testText = el('span');
-  bindText(testText, 'settings.testCommand');
+  const testText = el('span', 'options-field-head');
+  const testName = el('span');
+  bindText(testName, 'settings.testCommand');
   const test = el('input');
   test.name = 'testCommand';
   test.autocomplete = 'off';
@@ -392,18 +397,27 @@ function projectsTab(env: Env): HTMLElement {
   testForm.addEventListener('submit', (ev) => ev.preventDefault());
   test.addEventListener('change', () => {
     const wanted = test.value;
-    env.stage('project:testCommand', () => api<ApiError>('/api/project', { method: 'PUT', body: { testCommand: wanted } }));
+    env.stage('project:testCommand', (dry) => api<ApiError>(dry ? '/api/project?dryRun=1' : '/api/project', { method: 'PUT', body: { testCommand: wanted } }));
   });
-  // Empty means "use what the project's files suggest": the placeholder shows it, and the line below says where it comes from.
+  // Empty means "use what the project's files suggest": the placeholder shows it. Everything that explains the field (what runs it, what was
+  // detected, what happens with no command) is in its (i) tooltip, not in lines under it.
   const detected = state?.project.detectedTestCommand;
   if (detected) test.placeholder = detected;
-  const detectedNote = detected ? note(k('settings.testCommand.detected'), { command: detected }) : note(k('settings.testCommand.none'));
-  testForm.append(testLabel, note(k('settings.testCommand.help')), detectedNote);
-  box.append(squashRow, testForm);
+  testText.append(testName, detected ? infoIcon(k('settings.testCommand.tip.detected'), { command: detected }) : infoIcon(k('settings.testCommand.tip.none')));
+  testForm.append(testLabel);
+  // With the tests inhibited the command is not used: the field is disabled (and dimmed), its text is kept for when they come back.
+  const syncTests = (): void => { test.disabled = off.checked; testForm.classList.toggle('is-off', off.checked); };
+  off.addEventListener('change', () => {
+    const wanted = off.checked;
+    env.stage('project:testsDisabled', (dry) => api<ApiError>(dry ? '/api/project?dryRun=1' : '/api/project', { method: 'PUT', body: { testsDisabled: wanted } }));
+    syncTests();
+  });
+  syncTests();
+  box.append(squashRow, offRow, testForm);
 
   // Fields of the project: always shown (a project made from the generic template carries none yet, and this is where they are set).
   const project = (state?.project ?? {}) as Record<string, unknown>;
-  const stageProject = (key: string, wanted: unknown): void => env.stage(`project:${key}`, () => api<ApiError>('/api/project', { method: 'PUT', body: { [key]: wanted } }));
+  const stageProject = (key: string, wanted: unknown): void => env.stage(`project:${key}`, (dry) => api<ApiError>(dry ? '/api/project?dryRun=1' : '/api/project', { method: 'PUT', body: { [key]: wanted } }));
   const modelRow = el('label', 'options-field');
   const modelText = el('span');
   bindText(modelText, 'options.projects.model');
@@ -418,11 +432,44 @@ function projectsTab(env: Env): HTMLElement {
   bindText(maxText, 'options.projects.maxActive');
   const maxInput = el('input');
   maxInput.name = 'maxActive';
+  FIELD_LABELS.set('project.maxActive', 'options.projects.maxActive');
   maxInput.type = 'number';
   maxInput.value = String(project.maxActive ?? '');
   maxInput.addEventListener('change', () => stageProject('maxActive', maxInput.value.trim() === '' ? null : Number(maxInput.value)));
   maxRow.append(maxText, maxInput);
   box.append(maxRow);
+  // The token budget of this project's agents: a slider like the one of Budget and limits, starting where the project stands now. Only a move is saved.
+  const globalTokens = Number(getPath(env.options?.config, 'budget.agentTokens') ?? 500_000);
+  const tokens = createSlider({ path: 'agentTokens', label: k('options.projects.agentTokens'), min: 50_000, max: 2_000_000, step: 50_000, format: groupNumber },
+    Number(project.agentTokens ?? globalTokens), (n) => { stageProject('agentTokens', n); return n; });
+  box.append(tokens.row);
+  maxInput.placeholder = String(getPath(env.options?.config, 'agents.maxActivePerProject') ?? ''); // empty: the default of Budget and limits
+
+  // The settings of another open project, copied onto this one (what the new-project dialog also offers).
+  const others = (env.getState()?.projects ?? []).filter((p) => p.name !== state?.project.name);
+  if (others.length > 0) {
+    const from = el('select');
+    from.name = 'copyFrom';
+    for (const p of others) { const o = el('option'); o.value = p.name; o.textContent = p.name; from.append(o); }
+    const copyBtn = el('button');
+    copyBtn.type = 'button';
+    copyBtn.name = 'copySettings';
+    bindText(copyBtn, 'options.projects.copy.apply');
+    const copied = note(k('options.projects.copy.help'));
+    copyBtn.addEventListener('click', () => {
+      if (!window.confirm(t(k('options.projects.copy.confirm'), { from: from.value }))) return;
+      copyBtn.disabled = true;
+      void api<ApiError>('/api/projects/copy-settings', { method: 'POST', body: { from: from.value } }).then((res) => {
+        copyBtn.disabled = false;
+        if (!env.fail(res)) bindText(copied, 'options.projects.copy.done', { from: from.value });
+      });
+    });
+    const copyLabel = el('label', 'options-field');
+    const copyText = el('span');
+    bindText(copyText, 'options.projects.copy');
+    copyLabel.append(copyText, from);
+    box.append(copyLabel, copyBtn, copied);
+  }
 
   // Another template for this project: its profiles, main.md and rules.md replace the files of the same name; the commands stay.
   const pick = el('select');
@@ -466,28 +513,10 @@ function projectsTab(env: Env): HTMLElement {
 }
 
 function profilesTab(env: Env): HTMLElement {
-  const box = el('div', 'settings-agents');
+  const box = el('div', 'settings-agents options-profiles-box');
   const bad = unavailable(env);
   if (bad) { box.append(bad); return box; }
-  renderProfilesTab(box, env.options!.paths.profilesDir, (on) => env.profileEditing(on));
-  return box;
-}
-
-function modTab(env: Env): HTMLElement {
-  const box = el('div', 'settings-agents');
-  const bad = unavailable(env);
-  if (bad) { box.append(bad); return box; }
-  const p = el('p');
-  bindText(p, getPath(env.options!.config, 'mod.enabled') === true ? k('options.mod.enabled') : k('options.mod.disabled'));
-  box.append(p, note(k('options.mod.help')));
-  return box;
-}
-
-function serverTab(env: Env): HTMLElement {
-  const box = el('div', 'settings-agents');
-  const bad = unavailable(env);
-  if (bad) { box.append(bad); return box; }
-  box.append(note(k('options.server.port'), { port: env.options!.server.port }), note(k('options.server.configDir'), { path: env.options!.paths.configDir }));
+  renderProfilesTab(box, env.options!.paths.profilesDir, Number(getPath(env.options!.config, 'budget.agentTokens') ?? 500_000), (on) => env.profileEditing(on));
   return box;
 }
 
@@ -496,7 +525,7 @@ function languageTab(env: Env): HTMLElement {
   const text = el('span');
   bindText(text, 'settings.language');
   const select = createLanguageSelect(env.state?.language ?? 'en', env.state?.languages ?? [], (value) => {
-    env.stage('config:language', () => api<ApiError>('/api/config', { method: 'PUT', body: { language: value } }));
+    env.stage('config:language', (dry) => api<ApiError>(dry ? '/api/config?dryRun=1' : '/api/config', { method: 'PUT', body: { language: value } }));
   });
   row.append(text, select);
   return row;
@@ -505,8 +534,8 @@ function languageTab(env: Env): HTMLElement {
 function prereqTab(env: Env): HTMLElement {
   const box = el('div');
   const table = el('div');
-  renderPrereqTable(table, env.state?.prereq ?? null);
-  box.append(heading(k('settings.prerequisites')), table);
+  renderPrereqTable(table, env.state?.prereq ?? null, undefined, false, env.state?.helperUse);
+  box.append(table); // no title: the tab is already called Prerequisites
   return box;
 }
 
@@ -561,11 +590,9 @@ function modelsTab(env: Env): HTMLElement {
   url.addEventListener('change', () => saveEntry(env, 'models.catalogUrl', url.value.trim()));
   urlLabel.append(urlHead, url);
 
-  const foot = note(k('settings.appliesToNew'));
-  foot.classList.add('options-footnote');
   const agentRow = el('div', 'options-field');
   agentRow.append(head, pick);
-  box.append(agentRow, missing, urlLabel, foot);
+  box.append(agentRow, missing, urlLabel);
   load('/api/models', 'GET');
   return box;
 }
@@ -583,6 +610,24 @@ function pluginsTab(env: Env): HTMLElement {
   refresh.name = 'refreshPlugins';
   bindText(refresh, 'options.plugins.refresh');
   const lang = language();
+  let installed: InstalledMap | undefined; // undefined: not asked yet
+  const unreadable = note(k('options.plugins.installed.unreadable'));
+  unreadable.hidden = true;
+  /** Writes the install state on every card (and drops the command to copy from a plugin that is already there). */
+  const showInstalled = (): void => {
+    unreadable.hidden = installed !== null;
+    if (installed === undefined) return;
+    for (const card of body.querySelectorAll<HTMLElement>('.options-plugin')) {
+      const slot = card.querySelector<HTMLElement>('.options-plugin-status')!;
+      const status = installed?.[card.dataset.plugin ?? ''];
+      const here = status?.state === 'installed' || status?.state === 'project' || status?.state === 'disabled';
+      card.classList.toggle('is-installed', here);
+      card.querySelector<HTMLElement>('.options-command-row')?.toggleAttribute('hidden', here);
+      slot.className = `options-plugin-status${here ? ' ok' : ''}`;
+      if (!status) { slot.removeAttribute('data-i18n'); slot.textContent = ''; continue; }
+      bindText(slot, `options.plugins.installed.${status.state}`, { version: status.version ?? t('common.notAvailable') });
+    }
+  };
   const render = (list: PluginList): void => {
     bindText(source, `options.plugins.source.${list.source}`, { updated: list.updated ?? t('common.notAvailable') });
     body.replaceChildren();
@@ -594,17 +639,23 @@ function pluginsTab(env: Env): HTMLElement {
       body.append(tierTitle);
       for (const p of rows) {
         const card = el('div', 'options-plugin');
+        card.dataset.plugin = p.id;
         const title = el('div', 'options-plugin-title');
         const id = el('strong');
         id.textContent = p.id;
         const trust = el('span', 'settings-note');
         bindText(trust, `options.plugins.trust.${p.trust}`);
-        title.append(id, trust);
+        const status = el('span', 'options-plugin-status');
+        title.append(id, trust, status);
         const summary = el('p');
         summary.textContent = p.summary[lang] ?? p.summary.en ?? '';
-        const cost = el('p', 'settings-note');
-        bindText(cost, 'options.plugins.cost', { value: p.cost?.contextTokens != null ? p.cost.contextTokens : t('common.notAvailable') });
-        card.append(title, summary, cost);
+        card.append(title, summary);
+        // The context a plugin takes is shown only when it is known: a line that always says n/a is noise.
+        if (p.cost?.contextTokens != null) {
+          const cost = el('p', 'settings-note');
+          bindText(cost, 'options.plugins.cost', { value: p.cost.contextTokens });
+          card.append(cost);
+        }
         if (p.requires.length > 0) card.append(note(k('options.plugins.requires'), { list: p.requires.join(', ') }));
         for (const c of p.conflicts) {
           const w = el('p', 'settings-warning');
@@ -635,13 +686,19 @@ function pluginsTab(env: Env): HTMLElement {
         body.append(card);
       }
     }
+    showInstalled(); // the state asked earlier (a refresh of the catalog does not ask Claude again)
   };
   const load = (path: string, method: string): void => {
     void api<PluginList>(path, { method }).then((res) => { if (res.status === 200) render(res.body); else env.fail(res); });
   };
-  refresh.addEventListener('click', () => load('/api/plugins/refresh', 'POST'));
-  box.append(refresh, source, body);
+  // Which plugins are installed comes from Claude Code and takes a moment: the catalog shows first, the states follow.
+  const loadInstalled = (): void => {
+    void api<{ installed: InstalledMap }>('/api/plugins/installed').then((res) => { if (res.status === 200) { installed = res.body.installed; showInstalled(); } });
+  };
+  refresh.addEventListener('click', () => { load('/api/plugins/refresh', 'POST'); loadInstalled(); });
+  box.append(refresh, source, unreadable, body);
   load('/api/plugins', 'GET');
+  loadInstalled();
   return box;
 }
 
@@ -649,13 +706,13 @@ function pluginsTab(env: Env): HTMLElement {
 const RESTART_PATHS = ['agents.bypassPermissions', 'guard.mode', 'models.agent'] as const;
 
 const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
-  models: modelsTab, profiles: profilesTab, budget: budgetTab, projects: projectsTab, git: gitTab, guard: guardTab, mod: modTab,
+  models: modelsTab, profiles: profilesTab, budget: budgetTab, projects: projectsTab, git: gitTab, guard: guardTab,
   notifications: (env) => {
     const box = el('div');
     if (env.state) renderNotificationsTab(box, env.state, env.stage);
     return box;
   },
-  language: languageTab, prerequisites: prereqTab, plugins: pluginsTab, server: serverTab,
+  language: languageTab, prerequisites: prereqTab, plugins: pluginsTab,
 };
 
 /** Where a restart-relevant setting is when the options payload has no value for it (the guard tab reads the state, not the config). */
@@ -674,7 +731,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   const title = el('h2');
   bindText(title, 'settings.title');
   const error = el('div', 'form-error');
-  const pending = new Map<string, () => Promise<{ status: number; body: unknown }>>();
+  const pending = new Map<string, (dry: boolean) => Promise<{ status: number; body: unknown }>>();
   let editingProfile = false;
   let current: OptionTab = first;
   let syncSave = (): void => undefined; // set once the Save button exists
@@ -683,7 +740,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
     state: getState(), options: loaded.status === 200 ? (loaded.body as OptionsPayload) : null, error, getState,
     fail: (res) => {
       if (res.status === 200) { error.textContent = ''; return false; }
-      error.textContent = errorText(res.body as ApiError);
+      error.textContent = failText(res.body as ApiError);
       return true;
     },
     stage: (key, run) => { pending.delete(key); pending.set(key, run); },
@@ -695,6 +752,12 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   panel.setAttribute('role', 'tabpanel');
   const buttons = new Map<OptionTab, HTMLButtonElement>();
   const built = new Map<OptionTab, HTMLElement>(); // a tab keeps its fields while another is shown, so staged edits are not lost
+  // A tab that is not on screen is not in the document, so a language change would skip it: translate every kept tab again.
+  const onLanguage = (): void => {
+    if (!dialog.isConnected) { window.removeEventListener('languagechange', onLanguage); return; }
+    for (const view of built.values()) retranslate(view);
+  };
+  window.addEventListener('languagechange', onLanguage);
   const LIVE: readonly OptionTab[] = ['prerequisites', 'plugins']; // read-only views rebuilt on every visit
   const show = (tab: OptionTab): void => {
     for (const [id, b] of buttons) { b.setAttribute('aria-selected', String(id === tab)); b.classList.toggle('selected', id === tab); }
@@ -705,16 +768,23 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
     let view = built.get(tab);
     if (!view || LIVE.includes(tab)) { view = BUILDERS[tab](env); built.set(tab, view); }
     panel.replaceChildren(view);
+    view.dispatchEvent(new Event('optionsshow')); // a kept tab may need to look at the state again
   };
-  for (const id of OPTION_TABS) {
-    const b = el('button', 'options-tab');
-    b.type = 'button';
-    b.dataset.tab = id;
-    b.setAttribute('role', 'tab');
-    bindText(b, `options.tab.${id}`);
-    b.addEventListener('click', () => show(id));
-    buttons.set(id, b);
-    tabs.append(b);
+  for (const group of OPTION_GROUPS) {
+    const head = el('div', 'options-group');
+    head.setAttribute('role', 'presentation');
+    bindText(head, `options.group.${group.id}`);
+    tabs.append(head);
+    for (const id of group.tabs) {
+      const b = el('button', 'options-tab');
+      b.type = 'button';
+      b.dataset.tab = id;
+      b.setAttribute('role', 'tab');
+      bindText(b, `options.tab.${id}`);
+      b.addEventListener('click', () => show(id));
+      buttons.set(id, b);
+      tabs.append(b);
+    }
   }
   const x = el('button', 'icon-btn dialog-x');
   x.type = 'button';
@@ -734,9 +804,20 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
   save.addEventListener('click', () => {
     save.disabled = true;
     void (async () => {
+      // All or nothing: every staged change is first only checked (nothing is written), so all the refusals are shown together and a
+      // refused Save leaves everything as it was, the changes staged and the dialog open.
+      const refused: string[] = [];
+      for (const [, run] of pending) {
+        const res = await run(true).catch(() => ({ status: 0, body: { code: 'network' } }));
+        if (res.status === 200) continue;
+        const text = failText(res.body as ApiError);
+        if (!refused.includes(text)) refused.push(text);
+      }
+      if (refused.length > 0) { error.textContent = refused.join('\n'); save.disabled = false; return; }
+      error.textContent = '';
       for (const [key, run] of [...pending]) {
-        const res = await run().catch(() => ({ status: 0, body: { code: 'network' } }));
-        if (env.fail(res)) { save.disabled = false; return; } // stays open with what was refused still staged
+        const res = await run(false).catch(() => ({ status: 0, body: { code: 'network' } }));
+        if (env.fail(res)) { save.disabled = false; return; } // not expected after the check (a file changed meanwhile); what is left stays staged
         pending.delete(key);
       }
       // The guard and bypass tabs are built from the state, the others from the config: the staged value is in the config either way.
@@ -748,7 +829,10 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
     })();
   });
   syncSave = (): void => { save.hidden = editingProfile && current === 'profiles'; };
-  dialog.append(title, x, tabs, panel, error, save);
+  // The note about when settings apply is said once, here, next to Save (and stays when Save is hidden by the profile form).
+  const foot = el('div', 'options-foot');
+  foot.append(note(k('settings.appliesToNew')), save);
+  dialog.append(title, x, tabs, panel, error, foot);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
   show(first);

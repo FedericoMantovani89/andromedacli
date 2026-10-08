@@ -15,6 +15,8 @@ export interface ReportInput {
   files: ChangedFile[];
   /** The console's own run (never an agent's claim). */
   tests?: TestResult;
+  /** The user switched the tests off for this project: "no run" is then said as such, not as "n/a". */
+  testsInhibited?: boolean;
   /** The note of the documentation step, when it was closed with a note instead of a change. */
   docsNote?: string;
   verdicts: Verdict[];
@@ -90,7 +92,7 @@ export function buildReport(i: ReportInput): string {
   out.push('');
 
   out.push(`## ${t('report.tests')}`, '');
-  if (!i.tests) out.push(na);
+  if (!i.tests) out.push(i.testsInhibited ? t('report.tests.inhibited') : na);
   else {
     out.push(`${t('report.tests.command')}: \`${i.tests.command}\``);
     out.push(`${t('report.tests.result')}: ${i.tests.ok ? t('report.tests.passed') : t('report.tests.failed')} (${t('report.tests.commit', { sha: i.tests.sha.slice(0, 7) })})`);
@@ -131,7 +133,7 @@ export function squashMessage(i: ReportInput): string {
   const lines = [`ticket ${plain(i.slug)}${goalLine ? `: ${cut(goalLine, 72)}` : ''}`, ''];
   if (i.goal?.trim()) lines.push(`Objective: ${cut(oneLine(i.goal), 400)}`);
   lines.push(`Files: ${i.files.length} changed (+${sum.added} -${sum.removed})`);
-  lines.push(`Tests: ${i.tests ? `${i.tests.ok ? 'passed' : 'failed'} (${oneLine(i.tests.command)})` : 'n/a'}`);
+  lines.push(`Tests: ${i.tests ? `${i.tests.ok ? 'passed' : 'failed'} (${oneLine(i.tests.command)})` : i.testsInhibited ? 'not run (switched off for this project)' : 'n/a'}`);
   lines.push(`Steps: ${done}/${i.steps.length}`);
   const notes = i.steps.filter((s) => s.note?.trim()).slice(0, 10);
   if (notes.length > 0) {

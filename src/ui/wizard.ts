@@ -59,7 +59,7 @@ export function openWizard(getState: () => StateMessage | undefined): void {
     if (step === 'language') {
       body.append(createLanguageSelect(chosenLanguage, state?.languages ?? [], (v) => { chosenLanguage = v; }));
     } else if (step === 'prerequisites') {
-      renderPrereqTable(body, state?.prereq ?? null, middle);
+      renderPrereqTable(body, state?.prereq ?? null, middle, true); // required tools only: the optional ones are in Options
     } else {
       body.append(renderGitProject(state, (res) => {
         if (res.status >= 200 && res.status < 300) return false;

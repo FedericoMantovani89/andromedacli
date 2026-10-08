@@ -27,7 +27,7 @@ import type { ReviewService } from './tickets/review';
 import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
-import { isValidProjectField, isValidTestCommand, PROJECT_FIELDS } from './project-store';
+import { isValidProjectField, isValidTestCommand, PROJECT_FIELDS, PROJECT_RANGES } from './project-store';
 import { loadTemplates } from './templates/load';
 import { detectProject } from './templates/detect';
 import { saveTemplate } from './templates/save';
@@ -44,6 +44,8 @@ import { handleProjectsRoute, ProjectError, type ProjectsApi } from './projects-
 /** Finds the project a request or socket asked for with `?project=<name>`; no name means the first project; undefined when it is not open. */
 export type ProjectResolver = (name?: string) => Context | undefined;
 import type { InstallService } from './prereq/install';
+import type { Runner } from './prereq/checks';
+import type { HelperUse } from './helper-usage';
 import type { WakeService } from './agents/wake';
 
 export interface Context extends V1Context {
@@ -54,6 +56,8 @@ export interface Context extends V1Context {
   projectName: string;
   projectRoot: string;
   claudeCommand: string[];
+  /** Runs a command to read its output (the plugin list); tests inject a fake one. */
+  commandRunner?: Runner;
   /** Mod folder passed to launched sessions (--plugin-dir), when enabled. */
   modDir?: string;
   scheduler: Scheduler;
@@ -109,6 +113,8 @@ export interface Context extends V1Context {
   /** A test seam: runs after an agent's worktree exists and before its process starts (a throw simulates a failed start). */
   afterWorktreeCreated?: (slug: string) => void | Promise<void>;
   getPrereq(): PrereqResult[] | null;
+  /** The count of shell commands that used each optional helper (console-wide). */
+  getHelperUse(): HelperUse;
   /** Resolves with the checks, waiting for the startup run if it has not finished (unknown is never ok, P7). */
   ensurePrereq(): Promise<PrereqResult[]>;
   refreshPrereq(): Promise<PrereqResult[]>;
@@ -185,11 +191,12 @@ export function buildState(ctx: Context): StateMessage {
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
     .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
+  let testsDisabled: boolean | undefined;
   let squash: boolean | undefined;
   let model: string | undefined;
   let maxActive: number | undefined;
   let offeredProfiles: string[] | undefined;
-  try { ({ testCommand, squash, model, maxActive, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
+  try { ({ testCommand, testsDisabled, squash, model, maxActive, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
   const repos = ctx.repos();
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
@@ -200,8 +207,8 @@ export function buildState(ctx: Context): StateMessage {
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
-    prereq: ctx.getPrereq(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
+    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(testsDisabled ? { testsDisabled } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
+    prereq: ctx.getPrereq(), helperUse: ctx.getHelperUse(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
     queue: ctx.questions.pending(),
     ...(ctx.projects ? { projects: ctx.projects.list() } : {}),
     notifications: { toast: ctx.notify.toast(), config: ctx.notificationsConfig },
@@ -384,8 +391,11 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const b = (typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
       // The language must have a bundle (the file check alone only knows its shape); everything else is validated against the merged file.
       if ('language' in b && (typeof b.language !== 'string' || (b.language !== 'auto' && !ctx.bundles.has(b.language)))) return fail(res, 422, 'config.invalid', { path: 'language' });
-      const saved = applyConfigPatch(ctx.configPath, b);
-      if (!saved.ok) return saved.code === 'config.invalid' ? fail(res, 422, saved.code, { path: saved.path }) : fail(res, 409, saved.code);
+      // `?dryRun=1`: only says whether the patch would be accepted; nothing is written or applied (Options checks everything before it saves anything).
+      const dry = new URL(req.url ?? '/', 'http://x').searchParams.get('dryRun') === '1';
+      const saved = applyConfigPatch(ctx.configPath, b, dry);
+      if (!saved.ok) return saved.code === 'config.invalid' ? (saved.range ? fail(res, 422, 'config.outOfRange', { path: saved.path, ...saved.range }) : fail(res, 422, saved.code, { path: saved.path })) : fail(res, 409, saved.code);
+      if (dry) return send(res, 200, {});
       const applied = saved.applied as { language?: string; agents?: { bypassPermissions?: boolean }; guard?: { mode?: 'enforce' | 'shadow' } };
       if (applied.language !== undefined) ctx.setLanguage(applied.language);
       if (applied.agents?.bypassPermissions !== undefined || applied.guard?.mode !== undefined) ctx.applySettings({ bypass: applied.agents?.bypassPermissions, guardMode: applied.guard?.mode });
@@ -432,6 +442,13 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'GET' && path === '/api/models') return send(res, 200, await ctx.models.list());
     if (req.method === 'POST' && path === '/api/models/refresh') return send(res, 200, await ctx.models.list(true));
     if (req.method === 'GET' && path === '/api/plugins') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version));
+    // Which catalog plugins are installed for this project, asked of Claude Code itself; `installed: null` when it cannot tell.
+    if (req.method === 'GET' && path === '/api/plugins/installed') {
+      const { readInstalled, statusOf } = await import('./catalog/installed');
+      const listed = await readInstalled(ctx.claudeCommand, ctx.commandRunner);
+      const ids = (await ctx.plugins.list(undefined)).plugins.map((p) => p.id);
+      return send(res, 200, { installed: listed === null ? null : Object.fromEntries(ids.map((id) => [id, statusOf(id, listed, ctx.projectRoot)])) });
+    }
     if (req.method === 'POST' && path === '/api/plugins/refresh') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version, true));
 
     if (req.method === 'PUT' && path === '/api/project') {
@@ -441,23 +458,31 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const b = body as Record<string, unknown>;
       const hasCommand = 'testCommand' in b;
       const hasSquash = 'squash' in b;
+      const hasTests = 'testsDisabled' in b;
       const knownProfiles = listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'));
       const projectFields = PROJECT_FIELDS.filter((f) => f in b); // Phase 6D: build/lint commands, profiles, model, budget, limit, docs, secrets
-      if (!hasCommand && !hasSquash && projectFields.length === 0) return fail(res, 400, 'bad_request');
+      if (!hasCommand && !hasSquash && !hasTests && projectFields.length === 0) return fail(res, 400, 'bad_request');
       // Everything is checked before anything is written: a bad entry changes nothing.
       if (hasSquash && typeof b.squash !== 'boolean') return fail(res, 422, 'project.squashInvalid');
+      if (hasTests && typeof b.testsDisabled !== 'boolean') return fail(res, 422, 'project.testsDisabledInvalid');
       if (hasCommand && !isValidTestCommand(b.testCommand)) return fail(res, 422, 'project.testCommandInvalid');
       for (const f of projectFields) {
         const v = typeof b[f] === 'string' ? (b[f] as string).trim() : b[f];
         const clears = v === null || v === '' || (Array.isArray(v) && v.length === 0);
-        if (!clears && !isValidProjectField(f, v, knownProfiles)) return fail(res, 422, 'project.fieldInvalid', { field: f });
+        if (!clears && !isValidProjectField(f, v, knownProfiles)) {
+          const lim = PROJECT_RANGES[f];
+          if (lim && typeof v === 'number') return fail(res, 422, 'config.outOfRange', { path: `project.${f}`, min: lim[0], max: lim[1] });
+          return fail(res, 422, 'project.fieldInvalid', { field: f });
+        }
       }
+      if (new URL(req.url ?? '/', 'http://x').searchParams.get('dryRun') === '1') return send(res, 200, {}); // checked, nothing written
       if (hasCommand) ctx.store.setTestCommand(b.testCommand as string);
       if (hasSquash) ctx.store.setSquash(b.squash as boolean);
+      if (hasTests) ctx.store.setTestsDisabled(b.testsDisabled as boolean);
       if (projectFields.length > 0) ctx.store.setFields(Object.fromEntries(projectFields.map((f) => [f, b[f]])), knownProfiles);
       ctx.broadcastState();
       const saved = ctx.store.project;
-      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...Object.fromEntries(projectFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
+      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...(hasTests ? { testsDisabled: b.testsDisabled } : {}), ...Object.fromEntries(projectFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
     }
 
     if (req.method === 'POST' && path === '/api/projects/save-template') {
@@ -490,9 +515,24 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       return send(res, 200, { templateId: (body as { templateId: string }).templateId });
     }
 
+    // Copies the settings of another open project onto this one (profiles, rules and project.json fields; nothing of its agents or tickets).
+    if (req.method === 'POST' && path === '/api/projects/copy-settings') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const from = typeof body === 'object' && body !== null ? (body as { from?: unknown }).from : undefined;
+      if (typeof from !== 'string') return fail(res, 400, 'bad_request');
+      const source = ctx.projects?.contexts().find((c) => c.projectName === from);
+      if (!source || source === ctx) return fail(res, 404, 'project.notFound');
+      const { copyProjectSettings } = await import('./templates/copy');
+      const done = copyProjectSettings(source.projectRoot, ctx.projectRoot, ctx.projectName);
+      if (!done.ok) return fail(res, 422, done.code);
+      ctx.broadcastState();
+      return send(res, 200, { from });
+    }
+
     // Makes the project folder a git repository (`git init -b main` and an empty first commit). Refused when it already is, or holds repositories.
     if (req.method === 'POST' && path === '/api/projects/git-init') {
-      if (ctx.repos().length > 0) return fail(res, 409, 'git.alreadyRepo');
+      if (ctx.repos().includes('')) return fail(res, 409, 'git.alreadyRepo'); // the folder itself is a repository (one that only holds repositories may still become one)
       const { initRepo } = await import('./templates/apply');
       const made = await initRepo(ctx.projectRoot);
       if (!made.ok) return fail(res, 422, made.code, made.detail ? { reason: made.detail } : undefined);
@@ -500,6 +540,24 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       await ctx.prepareRepo(ctx.projectRoot); // keeps .andromedacli/ out of the new repository's status
       ctx.broadcastState();
       return send(res, 200, { ok: true });
+    }
+
+    // Makes the project folder a clone of a remote repository (the folder must hold nothing but the console's own files). Refused when it is
+    // already a repository, or holds repositories. The address is checked first: https, ssh or git@host:path only.
+    if (req.method === 'POST' && path === '/api/projects/git-clone') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const url = typeof body === 'object' && body !== null ? (body as { url?: unknown }).url : undefined;
+      if (typeof url !== 'string') return fail(res, 400, 'bad_request');
+      if (ctx.repos().includes('')) return fail(res, 409, 'git.alreadyRepo');
+      const { cloneIntoFolder, validCloneUrl } = await import('./git/clone');
+      if (!validCloneUrl(url.trim())) return fail(res, 422, 'git.cloneUrlInvalid');
+      const done = await cloneIntoFolder(ctx.projectRoot, url.trim());
+      if (!done.ok) return fail(res, done.code === 'git.cloneFolderNotEmpty' ? 409 : 422, done.code, done.detail ? { reason: done.detail } : undefined);
+      ctx.forgetRepos();
+      await ctx.prepareRepo(ctx.projectRoot); // keeps .andromedacli/ out of the new repository's status
+      ctx.broadcastState();
+      return send(res, 200, { ok: true, ...(done.branch ? { branch: done.branch } : {}) });
     }
 
     return fail(res, 404, 'not_found');

@@ -113,6 +113,26 @@ describe('the new-project dialog asks only for the folder', () => {
     expect(posted()).toEqual({ root: 'D:\\work\\shop-api', auto: true, create: false });
   });
 
+  it('with another project open it offers to start from its settings, and sends copyFrom only when one is picked', async () => {
+    const withProjects = () => ({ projects: [{ name: 'alpha-site', root: 'D:\a', waiting: 0, mainStatus: 'running' }] }) as never;
+    openNewProjectDialog(withProjects);
+    await tick();
+    const menu = document.querySelector<HTMLSelectElement>('#overlay select[name="copyFrom"]')!;
+    expect([...menu.options].map((o) => o.value)).toEqual(['', 'alpha-site']);
+    field('folder').value = 'D:\work\shop-api';
+    submit();
+    await tick(); await tick(); await tick();
+    expect(posted()).toEqual({ root: 'D:\work\shop-api', auto: true, create: false }); // "none" is the default: nothing sent
+    calls.length = 0; // a created project closes the dialog: open it again
+    openNewProjectDialog(withProjects);
+    await tick();
+    field('folder').value = 'D:\work\shop-api';
+    document.querySelector<HTMLSelectElement>('#overlay select[name="copyFrom"]')!.value = 'alpha-site';
+    submit();
+    await tick(); await tick(); await tick();
+    expect(posted()).toEqual({ root: 'D:\work\shop-api', auto: true, create: false, copyFrom: 'alpha-site' });
+  });
+
   it('a folder that does not exist yet says it will be created, and is sent with create', async () => {
     vi.stubGlobal('fetch', async (path: string, init?: { method?: string; body?: string }) => {
       const method = init?.method ?? 'GET';

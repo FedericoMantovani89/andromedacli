@@ -70,7 +70,7 @@ function showDialog(...children: HTMLElement[]): void {
  * commands (changed later in Options); a folder that does not exist yet is created (git is a choice made later, in Options). The name is
  * proposed from the folder when it is chosen or typed, and can be changed. Create makes the project through `POST /api/projects`.
  */
-export function openNewProjectDialog(_getState: () => StateMessage | undefined, onCreated?: (name: string) => void): void {
+export function openNewProjectDialog(getState: () => StateMessage | undefined, onCreated?: (name: string) => void): void {
   const form = document.createElement('form');
   form.className = 'new-project-form';
   const title = document.createElement('h2');
@@ -117,6 +117,27 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
     }).finally(() => { browse.disabled = false; });
   });
 
+  // Start from the settings of a project that is open now (profiles, rules, commands, limits), instead of what the folder suggests.
+  // The menu exists only when there is a project to copy from: with none, the dialog is the folder and the name, as before.
+  const others = getState()?.projects ?? [];
+  let copy: HTMLSelectElement | undefined;
+  let copyRow: HTMLLabelElement | undefined;
+  if (others.length > 0) {
+    copy = document.createElement('select');
+    copy.name = 'copyFrom';
+    const none = document.createElement('option');
+    none.value = '';
+    bindText(none, 'projects.new.copyFrom.none');
+    copy.append(none);
+    for (const p of others) {
+      const o = document.createElement('option');
+      o.value = p.name;
+      o.textContent = p.name;
+      copy.append(o);
+    }
+    copyRow = field(k('projects.new.copyFrom'), copy);
+  }
+
   const { box, submit } = actions(k('common.create'), closeOverlay);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -124,7 +145,7 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
     submit.disabled = true;
     void missing().then((create) => api<ApiError>('/api/projects', {
       method: 'POST',
-      body: { root: folder.value.trim(), auto: true, create, ...(name.value.trim() ? { name: name.value.trim() } : {}) },
+      body: { root: folder.value.trim(), auto: true, create, ...(name.value.trim() ? { name: name.value.trim() } : {}), ...(copy?.value ? { copyFrom: copy.value } : {}) },
     })).then((res) => {
       if (res.status >= 200 && res.status < 300) { closeOverlay(); onCreated?.(String((res.body as { name?: unknown }).name ?? '')); return; }
       const code = (res.body as ApiError).code;
@@ -140,7 +161,7 @@ export function openNewProjectDialog(_getState: () => StateMessage | undefined, 
   const folderRow = document.createElement('div');
   folderRow.className = 'folder-row';
   folderRow.append(field(k('projects.new.folder'), folder), browse);
-  form.append(title, folderRow, browseNote, nameRow, note, error, box);
+  form.append(title, folderRow, browseNote, nameRow, ...(copyRow ? [copyRow] : []), note, error, box);
   showDialog(form);
   focusElementFromUser(folder, 'user'); // the user just clicked "new project": the cursor may go into the first field
 }

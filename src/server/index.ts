@@ -36,7 +36,10 @@ import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
 import { excludeConsoleFolder } from './git/worktree';
 import { discoverRepos, repoPathOf } from './git/repos';
+import { GitignoreAsked, hasGitignore } from './git/gitignore';
 import { GuardLog } from './guard/log';
+import { HelperUsage, type HelperUse } from './helper-usage';
+import { helperToolsText } from './helper-tools';
 import { languageName, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
 import type { ProjectTab, PrereqResult } from '../shared/protocol';
@@ -164,6 +167,8 @@ interface Shared {
   getPrereq(): PrereqResult[] | null;
   ensurePrereq(): Promise<PrereqResult[]>;
   refreshPrereq(): Promise<PrereqResult[]>;
+  /** How often the shell commands of every session used each optional helper: one count for the whole console. */
+  helperUsage: HelperUsage;
   /** Terminals that are not agent sessions (assisted installs): one set and one installer for the whole console. */
   utilityPtys: PtyManager;
   installer: InstallService;
@@ -224,7 +229,9 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     if (!detectedTest || Date.now() - detectedTest.at > 5000) detectedTest = { at: Date.now(), value: detectProject(resolve(o.projectRoot)).test };
     return detectedTest.value;
   };
-  const effectiveTestCommand = (): string | undefined => store.project.testCommand?.trim() || detectedTestCommand();
+  // With the tests inhibited there is no command at all: the merge, the release and the recovery then run nothing (they already skip an empty one).
+  const testsDisabled = (): boolean => { try { return store.project.testsDisabled === true; } catch { return false; } };
+  const effectiveTestCommand = (): string | undefined => (testsDisabled() ? undefined : store.project.testCommand?.trim() || detectedTestCommand());
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
   const tickets = new TicketStore(o.projectRoot);
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
@@ -254,6 +261,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: effectiveTestCommand,
+    testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
     language: reportLanguage,
@@ -272,6 +280,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: effectiveTestCommand,
+    testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     squash: () => store.project.squash !== false,
     language: reportLanguage,
@@ -553,6 +562,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: effectiveTestCommand,
+    testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     secretPatterns,
     notifyMain: (_slug, text) => { inbox.push(projectName, text); },
@@ -584,7 +594,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir, displayName: `${projectName} AndromedaCli`,
       allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
-      appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos() }),
+      appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), helpers: helperToolsText(shared.getPrereq()),
+        noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedacli', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
       ...(resumeId !== undefined ? { resumeId } : {}),
     });
     ptys.spawn({ id: projectName, ...launch, cwd: resolve(o.projectRoot), cols: 120, rows: 30 });
@@ -624,6 +635,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resolve(import.meta.dirname, '..', '..', 'mod') : undefined)),
     promptsDir: join(o.projectRoot, '.andromedacli', 'state', 'prompts'),
     guard: (slug, tool, input) => {
+      // Which optional helpers the shell commands use (only counters are kept): the Prerequisites tab shows whether they are used.
+      if ((tool === 'Bash' || tool === 'PowerShell') && typeof input.command === 'string') shared.helperUsage.record(input.command);
       const rt = registry.get(slug);
       const role = rt?.role ?? 'agent';
       // The judge is the caller's own worktree and role, taken from its session: nothing in the request body can change them.
@@ -792,6 +805,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     projectName,
     projectRoot: o.projectRoot,
     claudeCommand: o.claudeCommand ?? config.claude.command,
+    ...(o.prereqRunner ? { commandRunner: o.prereqRunner } : {}),
     get bypass() { return runtime.bypass; },
     get language() { return shared.language(); },
     bundles,
@@ -800,6 +814,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     configPath,
     repos, forgetRepos, prepareRepo,
     getPrereq: () => shared.getPrereq(),
+    getHelperUse: () => shared.helperUsage.state(),
     ensurePrereq: () => shared.ensurePrereq(),
     refreshPrereq: () => shared.refreshPrereq(),
     setLanguage: (l) => { shared.setLanguage(l); },
@@ -1055,6 +1070,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     language: () => language,
     setLanguage: (l) => { language = l; },
     getPrereq: () => prereq,
+    helperUsage: new HelperUsage(join(o.configDir, 'state', 'helper-usage.json')),
     ensurePrereq: () => prereq ? Promise.resolve(prereq) : (startupChecks ??= shared.refreshPrereq()),
     refreshPrereq: async () => {
       // The Claude check runs the configured command (not the test override), so a custom install is judged fairly.
@@ -1083,7 +1099,9 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     if (runtimes.some((r) => r.name === wanted)) throw new ProjectError('project.duplicate', 409);
     if (a.create) mkdirSync(root, { recursive: true });
     else if (!(existsSync(root) && statSync(root).isDirectory())) throw new ProjectError('project.badRoot', 422);
-    if (a.auto && !a.templateId) {
+    const source = a.copyFrom ? runtimes.find((r) => r.name === a.copyFrom) : undefined;
+    if (a.copyFrom && !source) throw new ProjectError('project.notFound', 404);
+    if (a.auto && !a.templateId && !source) {
       // The dialog only asked for the folder: what it holds says the template and the commands (the user changes them in Options).
       const found = detectProject(root);
       a = { ...a, templateId: found.source === 'package.json' ? 'frontend-web' : found.source ? 'backend-java' : 'generic',
@@ -1097,7 +1115,12 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     }
     const store = new ProjectStore(root);
     store.init(wanted);
-    if (!a.templateId) {
+    if (source) {
+      // Another project's settings instead of a template: its profiles, rules and project.json fields.
+      const { copyProjectSettings } = await import('./templates/copy');
+      const copied = copyProjectSettings(source.root, root, wanted);
+      if (!copied.ok) throw new ProjectError(copied.code, 422);
+    } else if (!a.templateId) {
       if (a.test !== undefined) store.setTestCommand(a.test);
       store.setCommands({ build: a.build, lint: a.lint });
     }
@@ -1218,6 +1241,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     close: async () => {
       closing = true;
       shared.sleep.close();
+      shared.helperUsage.flush();
       await projectChain; // an opening or closing in progress ends first
       for (const r of [...runtimes]) await r.close();
       await utilityPtys.killAll();

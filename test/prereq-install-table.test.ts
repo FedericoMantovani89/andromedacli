@@ -12,8 +12,8 @@ it('every entry is a fixed argv whose display is exactly that argv joined', () =
   }
 });
 
-it('covers node, git, claude and gh, each with an install and an update', () => {
-  for (const id of ['node', 'git', 'claude', 'gh']) {
+it('covers every prerequisite, each with an install and an update', () => {
+  for (const id of ['node', 'git', 'claude', 'gh', 'python', 'rg', 'ctags', 'jq', 'fd', 'shellcheck', 'uv']) {
     expect(INSTALL_TABLE.filter((e) => e.id === id).map((e) => e.action).sort()).toEqual(['install', 'update']);
   }
 });

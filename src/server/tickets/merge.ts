@@ -17,6 +17,8 @@ export interface MergeDeps {
   project: string;
   worktreeOf(slug: string): AgentGit | undefined;
   testCommand(): string | undefined;
+  /** The user switched the tests off for this project (the commit message then says so instead of "n/a"). */
+  testsDisabled?(): boolean;
   testTimeoutMs(): number;
   /** Project option: one commit per ticket (default) or the step commits behind a merge commit. */
   squash(): boolean;
@@ -90,7 +92,7 @@ export class MergeService {
     const files = (await changedFiles(repo, `project/${this.d.project}`, ticket.deliveredSha)) ?? [];
     const { lang, t } = this.d.language();
     const message = squashMessage({
-      slug, project: this.d.project, branch: author.branch, goal: ticket.goal, steps: ticket.steps, files, tests: ticket.tests,
+      slug, project: this.d.project, branch: author.branch, goal: ticket.goal, steps: ticket.steps, files, tests: ticket.tests, testsInhibited: this.d.testsDisabled?.() === true,
       verdicts: ticket.verdicts, lang, t,
     });
     const merged = await mergeIntoProject({ wt: project.path, sha: ticket.deliveredSha, message, squash: this.d.squash() });

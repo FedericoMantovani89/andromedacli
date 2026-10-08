@@ -9,6 +9,8 @@ export interface ProjectInfo {
   testCommand?: string;
   /** One commit per ticket when merged (default); false keeps the step commits behind a merge commit (SPEC 9.7). */
   squash?: boolean;
+  /** The user switched the tests off for this project: nothing runs them and the reports say so (never "passed"). */
+  testsDisabled?: boolean;
   /** Phase 6D: what the console builds and lints with (same rules as `testCommand`). */
   buildCommand?: string;
   lintCommand?: string;
@@ -58,14 +60,17 @@ const isIntIn = (v: unknown, lo: number, hi: number): v is number => typeof v ==
 export const PROJECT_FIELDS = ['buildCommand', 'lintCommand', 'profiles', 'model', 'agentTokens', 'maxActive', 'docs', 'secretPatterns'] as const;
 export type ProjectField = (typeof PROJECT_FIELDS)[number];
 
+/** Allowed whole-number range of the numeric project fields (validation and the error text read it). */
+export const PROJECT_RANGES: Readonly<Record<string, readonly [number, number]>> = { agentTokens: [1000, 100_000_000], maxActive: [1, 64] };
+
 /** Whether a value is acceptable for a project field. `knownProfiles` limits `profiles` (names the console knows). */
 export function isValidProjectField(field: ProjectField, v: unknown, knownProfiles?: readonly string[]): boolean {
   switch (field) {
     case 'buildCommand': case 'lintCommand': return isValidTestCommand(v);
     case 'profiles': return isStringList(v, 64, 40) && (knownProfiles === undefined || v.every((p) => knownProfiles.includes(p)));
     case 'model': return typeof v === 'string' && PROJECT_MODEL_RE.test(v);
-    case 'agentTokens': return isIntIn(v, 1000, 100_000_000);
-    case 'maxActive': return isIntIn(v, 1, 64);
+    case 'agentTokens': return isIntIn(v, ...PROJECT_RANGES.agentTokens!);
+    case 'maxActive': return isIntIn(v, ...PROJECT_RANGES.maxActive!);
     case 'docs': return isStringList(v, 20, 200);
     case 'secretPatterns': return isStringList(v, 50, 200);
   }
@@ -98,6 +103,13 @@ export class ProjectStore {
     const { testCommand: _old, ...rest } = this.project;
     const trimmed = command.trim();
     writeJsonAtomic(this.projectFile, trimmed === '' ? rest : { ...rest, testCommand: trimmed });
+  }
+
+  /** `true`: the project's tests are inhibited (no test run anywhere); `false` takes the field away, so the project is as any other. */
+  setTestsDisabled(disabled: boolean): void {
+    if (typeof disabled !== 'boolean') throw new Error('project.testsDisabledInvalid');
+    const { testsDisabled: _old, ...rest } = this.project;
+    writeJsonAtomic(this.projectFile, disabled ? { ...rest, testsDisabled: true } : rest);
   }
 
   setSquash(squash: boolean): void {

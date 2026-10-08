@@ -52,11 +52,14 @@ it('PUT /api/project sets and echoes the new fields, clears them, and validates 
   expect((await put(s, { model: null, docs: [] })).body).toEqual({});
   expect((await put(s, { testCommand: 'npm test', maxActive: 3 })).body).toEqual({ testCommand: 'npm test', maxActive: 3 });
   const before = (await state(s)).project;
-  for (const [body, field] of [[{ maxActive: 0 }, 'maxActive'], [{ model: 'x y' }, 'model'], [{ profiles: ['nope'] }, 'profiles'], [{ agentTokens: 'many' }, 'agentTokens'], [{ lintCommand: 'a\nb' }, 'lintCommand']] as [unknown, string][]) {
+  for (const [body, field] of [[{ model: 'x y' }, 'model'], [{ profiles: ['nope'] }, 'profiles'], [{ agentTokens: 'many' }, 'agentTokens'], [{ lintCommand: 'a\nb' }, 'lintCommand']] as [unknown, string][]) {
     const bad = await put(s, { buildCommand: 'changed', ...(body as object) });
     expect(bad.status).toBe(422);
     expect(bad.body).toMatchObject({ code: 'project.fieldInvalid', params: { field } });
   }
+  const range = await put(s, { maxActive: 0 });
+  expect(range.status).toBe(422);
+  expect(range.body).toEqual({ code: 'config.outOfRange', params: { path: 'project.maxActive', min: 1, max: 64 } });
   expect((await state(s)).project).toEqual(before);
   expect((await put(s, {})).status).toBe(400);
   expect((await req(s, '/api/project', { method: 'PUT', body: { maxActive: 2 } })).status).toBe(401);
@@ -122,4 +125,17 @@ it('budget: the profile beats the project default, which beats the configured on
   await until(() => { try { return limitOf('profile-wins') !== undefined; } catch { return false; } });
   expect(limitOf('profile-wins')).toBe(400000);
   expect(worktreePathFor(t.repo, 'project-default')).toBeTruthy();
+});
+
+it('PUT /api/project switches the tests off and on, the state says so, and a wrong value changes nothing', async () => {
+  const s = await bootServer();
+  expect((await put(s, { testsDisabled: true })).body).toEqual({ testsDisabled: true });
+  expect((await state(s)).project.testsDisabled).toBe(true);
+  const bad = await put(s, { testsDisabled: 'yes' });
+  expect([bad.status, bad.body.code]).toEqual([422, 'project.testsDisabledInvalid']);
+  expect((await state(s)).project.testsDisabled).toBe(true);
+  expect((await put(s, { testsDisabled: false })).body).toEqual({ testsDisabled: false });
+  expect((await state(s)).project.testsDisabled).toBeUndefined(); // the field is taken away, not kept as false
+  expect((await put(s, { testsDisabled: true, testCommand: 'npm test' })).status).toBe(200); // the command stays saved while they are off
+  expect((await state(s)).project).toMatchObject({ testsDisabled: true, testCommand: 'npm test' });
 });

@@ -24,6 +24,8 @@ export interface StepDeps {
   project: string;
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
   testCommand(): string | undefined;
+  /** The user switched the tests off for this project: the validation step closes without running anything. */
+  testsDisabled?(): boolean;
   testTimeoutMs(): number;
   secretPatterns(): string[];
   /** Tells the main session (inbox). */
@@ -103,7 +105,7 @@ export class StepService {
       return refuse('note_required', { detail: 'step 1 needs a note with what you found (files, conventions, risks)' });
     }
 
-    if (isValidation) {
+    if (isValidation && this.d.testsDisabled?.() !== true) {
       const command = this.d.testCommand()?.trim();
       if (!command) return refuse('no_test_command', { detail: 'the project has no test command: ask the main to set it in the console options' });
       const v = await runValidation({ cwd: wt.worktree, command, timeoutMs: this.d.testTimeoutMs() });

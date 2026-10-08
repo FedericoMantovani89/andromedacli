@@ -21,6 +21,24 @@ describe('POST /api/projects', () => {
     expect(existsSync(join(plain, '.andromedacli', 'project.json'))).toBe(true);
   });
 
+  it('copyFrom starts a project with the settings of an open one; copy-settings does it for an open project', async () => {
+    const s = await bootServer({ projectName: 'alpha-project' });
+    expect((await ui(s, '/api/project?project=alpha-project', 'PUT', { testCommand: 'make check', model: 'opus', maxActive: 2 })).status).toBe(200);
+    const dir = mkdtempSync(join(tmpdir(), 'project-copy-'));
+    const made = await ui(s, '/api/projects', 'POST', { root: dir, name: 'copy-project', copyFrom: 'alpha-project' });
+    expect([made.status, made.body.name]).toEqual([201, 'copy-project']);
+    const copied = JSON.parse(readFileSync(join(dir, '.andromedacli', 'project.json'), 'utf8'));
+    expect(copied).toMatchObject({ name: 'copy-project', testCommand: 'make check', model: 'opus', maxActive: 2 });
+    const unknown = await ui(s, '/api/projects', 'POST', { root: mkdtempSync(join(tmpdir(), 'project-copy-')), copyFrom: 'nobody-here' });
+    expect([unknown.status, unknown.body.code]).toEqual([404, 'project.notFound']);
+    // an open project takes the settings of another one
+    const other = mkdtempSync(join(tmpdir(), 'project-copy-'));
+    expect((await ui(s, '/api/projects', 'POST', { root: other, name: 'plain-project' })).status).toBe(201);
+    expect((await ui(s, '/api/projects/copy-settings?project=plain-project', 'POST', { from: 'alpha-project' })).status).toBe(200);
+    expect((await ui(s, '/api/state?project=plain-project')).body.project).toMatchObject({ testCommand: 'make check', model: 'opus' });
+    expect((await ui(s, '/api/projects/copy-settings?project=plain-project', 'POST', { from: 'plain-project' })).status).toBe(404);
+  });
+
   it('needs the token', async () => {
     const s = await bootServer();
     expect((await req(s, '/api/projects', { method: 'POST', body: { root: tmpdir() } })).status).toBe(401);

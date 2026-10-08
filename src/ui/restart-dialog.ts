@@ -11,11 +11,27 @@ export interface RestartReasons { settings: boolean; programs: boolean }
  * The question after Save when something needs the sessions to start again. Yes asks the server to restart them (the main resumes its
  * conversation, the agents that were running are started again) and then loads the page again, which starts from the splash; No just closes.
  */
-export function openRestartDialog(reasons: RestartReasons): void {
+export function openRestartDialog(reasons: RestartReasons, o: { over?: boolean } = {}): void {
   const overlay = document.getElementById('overlay')!;
+  // `over`: asked from inside the Options dialog, which must stay as it is (its unsaved changes live there). The question goes on a layer
+  // above it; No and Escape remove only that layer.
+  const layer = o.over ? document.createElement('div') : undefined;
+  if (layer) layer.className = 'restart-layer';
+  const dismiss = (): void => {
+    if (!layer) { closeOverlay(); return; }
+    window.removeEventListener('keydown', onEscape, true);
+    layer.remove();
+  };
+  function onEscape(ev: KeyboardEvent): void {
+    if (ev.key !== 'Escape') return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    dismiss();
+  }
+  if (layer) window.addEventListener('keydown', onEscape, true);
   const dialog = document.createElement('div');
   dialog.className = 'dialog restart-dialog';
-  dialog.dataset.escape = '';
+  if (!layer) dialog.dataset.escape = '';
   const title = document.createElement('h2');
   bindText(title, 'options.restart.title');
   dialog.append(title);
@@ -37,7 +53,7 @@ export function openRestartDialog(reasons: RestartReasons): void {
   no.type = 'button';
   no.name = 'restartNo';
   bindText(no, 'common.no');
-  no.addEventListener('click', closeOverlay);
+  no.addEventListener('click', dismiss);
   const yes = document.createElement('button');
   yes.type = 'button';
   yes.name = 'restartYes';
@@ -56,6 +72,7 @@ export function openRestartDialog(reasons: RestartReasons): void {
   });
   actions.append(no, yes);
   dialog.append(question, error, actions);
+  if (layer) { layer.append(dialog); overlay.append(layer); return; }
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
 }

@@ -19,6 +19,7 @@ let branch: string;
 let tickets: TicketStore;
 let svc: ReviewService;
 let command: string | undefined;
+let off = false; // the project's tests are switched off
 let lang = 'en';
 
 const COUNTER = `node -e "const fs=require('fs');const f='runs.txt';fs.appendFileSync(f,'x');"`;
@@ -30,11 +31,12 @@ beforeEach(async () => {
   branch = w.branch;
   tickets = new TicketStore(t.repo);
   command = 'node -e "process.exit(0)"';
+  off = false;
   lang = 'en';
   svc = new ReviewService({
     tickets, root: t.repo, project: 'p',
     worktreeOf: (slug) => (slug === 'a-job' ? { worktree: wt, branch } : undefined),
-    testCommand: () => command, testTimeoutMs: () => 30_000,
+    testCommand: () => command, testsDisabled: () => off, testTimeoutMs: () => 30_000,
     language: () => ({ lang, t: createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') }) }),
     spawnReviewer: async () => ({ ok: true }), existingSlugs: () => [], authorAlive: () => true, notifyMain: () => {}, notifyAuthor: () => {}, askUser: () => {}, endReviewer: () => {},
   });
@@ -77,6 +79,22 @@ describe('ticketReport', () => {
     expect(text).toContain('Add multiply to src/math.js');
     expect(text).toContain('`src/math.js` (+3 -0)');
     expect(r.report).toBe(text);
+  });
+  it('with the tests switched off nothing is run, the facts and the report say "not run", never passed', async () => {
+    deliver({ 'src/a.js': 'x\n' });
+    off = true;
+    command = 'node -e "process.exit(1)"'; // would be red if it ran
+    const r = await svc.ticketReport('a-job');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.facts.testsOk).toBeUndefined();
+    expect(r.facts.testsInhibited).toBe(true);
+    expect(tickets.get('a-job')!.tests).toBeUndefined();
+    const text = readFileSync(reportPath(t.repo, 'a-job'), 'utf8');
+    expect(text).toMatch(/Not run: the tests are switched off/);
+    expect(text).not.toMatch(/passed/);
+    command = undefined; // no command is no longer a refusal while they are off
+    expect((await svc.ticketReport('a-job')).ok).toBe(true);
   });
   it('red tests are recorded and reported, not a refusal', async () => {
     deliver({ 'src/a.js': 'x\n' });
@@ -163,4 +181,12 @@ describe('ticketReport', () => {
     const r = await svc.ticketReport('a-job');
     expect(r.ok && r.facts.checklistComplete).toBe(false);
   });
+});
+
+import { reviewerGoal } from '../src/server/tickets/review';
+it('the reviewer is told the tests were switched off, not that they are unknown or passed', () => {
+  const base = { slug: 'a-job', project: 'p', sha: 'abcdef1234', files: 1, added: 2, removed: 0, reportFile: 'r.md', round: 1, previous: [] };
+  expect(reviewerGoal({ ...base, testsOk: undefined, testsInhibited: true })).toMatch(/NOT RUN, the project owner switched the tests off/);
+  expect(reviewerGoal({ ...base, testsOk: undefined })).toMatch(/: unknown/);
+  expect(reviewerGoal({ ...base, testsOk: true })).toMatch(/PASSED/);
 });

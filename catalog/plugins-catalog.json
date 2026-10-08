@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated": "2026-10-04",
+  "updated": "2026-10-08",
   "marketplaces": [
     { "id": "claude-plugins-official", "trust": "official" },
     { "id": "claude-community", "trust": "community", "add": "anthropics/claude-plugins-community" }
@@ -128,6 +128,29 @@
       "requires": [],
       "agentsAllowed": true,
       "conflicts": [],
+      "cost": null,
+      "testedWith": null,
+      "source": "https://code.claude.com/docs/en/discover-plugins"
+    },
+    {
+      "id": "superpowers@claude-plugins-official",
+      "category": "workflow",
+      "summary": {
+        "en": "A development method as skills: brainstorm, plan, test first, review. Strong for the main's own conversation; heavy on tokens.",
+        "it": "Un metodo di sviluppo sotto forma di skill: ideazione, piano, test prima, revisione. Utile nella conversazione del main; pesante in token."
+      },
+      "trust": "official",
+      "tier": "on_request",
+      "appliesTo": [],
+      "defaultFor": [],
+      "requires": [],
+      "agentsAllowed": false,
+      "conflicts": [
+        {
+          "en": "Its skills create worktrees, commit and finish branches by themselves, which the console already does (one worktree per agent; the console makes the commits and the merge). Keep it for the main, not for the agents.",
+          "it": "Le sue skill creano worktree, committano e chiudono i branch da sole, cose che la console fa già (un worktree per agente; i commit e il merge li fa la console). Tienilo per il main, non per gli agenti."
+        }
+      ],
       "cost": null,
       "testedWith": null,
       "source": "https://code.claude.com/docs/en/discover-plugins"

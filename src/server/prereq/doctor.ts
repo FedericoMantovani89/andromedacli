@@ -19,6 +19,13 @@ const FIX: Record<CheckResult['id'], string> = {
   git: 'Install Git for Windows: winget install Git.Git',
   claude: 'Install or update Claude Code (2.1.287 or newer): https://code.claude.com/docs',
   gh: 'Optional, only for pull requests. Install the GitHub CLI: winget install GitHub.cli',
+  python: 'Optional, for scripts the agents run. Install Python: winget install Python.Python.3.14',
+  rg: 'Optional, fast code search for the agents. Install ripgrep: winget install BurntSushi.ripgrep.MSVC',
+  ctags: 'Optional, a symbol index for the agents. Install Universal Ctags: winget install UniversalCtags.Ctags',
+  jq: 'Optional, JSON in the agents shell. Install jq: winget install jqlang.jq',
+  fd: 'Optional, fast file search for the agents. Install fd: winget install sharkdp.fd',
+  shellcheck: 'Optional, checks the shell scripts the agents write. Install ShellCheck: winget install koalaman.shellcheck',
+  uv: 'Optional, fast Python packages and environments. Install uv: winget install astral-sh.uv',
 };
 const MIN_FREE_BYTES = 2 * 1024 ** 3;
 

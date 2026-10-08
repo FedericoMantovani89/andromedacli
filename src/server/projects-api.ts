@@ -9,6 +9,8 @@ export interface AddProjectOptions {
   root: string;
   name?: string;
   templateId?: string;
+  /** The name of an open project whose settings the new one starts with (instead of a template). */
+  copyFrom?: string;
   create?: boolean;
   /** The console picks the template and the commands from what the folder contains (the new-project dialog only asks for the folder). */
   auto?: boolean;
@@ -54,6 +56,7 @@ export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | '
     if (build === null || test === null || lint === null) return fail(res, 400, 'bad_request');
     if (b.name !== undefined && typeof b.name !== 'string') return fail(res, 400, 'bad_request');
     if (b.templateId !== undefined && typeof b.templateId !== 'string') return fail(res, 400, 'bad_request');
+    if (b.copyFrom !== undefined && typeof b.copyFrom !== 'string') return fail(res, 400, 'bad_request');
     if (b.create !== undefined && typeof b.create !== 'boolean') return fail(res, 400, 'bad_request');
     if (b.auto !== undefined && typeof b.auto !== 'boolean') return fail(res, 400, 'bad_request');
     if (!isAbsolute(b.root.trim())) return fail(res, 422, 'project.badRoot');
@@ -63,7 +66,7 @@ export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | '
     try {
       const out = await projects.add({
         root: b.root.trim(), ...(b.name !== undefined && b.name !== '' ? { name: b.name } : {}),
-        ...(b.templateId !== undefined && b.templateId !== '' ? { templateId: b.templateId } : {}), ...(b.create === true ? { create: true } : {}), ...(b.auto === true ? { auto: true } : {}),
+        ...(b.templateId !== undefined && b.templateId !== '' ? { templateId: b.templateId } : {}), ...(b.copyFrom !== undefined && b.copyFrom !== '' ? { copyFrom: b.copyFrom } : {}), ...(b.create === true ? { create: true } : {}), ...(b.auto === true ? { auto: true } : {}),
         ...(build !== undefined ? { build } : {}), ...(test !== undefined ? { test } : {}), ...(lint !== undefined ? { lint } : {}),
       });
       return send(res, 201, out);

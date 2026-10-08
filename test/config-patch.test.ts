@@ -26,7 +26,7 @@ it('refuses per path and writes nothing', () => {
     [{ plugins: { cacheHours: 500 } }, 'plugins.cacheHours'],
     [{ git: 'x' }, 'git'],
   ] as [Record<string, unknown>, string][]) {
-    expect(applyConfigPatch(p, patch)).toEqual({ ok: false, code: 'config.invalid', path });
+    expect(applyConfigPatch(p, patch)).toMatchObject({ ok: false, code: 'config.invalid', path });
   }
   expect(readFileSync(p, 'utf8')).toBe(before);
 });
@@ -55,6 +55,23 @@ it('PUT /api/config updates the limits in place and GET /api/options shows the c
   expect(o.paths.configDir).toBeTruthy();
   const bad = await ui(s, '/api/config', 'PUT', { budget: { alertPercent: 0 } });
   expect(bad.status).toBe(422);
-  expect(bad.body).toMatchObject({ code: 'config.invalid', params: { path: 'budget.alertPercent' } });
+  expect(bad.body).toEqual({ code: 'config.outOfRange', params: { path: 'budget.alertPercent', min: 1, max: 200 } });
+  // a value inside the range that breaks the order of the trio is not an out-of-range error
+  const order = await ui(s, '/api/config', 'PUT', { budget: { alertPercent: 150 } });
+  expect(order.body).toEqual({ code: 'config.invalid', params: { path: 'budget.alertPercent' } });
+  const many = await ui(s, '/api/config', 'PUT', { agents: { maxActivePerProject: 100000 } });
+  expect(many.body).toEqual({ code: 'config.outOfRange', params: { path: 'agents.maxActivePerProject', min: 1, max: 64 } });
   expect(JSON.parse(readFileSync(configFileOf(s), 'utf8')).budget).toBeUndefined();
+});
+it('a dry run validates like a real patch but writes nothing', async () => {
+  const p = file();
+  writeFileSync(p, '{"schema":1}');
+  expect(applyConfigPatch(p, { git: { testTimeoutMinutes: 30 } }, true).ok).toBe(true);
+  expect(readFileSync(p, 'utf8')).toBe('{"schema":1}');
+  expect(applyConfigPatch(p, { git: { testTimeoutMinutes: 9999 } }, true)).toMatchObject({ ok: false, code: 'config.invalid' });
+  const s = await bootServer();
+  const before = readFileSync(configFileOf(s), 'utf8');
+  expect((await ui(s, '/api/config?dryRun=1', 'PUT', { agents: { maxActiveGlobal: 2 } })).status).toBe(200);
+  expect((await ui(s, '/api/state')).body.limits.max).not.toBe(2);
+  expect(readFileSync(configFileOf(s), 'utf8')).toBe(before);
 });

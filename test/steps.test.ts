@@ -24,9 +24,11 @@ let tickets: TicketStore;
 let svc: StepService;
 let messages: string[];
 let command: string | undefined;
+let off = false; // the project's tests are switched off
 let timeoutMs: number;
 
 async function setup(remote = true): Promise<void> {
+  off = false;
   t = makeRepo({ remote });
   const w = await createAgentWorktree({ repo: t.repo, project: 'p', slug: 'a' });
   wt = w.path;
@@ -39,7 +41,7 @@ async function setup(remote = true): Promise<void> {
   svc = new StepService({
     tickets, project: 'p',
     worktreeOf: (slug) => (slug === 'a' ? { worktree: wt, branch } : undefined),
-    testCommand: () => command, testTimeoutMs: () => timeoutMs, secretPatterns: () => DEFAULT_SECRET_PATTERNS,
+    testCommand: () => command, testsDisabled: () => off, testTimeoutMs: () => timeoutMs, secretPatterns: () => DEFAULT_SECRET_PATTERNS,
     notifyMain: (_slug, text) => { messages.push(text); }, changed: () => {},
   });
 }
@@ -130,6 +132,16 @@ describe('stepDone', () => {
     expect(refused(await done(5))).toBe('no_test_command');
     command = '   ';
     expect(refused(await done(5))).toBe('no_test_command');
+  });
+  it('with the tests switched off the validation step closes without running anything, even with no command', async () => {
+    await svc.checklistSet('a', ITEMS);
+    await closeUpTo(4);
+    off = true;
+    command = FAIL; // would fail if it ran
+    expect(await done(5)).toMatchObject({ status: 'closed', n: 5 });
+    command = undefined;
+    off = false;
+    expect(refused(await done(6, { note: 'docs note long enough to close the last step' }))).not.toBe('validation_failed');
   });
   it('the validation step cannot be skipped', async () => {
     await svc.checklistSet('a', ITEMS);

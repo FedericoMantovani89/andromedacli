@@ -43,6 +43,65 @@ describe('prerequisites table buttons', () => {
   });
 });
 
+describe('required-only table (the first-start wizard)', () => {
+  it('lists only the required tools; Options lists the optional ones too', () => {
+    const host = document.getElementById('host')!;
+    renderPrereqTable(host, results, undefined, true);
+    expect([...host.querySelectorAll('.prereq-row')].map((r) => r.querySelector('[data-i18n^="prereq."]')!.getAttribute('data-i18n'))).toEqual(['prereq.node', 'prereq.git', 'prereq.claude']);
+    renderPrereqTable(host, results);
+    expect(host.querySelectorAll('.prereq-row')).toHaveLength(4);
+  });
+});
+
+describe('sections', () => {
+  it('Options splits required from optional under two headings; the wizard table has none', () => {
+    const host = document.getElementById('host')!;
+    renderPrereqTable(host, results);
+    expect([...host.querySelectorAll('h3')].map((h) => h.dataset.i18n)).toEqual(['prereq.section.required', 'prereq.section.optional']);
+    const order = [...host.children].map((c) => (c.tagName === 'H3' ? 'H' : c.classList.contains('prereq-row') ? 'R' : 'X')).join('');
+    expect(order).toBe('HRRRHRX'); // heading, three required rows, heading, the optional row, the recheck button
+    renderPrereqTable(host, results, undefined, true);
+    expect(host.querySelectorAll('h3')).toHaveLength(0);
+  });
+});
+
+describe('the button under the table', () => {
+  it('Options offers Restart (a recheck would show nothing new), which asks first; the wizard keeps Recheck', async () => {
+    const host = document.getElementById('host')!;
+    renderPrereqTable(host, results);
+    expect(host.querySelector('button[name="restartConsole"]')!.getAttribute('data-i18n')).toBe('prereq.restart');
+    expect(host.querySelector('[data-i18n="prereq.recheck"]')).toBeNull();
+    host.querySelector<HTMLElement>('button[name="restartConsole"]')!.click();
+    expect(document.querySelector('#overlay .restart-dialog')).not.toBeNull(); // the question, not the restart itself
+    expect(calls.some((c) => c.path.includes('/api/restart'))).toBe(false);
+    const middle = document.createElement('div');
+    renderPrereqTable(host, results, middle, true);
+    expect(middle.querySelector('[data-i18n="prereq.recheck"]')).not.toBeNull();
+  });
+});
+
+describe('use counts', () => {
+  it('shows how often each installed helper was used; a tool nobody measures or a missing one has an empty cell, never a 0', () => {
+    const host = document.getElementById('host')!;
+    const rows: PrereqResult[] = [...results, { id: 'rg', required: false, status: 'ok', version: '15.1.0' }, { id: 'jq', required: false, status: 'ok', version: '1.7.1' }, { id: 'fd', required: false, status: 'missing' }];
+    renderPrereqTable(host, rows, undefined, false, { since: '2026-10-08T10:00:00.000Z', counts: { rg: 12, jq: 1 } });
+    // (the texts are not loaded in this test: the cell carries its key and parameters)
+    const usesOf = (id: string): string => {
+      const cell = [...host.querySelectorAll('.prereq-row')].find((r) => r.querySelector(`[data-i18n="prereq.${id}"]`))?.querySelector<HTMLElement>('.prereq-uses');
+      return cell?.dataset.i18n ? `${cell.dataset.i18n} ${cell.dataset.i18nParams}` : '';
+    };
+    expect(usesOf('rg')).toBe('prereq.uses {"count":12}');
+    expect(usesOf('jq')).toBe('prereq.uses {"count":1}');
+    expect(usesOf('fd')).toBe(''); // missing: not measured
+    expect(usesOf('gh')).toBe(''); // the GitHub CLI is not counted
+    expect(usesOf('node')).toBe('');
+    expect(host.querySelector('[data-i18n="prereq.uses.help"]')).not.toBeNull();
+    renderPrereqTable(host, rows); // no usage in the state (an older server): no column content at all
+    expect(host.querySelector('.prereq-uses')?.textContent ?? '').toBe('');
+    expect(host.querySelector('[data-i18n="prereq.uses.help"]')).toBeNull();
+  });
+});
+
 describe('install dialog', () => {
   const open = async (): Promise<HTMLElement> => {
     const host = document.getElementById('host')!;

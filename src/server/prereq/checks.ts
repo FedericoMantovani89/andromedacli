@@ -5,7 +5,7 @@ import { join } from 'node:path';
 /** `restart`: installed where the installer puts it, but this process does not see it (Windows gives a program the PATH it started with). */
 export type CheckStatus = 'ok' | 'outdated' | 'missing' | 'error' | 'not_required' | 'restart';
 export interface CheckResult {
-  id: 'node' | 'git' | 'claude' | 'gh';
+  id: 'node' | 'git' | 'claude' | 'gh' | 'python' | 'rg' | 'ctags' | 'jq' | 'fd' | 'shellcheck' | 'uv';
   required: boolean;
   status: CheckStatus;
   version?: string;
@@ -66,7 +66,7 @@ export function installLocations(id: CheckResult['id'], env: NodeJS.ProcessEnv =
     case 'node': return [join(programFiles, 'nodejs', 'node.exe')];
     case 'git': return [join(programFiles, 'Git', 'cmd', 'git.exe'), join(programFilesX86, 'Git', 'cmd', 'git.exe'), ...userPrograms.map((l) => join(l, 'Programs', 'Git', 'cmd', 'git.exe'))];
     case 'gh': return [join(programFiles, 'GitHub CLI', 'gh.exe'), ...userPrograms.map((l) => join(l, 'Programs', 'GitHub CLI', 'gh.exe'))];
-    default: return []; // claude: the command is the user's own (an npm shim, a custom path)
+    default: return []; // claude, and the optional helpers: they are only ever asked for their version, no folder is looked into the command is the user's own (an npm shim, a custom path)
   }
 }
 
@@ -102,6 +102,9 @@ async function check(
   }
 }
 
+/** For the optional helpers: no folder is ever looked into, the tool is only asked for its version. */
+const NO_FOLDERS = (): string[] => [];
+
 /** Read-only prerequisite checks (SPEC 29.3), all in parallel. The Claude check runs the command the console will really launch. */
 export function runChecks(run: Runner = defaultRunner, o: { claudeCommand?: string[]; locate?: (id: CheckResult['id']) => string[]; exists?: (p: string) => boolean } = {}): Promise<CheckResult[]> {
   const [claudeCmd, ...claudeArgs] = o.claudeCommand && o.claudeCommand.length > 0 ? o.claudeCommand : ['claude'];
@@ -113,5 +116,14 @@ export function runChecks(run: Runner = defaultRunner, o: { claudeCommand?: stri
     check(run, 'claude', claudeCmd!, [...claudeArgs, '--version'], MINIMUM.claude),
     // Optional (the GitHub CLI is only for pull requests): missing never blocks anything.
     check(run, 'gh', 'gh', ['--version'], undefined, false, locate, o.exists),
+    // Optional helpers for the agents' own shell work (scripts, searching, JSON, linting): the console itself never needs them. Each is
+    // judged only by running `<tool> --version`; the PATH and the disk are never scanned.
+    check(run, 'python', 'python', ['--version'], undefined, false, NO_FOLDERS, o.exists),
+    check(run, 'rg', 'rg', ['--version'], undefined, false, NO_FOLDERS, o.exists),
+    check(run, 'ctags', 'ctags', ['--version'], undefined, false, NO_FOLDERS, o.exists),
+    check(run, 'jq', 'jq', ['--version'], undefined, false, NO_FOLDERS, o.exists),
+    check(run, 'fd', 'fd', ['--version'], undefined, false, NO_FOLDERS, o.exists),
+    check(run, 'shellcheck', 'shellcheck', ['--version'], undefined, false, NO_FOLDERS, o.exists),
+    check(run, 'uv', 'uv', ['--version'], undefined, false, NO_FOLDERS, o.exists),
   ]);
 }

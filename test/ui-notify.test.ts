@@ -7,7 +7,7 @@ import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES } from '../src/shared/notify';
 import type { QueueItem, StateMessage } from '../src/shared/protocol';
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-type Run = () => Promise<{ status: number; body: unknown }>;
+type Run = (dry: boolean) => Promise<{ status: number; body: unknown }>;
 /** A stand-in for the dialog's staging: keeps the last request of each key, like the real one. */
 const staging = (): { stage: (key: string, run: Run) => void; staged: Map<string, Run> } => {
   const staged = new Map<string, Run>();
@@ -33,10 +33,48 @@ describe('Notifications tab', () => {
     for (const type of NOTIFY_TYPES) expect(c.querySelector(`input[name="type-${type}"]`)).not.toBeNull();
     expect((c.querySelector('input[name="type-budget"]') as HTMLInputElement).checked).toBe(false);
     expect((c.querySelector('input[name="type-question"]') as HTMLInputElement).checked).toBe(true);
-    expect(c.querySelectorAll('input[type="time"]')).toHaveLength(2);
+    expect(c.querySelectorAll('button.clock-button')).toHaveLength(2); // a clock face instead of a typed time
+    expect((c.querySelector('input[name="quiet-from"]') as HTMLInputElement).value).toBe(config.quietHours.from);
+    expect((c.querySelector('button[name="quiet-from-clock"]') as HTMLElement).textContent).toBe(config.quietHours.from);
     expect((c.querySelector('input[name="groupSeconds"]') as HTMLInputElement).value).toBe('5');
     expect(c.querySelector('button[name="testToast"]')).not.toBeNull();
     expect(c.querySelector('.settings-toast-status')!.getAttribute('data-i18n')).toBe('settings.notifications.toast.ok');
+  });
+  it('the clock face picks hour then minute (here with the keyboard), stages the time and closes', async () => {
+    const c = document.createElement('div');
+    document.body.append(c);
+    const { stage, staged } = staging();
+    renderNotificationsTab(c, stateWith({ toast: 'ok', config: { ...DEFAULT_NOTIFICATIONS, quietHours: { enabled: true, from: '22:00', to: '07:00' } } }), stage);
+    c.querySelector<HTMLElement>('button[name="quiet-from-clock"]')!.click();
+    const face = document.querySelector<SVGElement>('.clock-face')!;
+    const key = (k: string) => face.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    key('ArrowUp'); // 23
+    key('Enter'); // on to the minutes
+    key('ArrowDown');
+    key('ArrowDown'); // 58
+    key('Enter'); // done
+    expect(document.querySelector('.clock-popover')).toBeNull();
+    expect((c.querySelector('input[name="quiet-from"]') as HTMLInputElement).value).toBe('23:58');
+    expect((c.querySelector('button[name="quiet-from-clock"]') as HTMLElement).textContent).toBe('23:58');
+    expect([...staged.keys()]).toEqual(['notifications:quietHours.from']);
+    // Escape closes the dial and leaves the time alone
+    c.querySelector<HTMLElement>('button[name="quiet-to-clock"]')!.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.clock-popover')).toBeNull();
+    expect((c.querySelector('input[name="quiet-to"]') as HTMLInputElement).value).toBe('07:00');
+  });
+  it('the two clocks are disabled while the quiet hours box is off', () => {
+    const c = document.createElement('div');
+    renderNotificationsTab(c, stateWith({ toast: 'ok', config: { ...DEFAULT_NOTIFICATIONS, quietHours: { enabled: false, from: '22:00', to: '07:00' } } }), staging().stage);
+    const clocks = [...c.querySelectorAll<HTMLButtonElement>('button.clock-button')];
+    expect(clocks.map((b) => b.disabled)).toEqual([true, true]);
+    const box = c.querySelector<HTMLInputElement>('input[name="quietEnabled"]')!;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    expect(clocks.map((b) => b.disabled)).toEqual([false, false]);
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(clocks.map((b) => b.disabled)).toEqual([true, true]);
   });
   it('unknown toast status is shown as n/a, never as ok', () => {
     const c = document.createElement('div');
@@ -54,7 +92,7 @@ describe('Notifications tab', () => {
     await flush();
     expect(calls).toHaveLength(0);
     expect([...staged.keys()]).toEqual(['notifications:enabled.question']);
-    await [...staged.values()][0]!();
+    await [...staged.values()][0]!(false);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.path).toBe('/api/config');
     expect(calls[0]!.init.method).toBe('PUT');

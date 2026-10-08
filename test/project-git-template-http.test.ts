@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,26 @@ describe('POST /api/projects/git-init', () => {
     expect(gitSync(root, 'log', '--format=%s')).toBe('chore: start');
     expect(gitSync(root, 'status', '--porcelain')).toBe(''); // .andromedacli is kept out of the status
     expect((await ui(s, '/api/state')).body.projectIsRepo).toBe(true);
+    const again = await ui(s, '/api/projects/git-init', 'POST', {});
+    expect([again.status, again.body.code]).toEqual([409, 'git.alreadyRepo']);
+  });
+});
+
+describe('git init in a folder that only holds repositories', () => {
+  it('is allowed (the folder itself is no repository) and the folder becomes the project repository, nested ones left alone', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'git-init-mixed-'));
+    mkdirSync(join(root, 'abc-fe'));
+    gitSync(join(root, 'abc-fe'), 'init', '-q', '-b', 'main'); // a repository inside, and a plain folder next to it
+    mkdirSync(join(root, 'docs'));
+    const s = await bootServer({ projectRoot: root });
+    const before = (await ui(s, '/api/state')).body;
+    expect([before.projectIsRepo, before.repos]).toEqual([true, ['abc-fe']]); // it holds a repository, it is not one
+    const made = await ui(s, '/api/projects/git-init', 'POST', {});
+    expect(made.status).toBe(200);
+    const slash = (p: string): string => p.split('\\').join('/').toLowerCase();
+    expect(slash(gitSync(root, 'rev-parse', '--show-toplevel'))).toBe(slash(root));
+    const after = (await ui(s, '/api/state')).body;
+    expect(after.repos).toEqual(['']); // now the folder is the repository
     const again = await ui(s, '/api/projects/git-init', 'POST', {});
     expect([again.status, again.body.code]).toEqual([409, 'git.alreadyRepo']);
   });

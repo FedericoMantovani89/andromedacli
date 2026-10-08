@@ -32,6 +32,20 @@ export interface BudgetConfig {
   loop: { sameCall: number; sameError: number; compactions: number; stepMinutes: number; silenceMinutes: number };
   quota: { halvePercent: number; freezePercent: number; stopPercent: number; staggerSeconds: number; staggerGroup: number };
 }
+/** Allowed whole-number range of every numeric entry (the single source: validation and the message that names the limits both read it). */
+export const CONFIG_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  'agents.maxActiveGlobal': [1, 64], 'agents.maxActivePerProject': [1, 64],
+  'git.testTimeoutMinutes': [1, 240], 'git.staleWorktreeDays': [1, 365],
+  'budget.agentTokens': [1000, 100_000_000], 'budget.graceMinutes': [0, 120],
+  'budget.alertPercent': [1, 200], 'budget.limitPercent': [1, 200], 'budget.stopPercent': [1, 200],
+  'budget.loop.sameCall': [1, 1000], 'budget.loop.sameError': [1, 1000], 'budget.loop.compactions': [1, 1000],
+  'budget.loop.stepMinutes': [1, 1000], 'budget.loop.silenceMinutes': [1, 1000],
+  'budget.quota.halvePercent': [1, 100], 'budget.quota.freezePercent': [1, 100], 'budget.quota.stopPercent': [1, 100],
+  'models.cacheHours': [1, 168], 'plugins.cacheHours': [1, 168], 'notifications.groupSeconds': [1, 60],
+  'budget.quota.staggerSeconds': [0, 3600], 'budget.quota.staggerGroup': [1, 16],
+};
+const R = (path: string): readonly [number, number] => CONFIG_RANGES[path]!;
+
 export interface ConfigError { path: string; code: 'config.invalid' | 'config.unreadable' }
 
 export const DEFAULT_CONFIG: Config = {
@@ -70,7 +84,7 @@ export const isCatalogUrl = (v: unknown): v is string => {
   if (u.username !== '' || u.password !== '') return false;
   return u.protocol === 'https:' || (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost'));
 };
-const isCacheHours = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 168;
+const isCacheHours = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 168; // CONFIG_RANGES holds the same limits for the error text
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -107,7 +121,7 @@ export function validateConfig(raw: Record<string, unknown>): { config: Config; 
       for (const key of ['maxActiveGlobal', 'maxActivePerProject'] as const) {
         if (!(key in a)) continue;
         const v = a[key];
-        if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 64) config.agents[key] = v;
+        if (typeof v === 'number' && Number.isInteger(v) && v >= R(`agents.${key}`)[0] && v <= R(`agents.${key}`)[1]) config.agents[key] = v;
         else bad(`agents.${key}`);
       }
     } else bad('agents');
@@ -136,12 +150,12 @@ export function validateConfig(raw: Record<string, unknown>): { config: Config; 
       }
       if ('testTimeoutMinutes' in g) {
         const v = g.testTimeoutMinutes;
-        if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 240) config.git.testTimeoutMinutes = v;
+        if (typeof v === 'number' && Number.isInteger(v) && v >= R('git.testTimeoutMinutes')[0] && v <= R('git.testTimeoutMinutes')[1]) config.git.testTimeoutMinutes = v;
         else bad('git.testTimeoutMinutes');
       }
       if ('staleWorktreeDays' in g) {
         const v = g.staleWorktreeDays;
-        if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 365) config.git.staleWorktreeDays = v;
+        if (typeof v === 'number' && Number.isInteger(v) && v >= R('git.staleWorktreeDays')[0] && v <= R('git.staleWorktreeDays')[1]) config.git.staleWorktreeDays = v;
         else bad('git.staleWorktreeDays');
       }
       if ('staleCheck' in g) {
@@ -159,32 +173,32 @@ export function validateConfig(raw: Record<string, unknown>): { config: Config; 
     if (isObj(raw.budget)) {
       const b = raw.budget;
       const int = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
-      const set = (path: string, v: unknown, lo: number, hi: number, apply: (n: number) => void): void => { if (v === undefined) return; if (int(v, lo, hi)) apply(v); else bad(path); };
+      const set = (path: string, v: unknown, apply: (n: number) => void): void => { if (v === undefined) return; if (int(v, R(path)[0], R(path)[1])) apply(v); else bad(path); };
       const c = config.budget;
-      set('budget.agentTokens', b.agentTokens, 1000, 100_000_000, (n) => { c.agentTokens = n; });
-      set('budget.graceMinutes', b.graceMinutes, 0, 120, (n) => { c.graceMinutes = n; });
+      set('budget.agentTokens', b.agentTokens, (n) => { c.agentTokens = n; });
+      set('budget.graceMinutes', b.graceMinutes, (n) => { c.graceMinutes = n; });
       // alert < limit <= stop: an invalid trio keeps all three defaults and is reported on every given entry
       const trio = { alertPercent: b.alertPercent ?? c.alertPercent, limitPercent: b.limitPercent ?? c.limitPercent, stopPercent: b.stopPercent ?? c.stopPercent };
-      const okTrio = int(trio.alertPercent, 1, 200) && int(trio.limitPercent, 1, 200) && int(trio.stopPercent, 1, 200) && trio.alertPercent < trio.limitPercent && trio.limitPercent <= trio.stopPercent;
+      const okTrio = int(trio.alertPercent, ...R('budget.alertPercent')) && int(trio.limitPercent, ...R('budget.limitPercent')) && int(trio.stopPercent, ...R('budget.stopPercent')) && trio.alertPercent < trio.limitPercent && trio.limitPercent <= trio.stopPercent;
       for (const key of ['alertPercent', 'limitPercent', 'stopPercent'] as const) {
         if (b[key] === undefined) continue;
         if (okTrio) c[key] = trio[key] as number; else bad(`budget.${key}`);
       }
       if (isObj(b.loop)) {
-        for (const [key, lo, hi] of [['sameCall', 1, 1000], ['sameError', 1, 1000], ['compactions', 1, 1000], ['stepMinutes', 1, 1000], ['silenceMinutes', 1, 1000]] as const) {
-          set(`budget.loop.${key}`, (b.loop as Record<string, unknown>)[key], lo, hi, (n) => { c.loop[key] = n; });
+        for (const key of ['sameCall', 'sameError', 'compactions', 'stepMinutes', 'silenceMinutes'] as const) {
+          set(`budget.loop.${key}`, (b.loop as Record<string, unknown>)[key], (n) => { c.loop[key] = n; });
         }
       } else if ('loop' in b) bad('budget.loop');
       if (isObj(b.quota)) {
         const q = b.quota as Record<string, unknown>;
         const trioQ = { halvePercent: q.halvePercent ?? c.quota.halvePercent, freezePercent: q.freezePercent ?? c.quota.freezePercent, stopPercent: q.stopPercent ?? c.quota.stopPercent };
-        const okQ = int(trioQ.halvePercent, 1, 100) && int(trioQ.freezePercent, 1, 100) && int(trioQ.stopPercent, 1, 100) && trioQ.halvePercent < trioQ.freezePercent && trioQ.freezePercent < trioQ.stopPercent;
+        const okQ = int(trioQ.halvePercent, ...R('budget.quota.halvePercent')) && int(trioQ.freezePercent, ...R('budget.quota.freezePercent')) && int(trioQ.stopPercent, ...R('budget.quota.stopPercent')) && trioQ.halvePercent < trioQ.freezePercent && trioQ.freezePercent < trioQ.stopPercent;
         for (const key of ['halvePercent', 'freezePercent', 'stopPercent'] as const) {
           if (q[key] === undefined) continue;
           if (okQ) c.quota[key] = trioQ[key] as number; else bad(`budget.quota.${key}`);
         }
-        set('budget.quota.staggerSeconds', q.staggerSeconds, 0, 3600, (n) => { c.quota.staggerSeconds = n; });
-        set('budget.quota.staggerGroup', q.staggerGroup, 1, 16, (n) => { c.quota.staggerGroup = n; });
+        set('budget.quota.staggerSeconds', q.staggerSeconds, (n) => { c.quota.staggerSeconds = n; });
+        set('budget.quota.staggerGroup', q.staggerGroup, (n) => { c.quota.staggerGroup = n; });
       } else if ('quota' in b) bad('budget.quota');
     } else bad('budget');
   }
@@ -331,14 +345,14 @@ const deepMerge = (base: Record<string, unknown>, patch: Record<string, unknown>
 export type PatchResult =
   | { ok: true; config: Config; applied: Record<string, unknown> }
   | { ok: false; code: 'config.unreadable' }
-  | { ok: false; code: 'config.invalid'; path: string };
+  | { ok: false; code: 'config.invalid'; path: string; /** Set when the value is a number outside the allowed whole-number range. */ range?: { min: number; max: number } };
 
 /**
  * Generic patch (SPEC 22, 29.7): deep-merges the given entries into the user's file (every other entry stays as written, even invalid or
  * unknown ones), validates the merged object and refuses when an entry the patch touched is invalid: nothing is written then.
  * `claude.command`, `mod.enabled` and `telemetry` are not in the patchable list (restart needed, security).
  */
-export function applyConfigPatch(path: string, patch: Record<string, unknown>): PatchResult {
+export function applyConfigPatch(path: string, patch: Record<string, unknown>, dryRun = false): PatchResult {
   const applied: Record<string, unknown> = {};
   for (const key of PATCHABLE) if (key in patch) applied[key] = patch[key];
   if (Object.keys(applied).length === 0) return { ok: false, code: 'config.invalid', path: '' };
@@ -356,8 +370,14 @@ export function applyConfigPatch(path: string, patch: Record<string, unknown>): 
   const { config, errors } = validateConfig(merged);
   for (const leaf of leavesOf(applied, '')) {
     const hit = errors.find((e) => e.path === leaf || e.path.startsWith(`${leaf}.`) || leaf.startsWith(`${e.path}.`));
-    if (hit) return { ok: false, code: 'config.invalid', path: hit.path.length < leaf.length ? hit.path : leaf };
+    if (hit) {
+      const path = hit.path.length < leaf.length ? hit.path : leaf;
+      const lim = CONFIG_RANGES[path];
+      const v = path.split('.').reduce<unknown>((o, key) => (isObj(o) ? o[key] : undefined), merged);
+      const outside = lim !== undefined && typeof v === 'number' && (!Number.isInteger(v) || v < lim[0] || v > lim[1]);
+      return { ok: false, code: 'config.invalid', path, ...(outside ? { range: { min: lim[0], max: lim[1] } } : {}) };
+    }
   }
-  writeJsonAtomic(path, merged);
+  if (!dryRun) writeJsonAtomic(path, merged); // a dry run only answers whether the patch would be accepted
   return { ok: true, config, applied };
 }

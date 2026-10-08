@@ -14,7 +14,7 @@ export const USER_ERROR_CODES = [
   'install.busy', 'install.unavailable',
   'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
   'project.fieldInvalid', 'project.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
-  'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'config.invalid', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
+  'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'config.invalid', 'config.outOfRange', 'project.testsDisabledInvalid', 'git.cloneUrlInvalid', 'git.cloneFolderNotEmpty', 'git.cloneFailed', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
@@ -43,7 +43,7 @@ export interface SessionInfo {
 }
 
 export interface PrereqResult {
-  id: 'node' | 'git' | 'claude' | 'gh';
+  id: 'node' | 'git' | 'claude' | 'gh' | 'python' | 'rg' | 'ctags' | 'jq' | 'fd' | 'shellcheck' | 'uv';
   required: boolean;
   status: 'ok' | 'outdated' | 'missing' | 'error' | 'not_required' | 'restart';
   version?: string;
@@ -68,7 +68,7 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
-  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** What the project's files suggest (used while `testCommand` is empty). */ detectedTestCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean; /** The model this project's agents get (empty: the one of Options, Models). */ model?: string; /** The most agents running at once in this project. */ maxActive?: number };
+  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** What the project's files suggest (used while `testCommand` is empty). */ detectedTestCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean; /** The tests are switched off for this project: no test run, and the reports say so. */ testsDisabled?: boolean; /** The model this project's agents get (empty: the one of Options, Models). */ model?: string; /** The most agents running at once in this project. */ maxActive?: number };
   /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
   settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };
   main: SessionInfo;
@@ -79,6 +79,8 @@ export interface StateMessage {
   profiles: readonly string[];
   /** null until the startup checks finish (unknown is not "ok", P7). */
   prereq: PrereqResult[] | null;
+  /** Shell commands that used each optional helper since `since` (counters only, never the commands). */
+  helperUse?: { since: string; counts: Partial<Record<'python' | 'rg' | 'ctags' | 'jq' | 'fd' | 'shellcheck' | 'uv', number>> };
   /** true until the first-start wizard saved a configuration file. */
   needsSetup: boolean;
   projectIsRepo: boolean;

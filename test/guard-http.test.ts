@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, req, ui, type Running } from './helpers';
-import { makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
+import { gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
 vi.setConfig({ testTimeout: 60_000 });
@@ -86,6 +86,7 @@ it('every deny is logged to .andromedacli/state/guard.jsonl; allows are not', as
   const { s, t } = await boot();
   await spawn(s, 'first-job');
   await guard(s, 'first-job', 'Bash', { command: 'git status' });
+  await guard(s, 'first-job', 'PowerShell', { command: 'fd -e ts' }); // the Windows shell tool counts too
   await guard(s, 'first-job', 'Bash', { command: 'git push --force' });
   const log = logOf(t);
   expect(log).toHaveLength(1);
@@ -112,4 +113,46 @@ it('the log keeps a long command short and never fails the answer when it cannot
   await guard(s, 'first-job', 'Bash', { command: `git push --force ${'x'.repeat(5000)}` });
   expect(logOf(t)[0].detail.length).toBeLessThanOrEqual(400);
   expect((await ui(s, '/api/state')).status).toBe(200);
+});
+
+it('counts the optional helpers the shell commands use (counters only) and tells the agent which ones exist', async () => {
+  const { s, t } = await boot();
+  await spawn(s, 'first-job');
+  await guard(s, 'first-job', 'Bash', { command: 'rg -n todo src | jq -r .name' });
+  await guard(s, 'first-job', 'Bash', { command: 'rg again' });
+  await guard(s, 'first-job', 'Bash', { command: 'git status' });
+  await guard(s, 'first-job', 'PowerShell', { command: 'fd -e ts' }); // the Windows shell tool counts too
+  await guard(s, 'first-job', 'Read', { file_path: 'rg' }); // not a shell command
+  const state = (await ui(s, '/api/state')).body;
+  expect(state.helperUse.counts).toEqual({ rg: 2, jq: 1, fd: 1 });
+  expect(typeof state.helperUse.since).toBe('string');
+  // The fake prerequisite runner answers for every tool, so the prompt of the agent lists the helpers.
+  const prompt = readFileSync(join(t.repo, '.andromedacli', 'state', 'prompts', 'agent-first-job.md'), 'utf8');
+  expect(prompt).toContain('Command-line helpers installed on this machine');
+  expect(prompt).toContain('`rg` over `grep`');
+});
+
+it('a repository with no .gitignore: the main is told once to ask the user, the agent is told to keep its work clean; with one, neither', async () => {
+  const { s, t } = await boot();
+  const prompts = join(t.repo, '.andromedacli', 'state', 'prompts');
+  const main = readFileSync(join(prompts, 'main-shop-api.md'), 'utf8');
+  expect(main).toContain('No .gitignore was found in: the project folder.');
+  expect(main).toContain('ask_user');
+  await spawn(s, 'first-job');
+  expect(readFileSync(join(prompts, 'agent-first-job.md'), 'utf8')).toContain('This repository has no .gitignore.');
+  // the question is asked once per repository: a second main prompt of the same project does not repeat it
+  const marker = JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'gitignore-asked.json'), 'utf8'));
+  expect(marker).toEqual(['']);
+});
+it('with a committed .gitignore the agent prompt has no such notice', async () => {
+  const t = makeRepo({ remote: true });
+  repos.push(t);
+  writeFileSync(join(t.repo, '.gitignore'), 'node_modules\n');
+  gitSync(t.repo, 'add', '-A');
+  gitSync(t.repo, '-c', 'user.name=Tester', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'ignore');
+  const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
+  const prompts = join(t.repo, '.andromedacli', 'state', 'prompts');
+  expect(readFileSync(join(prompts, 'main-shop-api.md'), 'utf8')).not.toContain('.gitignore');
+  await spawn(s, 'first-job');
+  expect(readFileSync(join(prompts, 'agent-first-job.md'), 'utf8')).not.toContain('no .gitignore');
 });

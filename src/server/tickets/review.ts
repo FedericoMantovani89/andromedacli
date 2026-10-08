@@ -14,6 +14,8 @@ export interface ReviewDeps {
   project: string;
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
   testCommand(): string | undefined;
+  /** The user switched the tests off for this project: nothing is run and the facts say so. */
+  testsDisabled?(): boolean;
   testTimeoutMs(): number;
   /** The interface language right now and its translator (report headings follow it). */
   language(): { lang: string; t: Translate };
@@ -34,6 +36,8 @@ export interface ReviewDeps {
 export interface ReportFacts {
   files: ChangedFile[];
   testsOk: boolean | undefined;
+  /** The tests are switched off for this project (then `testsOk` is undefined on purpose). */
+  testsInhibited?: true;
   checklistComplete: boolean;
   docsChanged: boolean;
   /** Changed files that look unrelated to the goal (lock files, build output, logs) and are not named in it. */
@@ -78,7 +82,7 @@ export function reviewerSlugFor(ticket: string, taken: readonly string[]): strin
 }
 
 export interface ReviewerGoalInput {
-  slug: string; project: string; sha: string; goal?: string; testsOk: boolean | undefined; files: number; added: number; removed: number;
+  slug: string; project: string; sha: string; goal?: string; testsOk: boolean | undefined; testsInhibited?: boolean; files: number; added: number; removed: number;
   reportFile: string; round: number; previous: Verdict[];
 }
 
@@ -90,7 +94,7 @@ export function reviewerGoal(i: ReviewerGoalInput): string {
     `Objective the main wrote for the author:\n${i.goal?.trim() ? i.goal.trim() : '(none recorded)'}`,
     '',
     'Facts from the console (not from the author):',
-    `- the tests, run by the console on the delivered commit ${i.sha.slice(0, 7)}: ${i.testsOk === undefined ? 'unknown' : i.testsOk ? 'PASSED' : 'FAILED'}`,
+    `- the tests, run by the console on the delivered commit ${i.sha.slice(0, 7)}: ${i.testsInhibited ? 'NOT RUN, the project owner switched the tests off (do not count it against the work, and do not assume they pass)' : i.testsOk === undefined ? 'unknown' : i.testsOk ? 'PASSED' : 'FAILED'}`,
     `- ${i.files} files changed, +${i.added} -${i.removed}`,
     `- the full report is the file ${i.reportFile}`,
     '',
@@ -149,8 +153,9 @@ export class ReviewService {
     if (!wt) return { ok: false, code: 'no_worktree' };
     const sha = ticket.deliveredSha;
 
-    let tests = ticket.tests && ticket.tests.sha === sha && !o.rerun ? ticket.tests : undefined;
-    if (!tests) {
+    const inhibited = this.d.testsDisabled?.() === true;
+    let tests = !inhibited && ticket.tests && ticket.tests.sha === sha && !o.rerun ? ticket.tests : undefined;
+    if (!tests && !inhibited) {
       const command = this.d.testCommand()?.trim();
       if (!command) return { ok: false, code: 'no_test_command' };
       const head = await git(wt.worktree, ['rev-parse', 'HEAD']);
@@ -171,14 +176,14 @@ export class ReviewService {
     const docsNote = ticket.steps.length > 0 ? ticket.steps[ticket.steps.length - 1]!.note : undefined;
     const { lang, t } = this.d.language();
     const report = buildReport({
-      slug, project: this.d.project, branch: wt.branch, goal: ticket.goal, steps: ticket.steps, files, tests, docsNote,
+      slug, project: this.d.project, branch: wt.branch, goal: ticket.goal, steps: ticket.steps, files, tests, testsInhibited: inhibited, docsNote,
       verdicts: ticket.verdicts, lang, t, generatedAt: new Date().toISOString(),
     });
     const reportFile = writeReport(this.d.root, slug, report);
     return {
       ok: true, report, reportFile,
       facts: {
-        files, testsOk: tests.ok, checklistComplete: ticket.steps.length > 0 && ticket.steps.every((s) => s.done),
+        files, testsOk: tests?.ok, ...(inhibited ? { testsInhibited: true as const } : {}), checklistComplete: ticket.steps.length > 0 && ticket.steps.every((s) => s.done),
         docsChanged: files.some((f) => isDocFile(f.path)), foreignHints,
       },
     };
@@ -195,8 +200,8 @@ export class ReviewService {
       const report = await this.ticketReport(slug);
       if (!report.ok) return { ok: false, code: report.code, detail: report.detail };
       const sha = ticket.deliveredSha;
-      const tests = this.d.tickets.get(slug)!.tests!;
-      if (!tests.ok) {
+      const tests = this.d.tickets.get(slug)!.tests; // none when the project's tests are switched off
+      if (tests && !tests.ok) {
         this.d.tickets.move(slug, 'in_review', { reviewer: 'console' });
         const note: ReviewNote = { severity: 'high', text: `The console ran the tests on your delivered commit ${sha.slice(0, 7)} (${tests.command}) and they fail:\n${tests.tail.trim().slice(-1500)}` };
         const out = this.fail(slug, [note], 'console');
@@ -206,7 +211,7 @@ export class ReviewService {
       const round = ticket.verdicts.length + 1;
       const sum = report.facts.files.reduce((n, f) => ({ a: n.a + (f.added ?? 0), r: n.r + (f.removed ?? 0) }), { a: 0, r: 0 });
       const goal = reviewerGoal({
-        slug, project: this.d.project, sha, goal: ticket.goal, testsOk: tests.ok, files: report.facts.files.length, added: sum.a, removed: sum.r,
+        slug, project: this.d.project, sha, goal: ticket.goal, testsOk: tests?.ok, testsInhibited: report.facts.testsInhibited === true, files: report.facts.files.length, added: sum.a, removed: sum.r,
         reportFile: report.reportFile.replace(/\\/g, '/'), round, previous: ticket.verdicts,
       });
       const started = await this.d.spawnReviewer({ slug: reviewer, ticket: slug, sha, goal, model: o.model });

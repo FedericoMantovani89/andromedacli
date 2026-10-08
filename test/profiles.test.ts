@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -171,4 +171,42 @@ it('the main prompt lists the repositories only when there are several, and says
     const one = readFileSync(renderMainPrompt({ project: 'q', workLanguage: 'English', outDir: out, ...(repos ? { repos } : {}) }), 'utf8');
     expect(one).not.toMatch(/several git repositories/);
   }
+});
+
+import { GitignoreAsked, hasGitignore } from '../src/server/git/gitignore';
+describe('a repository without a .gitignore', () => {
+  const dir = (): string => mkdtempSync(join(tmpdir(), 'gi-'));
+  it('hasGitignore looks only at the top of the folder', () => {
+    const d = dir();
+    expect(hasGitignore(d)).toBe(false);
+    mkdirSync(join(d, 'sub'));
+    writeFileSync(join(d, 'sub', '.gitignore'), 'x');
+    expect(hasGitignore(d)).toBe(false);
+    writeFileSync(join(d, '.gitignore'), 'node_modules');
+    expect(hasGitignore(d)).toBe(true);
+  });
+  it('is brought up to the main once per repository, and what was asked is remembered', () => {
+    const file = join(dir(), 'state', 'gitignore-asked.json');
+    const asked = new GitignoreAsked(file);
+    expect(asked.take(['abc-fe', 'abc-be'])).toEqual(['abc-fe', 'abc-be']);
+    expect(asked.take(['abc-fe', 'abc-be'])).toEqual([]);
+    expect(new GitignoreAsked(file).take(['abc-be', 'abc-docs'])).toEqual(['abc-docs']); // a new run of the console remembers too
+    expect(asked.take([])).toEqual([]);
+  });
+  it('the main prompt tells it to ask the user with ask_user, naming the repositories; nothing when none is missing', () => {
+    const out = dir();
+    const text = readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out, noGitignore: ['abc-fe', ''] }), 'utf8');
+    expect(text).toContain('No .gitignore was found in: abc-fe, the project folder.');
+    expect(text).toContain('ask the user with ask_user whether a .gitignore should be created');
+    expect(readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out, noGitignore: [] }), 'utf8')).not.toContain('.gitignore');
+  });
+});
+
+it('an agent with no .gitignore in its checkout is told to keep its work clean and to leave the file alone; a reviewer is not', () => {
+  const profile = loadProfile('developer', mkdtempSync(join(tmpdir(), 'gi-proj-')), mkdtempSync(join(tmpdir(), 'gi-user-')))!;
+  const out = mkdtempSync(join(tmpdir(), 'gi-agent-'));
+  const base = { profile, slug: 'a-job', project: 'p', outDir: out };
+  expect(readFileSync(renderAgentPrompt({ ...base, noGitignore: true }), 'utf8')).toContain('This repository has no .gitignore. Do not create or edit one unless your goal says so');
+  expect(readFileSync(renderAgentPrompt({ ...base, noGitignore: false }), 'utf8')).not.toContain('no .gitignore');
+  expect(readFileSync(renderAgentPrompt({ ...base, noGitignore: true, review: true }), 'utf8')).not.toContain('no .gitignore');
 });

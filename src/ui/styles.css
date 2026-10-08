@@ -223,9 +223,15 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .options-dialog > h2 { grid-area: title; padding: 16px 22px; border-bottom: 1px solid var(--seam); }
 .options-dialog > .form-error { grid-area: error; padding: 0 24px 6px; }
 .options-dialog > button { grid-area: foot; justify-self: end; margin: 8px 24px 16px; }
+/* The footer: the note on when settings apply at the left, Save at the right. */
+.options-foot { grid-area: foot; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 8px 24px 16px; }
+.options-foot .settings-note { margin: 0; max-width: none; font-size: 12px; }
+.options-foot > button { flex: 0 0 auto; }
 .options-tabs { grid-area: nav; display: flex; flex-direction: column; gap: 1px; padding: 10px 8px; overflow: auto;
   background: var(--ground); border-right: 1px solid var(--seam); }
 .options-tab { border: 0; background: transparent; color: var(--muted); text-align: left; padding: 7px 12px; width: 100%; border-radius: var(--radius); }
+.options-group { margin: 14px 12px 5px; padding-top: 12px; border-top: 1px solid var(--seam); color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.options-group:first-child { margin-top: 4px; padding-top: 0; border-top: 0; }
 .options-tab:hover { color: var(--text); background: var(--raised); }
 .options-tab.selected { color: var(--text); background: var(--accent-soft); font-weight: 600; }
 .options-panel { grid-area: panel; overflow: auto; min-height: 0; padding: 18px 24px 8px; }
@@ -282,10 +288,14 @@ input[type="checkbox"] { accent-color: var(--accent); }
   .options-dialog { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "title" "nav" "panel" "error" "foot"; }
   .options-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--seam); }
   .options-tab { width: auto; white-space: nowrap; }
+  .options-group { margin: 0 4px; padding: 0 0 0 10px; border-top: 0; border-left: 1px solid var(--seam); align-self: center; white-space: nowrap; }
 }
 .options-panel .options-heading:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
-.prereq-row { grid-template-columns: minmax(0, 1fr) 6.5rem 6.5rem 7rem 7rem; padding: 5px 0; border-bottom: 1px solid var(--seam); }
+.prereq-row { grid-template-columns: minmax(0, 1fr) 7.5rem 6rem 7rem; padding: 5px 0; border-bottom: 1px solid var(--seam); }
 .prereq-row > button { justify-self: end; }
+/* Every row is as tall as one with the Install button, so the list does not jump; the line between the sections is the last row's. */
+.prereq-row { min-height: 36px; box-sizing: border-box; }
+.options-heading.prereq-heading { border-top: 0; margin-top: 12px; padding-top: 0; }
 .form-actions { justify-content: flex-start; }
 /* A rule that sets `display` would otherwise win over the hidden attribute. */
 [hidden] { display: none !important; }
@@ -293,23 +303,41 @@ input[type="checkbox"] { accent-color: var(--accent); }
 /* Options dialog: close X, icon buttons, the info tooltip icon and the footnote. */
 .options-dialog { position: relative; }
 .options-dialog > .dialog-x { position: absolute; grid-area: auto; top: 12px; right: 14px; margin: 0; z-index: 1; justify-self: auto; }
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0 !important; font-size: 18px; line-height: 1; }
+.icon-btn, .options-panel button.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: 0 0 30px; padding: 0 !important; font-size: 18px; line-height: 1; }
 .dialog-x::before { content: "\00d7"; font-size: 22px; }
 .icon-refresh { color: var(--ok, #4cc38a); }
 .icon-refresh::before { content: "\21bb"; font-size: 18px; }
 .options-select-row { display: flex; gap: 8px; align-items: center; }
 .options-select-row select { flex: 1 1 auto; min-width: 0; }
+/* The select plus the 30px button take the same width as the text input below (the 8px gap included). */
+.options-models input:not([type]), .options-models input[type="text"] { width: calc(100% - 38px); box-sizing: border-box; }
+.options-models select { box-sizing: border-box; }
 .options-field-head { display: flex; align-items: baseline; gap: 10px; }
-.info-icon { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 6px; border: 1px solid var(--muted); border-radius: 50%;
+.info-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 6px; border: 1px solid var(--muted); border-radius: 50%;
   color: var(--muted); font-size: 10px; font-style: italic; font-weight: 600; cursor: help; }
 .info-icon::before { content: "i"; }
 .info-icon:hover, .info-icon:focus { color: var(--text); border-color: var(--text); }
+/* The hint: half the width of the native tooltip, so it grows taller. */
+.info-icon::after { content: attr(aria-label); position: absolute; top: calc(100% + 6px); left: -8px; z-index: 5; width: 11rem; padding: 7px 9px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--seam-strong); border-radius: var(--radius); box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  font: normal 400 12px/1.45 var(--ui, inherit); white-space: normal; text-align: left; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .12s ease; }
+.info-icon:hover::after, .info-icon:focus::after { opacity: 1; visibility: visible; }
 .options-panel:has(> .options-models) { grid-template-rows: minmax(0, 1fr); }
 .options-models { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .options-footnote { margin-top: auto; font-size: 11.5px; max-width: none; }
 
 /* Options, Profiles: one row per profile (name and description, where it comes from, actions) and the editing form. */
 .options-profiles { display: grid; gap: 10px; }
+/* The notes under the list sit at the bottom of the panel, full width (like the footnote of the other tabs). */
+.options-panel:has(> .options-profiles-box) { grid-template-rows: minmax(min-content, 1fr); }
+.options-profiles-box { display: flex; flex-direction: column; min-height: 0; }
+.options-profiles-box > .options-profiles { flex: 1 1 auto; display: flex; flex-direction: column; }
+.options-profiles-box > .options-profiles > * { flex: 0 0 auto; }
+.options-help-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.options-help-line .settings-note { max-width: none; font-size: 11.5px; }
+.options-counter { flex: 0 0 auto; font-family: var(--mono); }
+.options-profiles-foot { display: grid; gap: 6px; margin-top: auto; padding-top: 10px; }
+.options-profiles-foot .settings-note { max-width: none; font-size: 11.5px; }
 .options-profiles-top { display: flex; justify-content: flex-end; }
 .options-profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 14px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--seam); }
 .options-profile-row > .settings-note:last-child:not(.options-profile-text) { grid-column: 1 / -1; }
@@ -353,3 +381,36 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .options-panel::-webkit-scrollbar-track { background: var(--raised); border-radius: 7px; }
 .options-panel::-webkit-scrollbar-thumb { background: var(--muted); border: 3px solid var(--raised); border-radius: 7px; min-height: 40px; }
 .options-panel::-webkit-scrollbar-thumb:hover { background: var(--text); }
+.options-slider.is-off { opacity: .45; }
+.options-dialog .form-error { white-space: pre-line; }
+
+/* A clock face to pick a time (quiet hours): a button with the time, a round dial under it. */
+.clock-field { position: relative; display: inline-flex; }
+.clock-button { min-width: 4.6rem; font: 13px var(--mono); letter-spacing: .04em; }
+.clock-popover { position: fixed; z-index: 30; display: grid; gap: 8px; justify-items: center; padding: 12px; background: var(--surface); border: 1px solid var(--seam-strong);
+  border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0, 0, 0, .55); }
+.clock-head { display: flex; align-items: center; gap: 2px; font: 600 26px var(--mono); }
+.clock-head button { padding: 2px 8px; border: 0; background: transparent; color: var(--muted); font: inherit; border-radius: var(--radius); }
+.clock-head button.active { color: var(--text); background: var(--accent-soft); }
+.clock-face { touch-action: none; cursor: pointer; user-select: none; outline: none; }
+.clock-face:focus-visible { outline: 1px solid var(--accent); border-radius: 50%; }
+.clock-disc { fill: var(--raised); }
+.clock-hand { stroke: var(--accent); stroke-width: 2; }
+.clock-pin { fill: var(--accent); }
+.clock-mark { fill: var(--accent); opacity: .85; }
+.clock-num { fill: var(--text); font: 13px var(--mono); pointer-events: none; }
+.clock-num.selected { fill: var(--ground); font-weight: 700; }
+.clock-colon::before { content: "\003a"; }
+.settings-switch.is-off { opacity: .5; }
+.restart-dialog .form-actions { flex-direction: row; justify-content: space-between; } /* the base rule reverses the row: here the DOM order (No, Yes) is the screen order, No at the left edge and Yes at the right */
+.restart-layer { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(4, 5, 8, .72); }
+/* With the use count there is one more column; the required rows keep an empty cell there so the columns line up. */
+.prereq-row:has(.prereq-uses) { grid-template-columns: minmax(0, 1fr) 7.5rem 6rem 5.5rem 7rem; }
+.prereq-uses { color: var(--muted); font-size: 12px; }
+.options-plugin-status { margin-left: auto; font-size: 12px; color: var(--muted); }
+.options-plugin-status.ok { color: var(--ok, #4cc38a); font-weight: 600; }
+.options-plugin.is-installed { border-color: var(--ok, #4cc38a); }
+.settings-test.is-off { opacity: .5; }
+.options-git-init, .options-git-clone { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
+.options-git-clone .options-select-row { width: 100%; justify-self: stretch; }
+.options-git-clone .options-select-row input { flex: 1 1 auto; min-width: 0; }

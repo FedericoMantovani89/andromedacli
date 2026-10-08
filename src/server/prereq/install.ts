@@ -40,6 +40,20 @@ export const INSTALL_TABLE: readonly InstallEntry[] = [
   entry('claude', 'update', ['npm', 'install', '-g', '@anthropic-ai/claude-code@latest'], NPM, false),
   entry('gh', 'install', ['winget', 'install', '--id', 'GitHub.cli', '-e', '--source', 'winget'], WINGET, true),
   entry('gh', 'update', ['winget', 'upgrade', '--id', 'GitHub.cli', '-e', '--source', 'winget'], WINGET, true),
+  entry('python', 'install', ['winget', 'install', '--id', 'Python.Python.3.14', '-e', '--source', 'winget'], WINGET, true),
+  entry('python', 'update', ['winget', 'upgrade', '--id', 'Python.Python.3.14', '-e', '--source', 'winget'], WINGET, true),
+  entry('rg', 'install', ['winget', 'install', '--id', 'BurntSushi.ripgrep.MSVC', '-e', '--source', 'winget'], WINGET, false),
+  entry('rg', 'update', ['winget', 'upgrade', '--id', 'BurntSushi.ripgrep.MSVC', '-e', '--source', 'winget'], WINGET, false),
+  entry('ctags', 'install', ['winget', 'install', '--id', 'UniversalCtags.Ctags', '-e', '--source', 'winget'], WINGET, false),
+  entry('ctags', 'update', ['winget', 'upgrade', '--id', 'UniversalCtags.Ctags', '-e', '--source', 'winget'], WINGET, false),
+  entry('jq', 'install', ['winget', 'install', '--id', 'jqlang.jq', '-e', '--source', 'winget'], WINGET, false),
+  entry('jq', 'update', ['winget', 'upgrade', '--id', 'jqlang.jq', '-e', '--source', 'winget'], WINGET, false),
+  entry('fd', 'install', ['winget', 'install', '--id', 'sharkdp.fd', '-e', '--source', 'winget'], WINGET, false),
+  entry('fd', 'update', ['winget', 'upgrade', '--id', 'sharkdp.fd', '-e', '--source', 'winget'], WINGET, false),
+  entry('shellcheck', 'install', ['winget', 'install', '--id', 'koalaman.shellcheck', '-e', '--source', 'winget'], WINGET, false),
+  entry('shellcheck', 'update', ['winget', 'upgrade', '--id', 'koalaman.shellcheck', '-e', '--source', 'winget'], WINGET, false),
+  entry('uv', 'install', ['winget', 'install', '--id', 'astral-sh.uv', '-e', '--source', 'winget'], WINGET, false),
+  entry('uv', 'update', ['winget', 'upgrade', '--id', 'astral-sh.uv', '-e', '--source', 'winget'], WINGET, false),
 ];
 
 export type InstallUnavailable = 'unsupported_platform' | 'no_winget' | 'no_npm';

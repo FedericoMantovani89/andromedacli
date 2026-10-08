@@ -76,7 +76,9 @@ it('PUT /api/config saves the notification settings, applies them at once and re
   for (const bad of [{ groupSeconds: 0 }, { groupSeconds: 61 }, { quietHours: { from: '25:00' } }, { enabled: { nope: true } }, { sound: 'yes' }]) {
     const res = await ui(s, '/api/config', 'PUT', { notifications: bad });
     expect(res.status).toBe(422);
-    expect(res.body.code).toBe('config.invalid');
+    // a number out of its range names the limits; anything else is the generic refusal
+    expect(res.body.code).toBe('groupSeconds' in bad ? 'config.outOfRange' : 'config.invalid');
+    if ('groupSeconds' in bad) expect(res.body.params).toEqual({ path: 'notifications.groupSeconds', min: 1, max: 60 });
   }
   expect((await state(s)).notifications.config.groupSeconds).toBe(9); // nothing changed
 });
