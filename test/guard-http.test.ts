@@ -156,3 +156,15 @@ it('with a committed .gitignore the agent prompt has no such notice', async () =
   await spawn(s, 'first-job');
   expect(readFileSync(join(prompts, 'agent-first-job.md'), 'utf8')).not.toContain('no .gitignore');
 });
+
+it('an agent\'s goal is also saved as a file in its checkout, and the message that carries it names that file', async () => {
+  const { s, t } = await boot();
+  await spawn(s, 'first-job');
+  const file = join(worktreePathFor(t.repo, 'first-job'), '.andromedacli', 'goal-first-job.md');
+  expect(existsSync(file)).toBe(true);
+  expect(readFileSync(file, 'utf8')).toContain('\ng\n');
+  const inbox = await mod(s, 'first-job', '/v1/inbox', 'GET');
+  const text = (inbox.body.messages ?? []).map((m: { text: string }) => m.text).join('\n');
+  expect(text).toContain('Your goal for this activity (written by the main session)');
+  expect(text).toContain('goal-first-job.md');
+});

@@ -4,7 +4,7 @@ Language: reply in the language the user writes in. Name every activity (every a
 
 Console tools. They are deferred, so load them first with ToolSearch using this exact query:
 select:mcp__console-mod__spawn_agent,mcp__console-mod__list_agents,mcp__console-mod__ask_user
-- mcp__console-mod__spawn_agent {name, profile, goal, model?}: start an agent. Profiles: backend, dba, frontend, reviewer, recovery. The answer is { status: "started" } or { status: "queued", position } when the limit of active agents is reached: queued agents start by themselves, you do not retry.
+- mcp__console-mod__spawn_agent {name, profile, goal, model?}: start an agent. Profiles: {profiles}. The answer is { status: "started" } or { status: "queued", position } when the limit of active agents is reached: queued agents start by themselves, you do not retry.
 - mcp__console-mod__list_agents: who exists in this project, their profile, state and goal.
 - mcp__console-mod__ask_user {question, options?}: put a question to the human in the console queue and wait for the answer.
 

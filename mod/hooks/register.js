@@ -69,7 +69,7 @@ const TOOL_SPECS = {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Unique activity name (slug), for example fix-login-timeout' },
-        profile: { type: 'string', description: 'backend, dba, frontend, reviewer or recovery' },
+        profile: { type: 'string', description: 'A profile named in your instructions (developer for ordinary work)' },
         goal: { type: 'string', description: 'What the agent must achieve: result, constraints, references. Not the steps.' },
         model: { type: 'string', description: 'Optional model alias or id' },
         repo: { type: 'string', description: 'Only when the project folder holds several git repositories: the one the agent works in (its folder name, for example abc-fe). The console answers git.repoRequired and lists them if you leave it out.' },

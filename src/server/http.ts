@@ -13,7 +13,7 @@ import type { PickFolderResult } from './pick-folder';
 import type { Notifier } from './notify/notifier';
 import { parsePresence, type Presence } from './notify/presence';
 import type { NotificationService } from './notify/service';
-import { describeProfiles, listProfileNames, loadProfile, removeUserProfile, restoreShippedProfiles, saveUserProfile, validateProfileInput } from './profiles';
+import { describeProfiles, listProfileNames, loadProfile, pickableProfiles, removeUserProfile, restoreShippedProfiles, saveUserProfile, validateProfileInput } from './profiles';
 import type { ModelCatalog } from './catalog/models';
 import type { PluginCatalog } from './catalog/plugins';
 import { fail, readBody, send } from './http-util';
@@ -151,11 +151,6 @@ const STATIC: Record<string, { file: string; type: string }> = {
   '/splash.jpg': { file: 'splash.jpg', type: 'image/jpeg' },
   '/xterm.css': { file: 'xterm.css', type: 'text/css; charset=utf-8' },
 };
-
-/** The profiles the new-agent menu offers: the project's own list (or all), only those that exist, without the two roles the console starts itself. */
-function pickableProfiles(offered: readonly string[] | undefined, existing: readonly string[]): string[] {
-  return (offered ?? existing).filter((n) => existing.includes(n) && n !== 'reviewer' && n !== 'recovery');
-}
 
 export function buildState(ctx: Context): StateMessage {
   const status = (slug: string): SessionInfo['status'] => {

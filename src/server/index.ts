@@ -40,7 +40,7 @@ import { GitignoreAsked, hasGitignore } from './git/gitignore';
 import { GuardLog } from './guard/log';
 import { HelperUsage, type HelperUse } from './helper-usage';
 import { helperToolsText } from './helper-tools';
-import { languageName, renderMainPrompt } from './profiles';
+import { languageName, listProfileNames, pickableProfiles, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
 import type { ProjectTab, PrereqResult } from '../shared/protocol';
 import { Ledger } from './budget/ledger';
@@ -593,7 +593,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir, displayName: `${projectName} AndromedaCli`,
       allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
-      appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), helpers: helperToolsText(shared.getPrereq()),
+      appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), profiles: pickableProfiles(store.fields().profiles, listProfileNames(o.projectRoot, join(o.configDir, 'profiles'))), helpers: helperToolsText(shared.getPrereq()),
         noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedacli', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
       ...(resumeId !== undefined ? { resumeId } : {}),
     });

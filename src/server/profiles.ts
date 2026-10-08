@@ -65,6 +65,11 @@ function namesIn(dir: string): string[] {
 }
 
 /** Every profile a project can use: the shipped ones first (in their usual order), then the others by name (the user's and the project's). */
+/** The profiles an agent can be started with by hand or by the main: the project's own list (or all), only those that exist, without the two roles the console starts itself. */
+export function pickableProfiles(offered: readonly string[] | undefined, existing: readonly string[]): string[] {
+  return (offered ?? existing).filter((n) => existing.includes(n) && n !== 'reviewer' && n !== 'recovery');
+}
+
 export function listProfileNames(projectRoot: string, userDir: string = join(configDir(), 'profiles')): string[] {
   const shipped = namesIn(shippedDir());
   const all = new Set([...shipped, ...namesIn(userDir), ...namesIn(join(projectRoot, '.andromedacli', 'profiles'))]);
@@ -184,9 +189,9 @@ function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.m
 }
 
 /** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `projectRoot`, the project's main.md and rules.md follow. */
-export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[]; helpers?: string; /** Repositories (relative names, '' for the project folder) with no .gitignore that were not yet brought up. */ noGitignore?: string[] }): string {
+export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[]; /** The profiles the main may name in spawn_agent. */ profiles?: readonly string[]; helpers?: string; /** Repositories (relative names, '' for the project folder) with no .gitignore that were not yet brought up. */ noGitignore?: string[] }): string {
   const template = readFileSync(join(promptsDir(), 'main.md'), 'utf8');
-  const base = fill(template, { project: o.project, workLanguage: o.workLanguage });
+  const base = fill(template, { project: o.project, workLanguage: o.workLanguage, profiles: (o.profiles && o.profiles.length > 0 ? o.profiles : ['developer']).join(', ') });
   // A project folder that holds several repositories: every agent works in exactly one, which the main must name.
   const repoText = o.repos && o.repos.length > 1
     ? `This project folder holds several git repositories: ${o.repos.join(', ')}. Every agent works in exactly one of them: pass its name as "repo" to spawn_agent. Work that touches two repositories needs one agent for each.`

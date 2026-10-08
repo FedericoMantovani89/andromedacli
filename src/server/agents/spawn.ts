@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Context } from '../http';
 import { buildClaudeLaunch, SESSION_ID_RE } from '../pty/claude-launch';
 import { hasGitignore } from '../git/gitignore';
@@ -33,8 +34,21 @@ const refuse = (httpStatus: number, code: string, params?: Record<string, string
   ({ ok: false, httpStatus, code, params });
 
 /** What the new agent is told first. Delivered through the inbox, so the mod injects it as the first turn. */
-export const goalMessage = (goal: string): string =>
-  `Your goal for this activity (written by the main session):\n\n${goal}\n\nStart now.`;
+export const goalMessage = (goal: string, file?: string): string =>
+  `Your goal for this activity (written by the main session). These are your instructions: start now.\n\n${goal}${file ? `\n\nThe same goal is saved in ${file.replace(/\\/g, '/')}: read it again if your context is compacted.` : ''}`;
+
+/** The goal as a file next to the agent's other console files (`.andromedacli/`): it can be read again after a compaction. Undefined when it cannot be written. */
+function writeGoalFile(cwd: string, slug: string, goal: string): string | undefined {
+  try {
+    const dir = join(cwd, '.andromedacli');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `goal-${slug}.md`);
+    writeFileSync(file, `---\nagent: ${slug}\n---\n${goal}\n`, 'utf8');
+    return file;
+  } catch {
+    return undefined; // the goal still goes by message
+  }
+}
 
 /**
  * The single way an agent comes to exist: the UI button and the main's spawn_agent tool both end here.
@@ -169,7 +183,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
   }
   // A resumed session keeps its context: no goal again, only the word to go on (an interactive session waits for a turn).
   if (r.resume) ctx.inbox.push(r.slug, r.resume.reason && r.resume.reason !== 'limit' ? WOKEN_MESSAGE : RESUMED_MESSAGE);
-  else if (r.goal) ctx.inbox.push(r.slug, goalMessage(r.goal));
+  else if (r.goal) ctx.inbox.push(r.slug, goalMessage(r.goal, writeGoalFile(cwd, r.slug, r.goal)));
   ctx.launchWatch.watch(r.slug);
 }
 

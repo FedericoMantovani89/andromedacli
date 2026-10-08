@@ -45,7 +45,8 @@ const results: [string, boolean][] = [];
 const rec = (label: string, ok: boolean, detail = '') => { results.push([label, ok]); console.log(`${ok ? 'PASS' : 'FAIL'}  ${label} ${detail}`); };
 
 try {
-  rec('the main starts with the real TUI', await until(async () => (await snapshot('modtest')).includes('Claude Code'), 90000));
+  // The TUI moves the cursor instead of writing spaces, so the banner can read "ClaudeCode" in the raw bytes: drop the escape codes and ignore spaces.
+  rec('the main starts with the real TUI', await until(async () => /Claude\s*Code/.test((await snapshot('modtest')).replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')), 90000));
   await sleep(4000);
 
   // 1. The main finds the deferred tools by their full name, starts an agent, and the goal reaches it through the inbox

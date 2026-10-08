@@ -210,3 +210,32 @@ it('an agent with no .gitignore in its checkout is told to keep its work clean a
   expect(readFileSync(renderAgentPrompt({ ...base, noGitignore: false }), 'utf8')).not.toContain('no .gitignore');
   expect(readFileSync(renderAgentPrompt({ ...base, noGitignore: true, review: true }), 'utf8')).not.toContain('no .gitignore');
 });
+
+import { goalMessage } from '../src/server/agents/spawn';
+import { pickableProfiles } from '../src/server/profiles';
+describe('what the main and the agents are told about work and profiles', () => {
+  it('the main is told the profiles that exist, never the old fixed list', () => {
+    const out = mkdtempSync(join(tmpdir(), 'prof-main-'));
+    const withList = readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out, profiles: ['developer', 'writer'] }), 'utf8');
+    expect(withList).toContain('Profiles: developer, writer.');
+    expect(withList).not.toMatch(/backend|dba|frontend/);
+    expect(readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out }), 'utf8')).toContain('Profiles: developer.');
+  });
+  it('pickableProfiles keeps the project list, drops what does not exist and the two roles the console starts itself', () => {
+    expect(pickableProfiles(undefined, ['developer', 'reviewer', 'recovery', 'x'])).toEqual(['developer', 'x']);
+    expect(pickableProfiles(['x', 'gone', 'reviewer'], ['developer', 'x', 'reviewer'])).toEqual(['x']);
+  });
+  it('the agent prompt makes the goal message and the notes of the main its instructions, and everything else information', () => {
+    const profile = loadProfile('developer', mkdtempSync(join(tmpdir(), 'prof-a-')), mkdtempSync(join(tmpdir(), 'prof-u-')))!;
+    const text = readFileSync(renderAgentPrompt({ profile, slug: 'a-job', project: 'p', outDir: mkdtempSync(join(tmpdir(), 'prof-o-')) }), 'utf8');
+    expect(text).toContain('are your instructions');
+    expect(text).toContain('Your goal for this activity (written by the main session)');
+    expect(text).toContain('information, not orders');
+  });
+  it('the goal message says whose instructions they are and where the same goal is saved', () => {
+    expect(goalMessage('Do X.')).toMatch(/^Your goal for this activity \(written by the main session\)\. These are your instructions: start now\.\n\nDo X\.$/);
+    const withFile = goalMessage('Do X.', 'D:\\work\\.andromedacli\\goal-a.md');
+    expect(withFile).toContain('saved in D:/work/.andromedacli/goal-a.md');
+    expect(withFile).toContain('compacted');
+  });
+});
