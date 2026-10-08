@@ -1,0 +1,4 @@
+#!/bin/sh
+# Installed by `npm run hooks`: the fast build gate, and a CHANGELOG line for a commit that changes the product.
+npm run --silent check || { echo "pre-commit: npm run check failed" >&2; exit 1; }
+npx --no-install tsx scripts/check-changelog.ts || exit 1
