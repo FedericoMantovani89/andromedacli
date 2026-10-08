@@ -239,7 +239,7 @@ try {
     await page.click('.options-tab[data-tab="guard"]');
     check('the dialog has a bypass switch that starts off', (await page.locator('input[name="bypass"]').count()) === 1 && !(await page.locator('input[name="bypass"]').isChecked()));
     check('the bypass warning is visible', (await page.locator('.settings-warning').innerText()).includes('guard is the only brake'));
-    check('the dialog says running agents are unaffected', (await page.locator('.settings-agents .settings-note').first().innerText()).includes('running agents keep'));
+    check('the dialog says, next to Save, that running agents are unaffected', (await page.locator('.options-foot .settings-note').innerText()).includes('restart to apply') || (await page.locator('.options-foot .settings-note').innerText()).includes('riavviare'));
     await page.check('input[name="bypass"]');
     await page.selectOption('select[name="guardMode"]', 'shadow');
     await page.click('.options-tab[data-tab="projects"]');
