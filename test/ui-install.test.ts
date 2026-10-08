@@ -65,18 +65,17 @@ describe('sections', () => {
   });
 });
 
-describe('the button under the table', () => {
-  it('Options offers Restart (a recheck would show nothing new), which asks first; the wizard keeps Recheck', async () => {
+describe('under the table', () => {
+  it('Options has no button (neither Recheck nor Restart could show a new program) but a line saying to start the console from a new terminal; the wizard keeps Recheck', () => {
     const host = document.getElementById('host')!;
     renderPrereqTable(host, results);
-    expect(host.querySelector('button[name="restartConsole"]')!.getAttribute('data-i18n')).toBe('prereq.restart');
+    expect(host.querySelector('[data-i18n="prereq.afterInstall"]')).not.toBeNull();
     expect(host.querySelector('[data-i18n="prereq.recheck"]')).toBeNull();
-    host.querySelector<HTMLElement>('button[name="restartConsole"]')!.click();
-    expect(document.querySelector('#overlay .restart-dialog')).not.toBeNull(); // the question, not the restart itself
-    expect(calls.some((c) => c.path.includes('/api/restart'))).toBe(false);
+    expect(host.querySelector('button[name="restartConsole"]')).toBeNull();
     const middle = document.createElement('div');
     renderPrereqTable(host, results, middle, true);
     expect(middle.querySelector('[data-i18n="prereq.recheck"]')).not.toBeNull();
+    expect(host.querySelector('[data-i18n="prereq.afterInstall"]')).toBeNull();
   });
 });
 

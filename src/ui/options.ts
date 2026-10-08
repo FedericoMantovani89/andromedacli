@@ -823,8 +823,7 @@ export async function openOptions(getState: () => StateMessage | undefined, firs
       // The guard and bypass tabs are built from the state, the others from the config: the staged value is in the config either way.
       const after = readNow();
       const settings = after.some((v, i) => JSON.stringify(v) !== JSON.stringify(before[i]));
-      const programs = getState()?.prereq?.some((r) => r.status === 'restart') === true;
-      if (settings || programs) openRestartDialog({ settings, programs });
+      if (settings) openRestartDialog();
       else closeOverlay();
     })();
   });

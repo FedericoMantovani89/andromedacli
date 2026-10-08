@@ -403,7 +403,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .clock-colon::before { content: "\003a"; }
 .settings-switch.is-off { opacity: .5; }
 .restart-dialog .form-actions { flex-direction: row; justify-content: space-between; } /* the base rule reverses the row: here the DOM order (No, Yes) is the screen order, No at the left edge and Yes at the right */
-.restart-layer { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(4, 5, 8, .72); }
 /* With the use count there is one more column; the required rows keep an empty cell there so the columns line up. */
 .prereq-row:has(.prereq-uses) { grid-template-columns: minmax(0, 1fr) 7.5rem 6rem 5.5rem 7rem; }
 .prereq-uses { color: var(--muted); font-size: 12px; }

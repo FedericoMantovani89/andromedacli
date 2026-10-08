@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { autoClose, bootServer, mod, ui, until } from './helpers';
-import { mergePath, parseRegPath } from '../src/server/prereq/path-refresh';
 
 autoClose();
 
@@ -27,21 +26,23 @@ describe('POST /api/restart', () => {
     expect((await ui(s, '/api/state')).status).toBe(200);
   });
 
+  it('never reads the PATH from the system: the one the console was started with is the one the sessions get', async () => {
+    const before = process.env.PATH;
+    const marker = `${before ?? ''};C:\\only-from-the-start`;
+    process.env.PATH = marker;
+    try {
+      const s = await bootServer({ projectName: 'alpha-project', config: { git: { worktrees: false } } });
+      await until(async () => (await ui(s, '/api/state')).body.main.status === 'running');
+      expect((await ui(s, '/api/restart', 'POST')).status).toBe(200);
+      expect(process.env.PATH).toBe(marker); // nothing merged in from the registry or anywhere else
+    } finally {
+      process.env.PATH = before;
+    }
+  });
+
   it('refuses without the token', async () => {
     const s = await bootServer();
     const res = await fetch(`${s.url}/api/restart`, { method: 'POST' });
     expect(res.status).toBe(401);
-  });
-});
-
-describe('PATH refresh', () => {
-  it('reads the value of a registry query and expands what it can', () => {
-    process.env.TEST_PATH_ROOT = 'C:\\Tools';
-    const out = '\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    REG_EXPAND_SZ    %TEST_PATH_ROOT%\\bin;C:\\Other;\r\n';
-    expect(parseRegPath(out)).toEqual(['C:\\Tools\\bin', 'C:\\Other']);
-    expect(parseRegPath('nothing here')).toEqual([]);
-  });
-  it('merges machine, user and current entries without repeating one', () => {
-    expect(mergePath(['C:\\a', 'C:\\b'], ['c:\\A', 'C:\\c'], 'C:\\b;C:\\d')).toBe('C:\\a;C:\\b;C:\\c;C:\\d');
   });
 });

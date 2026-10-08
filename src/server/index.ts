@@ -56,7 +56,6 @@ import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
-import { refreshProcessPath } from './prereq/path-refresh';
 import { NullNotifier, ToastNotifier, type Notifier } from './notify/notifier';
 import { Presence } from './notify/presence';
 import { NotificationService, realNotifyClock, type NotifyClock } from './notify/service';
@@ -1159,12 +1158,11 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   /**
    * One project at a time: the agents that have a process are noted, the project closes (the sessions end, the next start finds them
-   * dormant), opens again (its main resumes its session) and the noted agents are woken, so everything runs with the settings and the
-   * PATH of now. The console, its port and its token stay.
+   * dormant), opens again (its main resumes its session) and the noted agents are woken, so everything runs with the settings of now. The
+   * console, its port and its token stay, and so does the PATH it was started with: it is never read again from the system.
    */
   const restartSessions = (): Promise<void> => exclusive(async () => {
     if (closing) throw new ProjectError('project.badRoot', 409);
-    await refreshProcessPath();
     for (const old of [...runtimes]) {
       const running = old.ctx.registry.list().filter((a) => a.role === 'agent' && old.ctx.ptys.status(a.slug) === 'running').map((a) => a.slug);
       try { await old.close(); } catch { /* the sessions were killed as far as they could be */ }

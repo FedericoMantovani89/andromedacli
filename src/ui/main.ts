@@ -217,7 +217,6 @@ window.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape' || ev.altKey || ev.ctrlKey || ev.metaKey) return;
   const overlay = $('overlay');
   if (overlay.hidden || !overlay.querySelector('.dialog[data-escape]')) return;
-  if (overlay.querySelector('.restart-layer')) return; // the question over the dialog takes the Escape itself
   ev.preventDefault();
   closeOverlay();
 }, true);

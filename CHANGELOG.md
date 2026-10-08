@@ -9,6 +9,7 @@ introduces the behaviour.
 
 ### Changed
 - Options: the (i) hint is drawn by the page, half as wide and taller; in Models the refresh button is square and the catalog address box is as wide as the model menu; in Profiles the two notes sit at the bottom of the panel, full width; the new-profile name hint is one line with a typed-characters counter (0/40) under the box; the profile token budget is a slider like in Budget and limits, starting at the default.
+- The console never reads the PATH (or the registry) from the system: it only uses the PATH it was started with. The restart of the sessions no longer merges the Windows PATH in, the Prerequisites tab has no Recheck or Restart button (they could not show a program installed later) but a line saying to start the console again from a new terminal, and the restart question after Save is asked only for settings the sessions read at launch.
 - Options, Git: the non-repository case is two bold titles ("Initialize git" with its button, "Or clone an existing repository" with its box), each with its explanation in an (i) tooltip instead of lines of text.
 - Options, Git: a folder that only holds repositories (not a repository itself) offers git init and clone like any other non-repository folder, with a one-line note and no list of the repositories; the project then becomes that repository, the ones inside belong in its .gitignore.
 - Options: the note "settings apply to agents launched from now on" is shown once, next to Save, on every tab, instead of inside some tabs; the Budget and Profiles notes keep only what is specific to them.
@@ -21,9 +22,7 @@ introduces the behaviour.
 - Options: the Server tab is gone (two read-only lines: the port is in the address bar, the configuration folder is in the documentation).
 - Plugin catalog: Superpowers (`superpowers@claude-plugins-official`) is listed under "useful on request", official, for the main only (its worktree, commit and branch skills overlap with what the console does for the agents).
 - Prerequisites: the main and every agent are told which optional helpers (ripgrep, fd, jq, ctags, Python, uv, ShellCheck) are installed, with what each is for and which to prefer (`rg` over `grep`...); nothing is said about a missing one. The Prerequisites tab shows how many shell commands used each helper (console-wide counters, never the commands).
-- Options, Prerequisites: the restart question opens over the Options dialog instead of replacing it, so No (or Escape) keeps the dialog and its unsaved changes.
 - The restart question: No at the left, Yes at the right.
-- Options, Prerequisites: the Recheck button is now Restart (a program installed after the console started is invisible to it, so checking again showed nothing); it asks before restarting the sessions. The first-start wizard keeps Recheck.
 - Prerequisites: Python, ripgrep, Universal Ctags, jq, fd, ShellCheck and uv are optional checks, each judged only by running `<tool> --version` (no PATH or folder scan); winget install and update from Options like the GitHub CLI. The Options table has a Required and an Optional section; the first-start wizard lists only the required tools.
 - Options: after a language change every tab is translated, also the ones not on screen at that moment (Models stayed in the old language).
 - Options, Notifications: the quiet hours are picked on a clock face (hour on two rings, then minute; also by keyboard) instead of a typed time. The two clocks are disabled while the quiet hours box is off.

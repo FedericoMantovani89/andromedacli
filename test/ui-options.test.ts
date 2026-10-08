@@ -307,23 +307,16 @@ describe('options dialog', () => {
     document.querySelector<HTMLElement>('.options-tab[data-tab="models"]')!.click();
     expect(label()).not.toBe('stale');
   });
-  it('the restart question asked from Options goes over the dialog: No (or Escape) leaves it and its staged changes alone', async () => {
-    await openOptions(() => state, 'budget');
+  it('after Save the restart question is asked only for a setting the sessions read at launch, never for a program installed later', async () => {
+    const installedLater = { ...state, prereq: [{ id: 'git', status: 'restart', version: '2.50', required: true }] } as unknown as StateMessage;
+    await openOptions(() => installedLater, 'budget');
     const slider = document.querySelector<HTMLInputElement>('input[type="range"][name="budget.agentTokens"]')!;
     slider.value = '900000';
     slider.dispatchEvent(new Event('input'));
-    document.querySelector<HTMLElement>('.options-tab[data-tab="prerequisites"]')!.click();
-    document.querySelector<HTMLElement>('button[name="restartConsole"]')!.click();
-    expect(document.querySelector('.restart-layer .restart-dialog')).not.toBeNull();
-    expect(document.querySelector('.options-dialog')).not.toBeNull(); // still there under the question
-    document.querySelector<HTMLElement>('button[name="restartNo"]')!.click();
-    expect(document.querySelector('.restart-layer')).toBeNull();
-    expect(document.querySelector('.options-dialog')).not.toBeNull();
-    document.querySelector<HTMLElement>('button[name="restartConsole"]')!.click();
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(document.querySelector('.restart-layer')).toBeNull();
     await clickSave();
-    expect(puts).toEqual([{ budget: { agentTokens: 900000 } }]); // the staged change survived both Nos
+    expect(puts).toEqual([{ budget: { agentTokens: 900000 } }]);
+    expect(document.querySelector('.restart-dialog')).toBeNull(); // restarting the sessions would not make the program visible
+    expect(document.querySelector('.options-dialog')).toBeNull(); // the dialog just closed
   });
   it('plugins: the install state comes after the catalog; an installed one loses its command to copy, the context line shows only when known', async () => {
     const row = (id: string, cost: number | null) => ({ id, category: 'x', summary: { en: id }, trust: 'official', tier: 'on_request', requires: [], agentsAllowed: true, conflicts: [], cost: cost === null ? null : { contextTokens: cost }, notTested: false, installCommand: `/plugin install ${id}` });

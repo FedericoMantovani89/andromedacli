@@ -5,7 +5,6 @@ export type HelperUse = NonNullable<StateMessage['helperUse']>;
 import { api } from './api';
 import { openOptions } from './options';
 import { openInstallDialog } from './install-dialog';
-import { openRestartDialog } from './restart-dialog';
 import { bindText, k, language, languageName, resolveLanguage, setLanguage } from './i18n-client';
 
 /** The helpers the console counts (the ids of the optional tools whose use is measured). */
@@ -108,11 +107,14 @@ function appendRecheck(container: HTMLElement, recheckHost: HTMLElement | undefi
       });
     });
   } else {
-    // Options: a program installed after the console started is not seen by this process, so checking again shows nothing new. What
-    // helps is starting the sessions again; the dialog explains it and asks first.
-    again.name = 'restartConsole';
-    bindText(again, 'prereq.restart');
-    again.addEventListener('click', () => openRestartDialog({ settings: false, programs: true }, { over: true })); // over the Options dialog: No keeps it open
+    // Options: a program installed after the console started is not on the PATH this process was given, and the console never reads the
+    // PATH from the system. Checking again or restarting the sessions would show nothing new: the console has to be started again from
+    // a new terminal. The line below the table says so (the button is not offered: it could not do anything).
+    const hint = document.createElement('p');
+    hint.className = 'settings-note prereq-hint';
+    bindText(hint, 'prereq.afterInstall');
+    container.append(hint);
+    return;
   }
   if (recheckHost) { recheckHost.replaceChildren(again); return; }
   const centre = document.createElement('div');
