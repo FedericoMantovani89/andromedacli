@@ -143,6 +143,8 @@ input[type="checkbox"] { accent-color: var(--accent); }
   border-top: 1px solid var(--seam); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; }
 #statusbar span[hidden], #statusbar button[hidden] { display: none; }
 .statusbar-resume { font: inherit; padding: 0 9px; line-height: 18px; }
+.statusbar-update { font: inherit; padding: 0 9px; line-height: 18px; color: var(--accent); border-color: var(--accent); }
+.statusbar-update[hidden] { display: none; }
 
 /* Side drawers: the queue and the read panel. */
 #drawer, #reader { position: fixed; top: 40px; bottom: 26px; right: 0; background: var(--surface); border-left: 1px solid var(--seam-strong);

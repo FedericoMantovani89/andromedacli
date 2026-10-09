@@ -1,4 +1,5 @@
 // Shared test helpers: a real server with a fake agent, plain-http requests (so the Host header can be set), polling.
+import type { UpdateControl } from '../src/shared/update';
 import http from 'node:http';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,14 +58,14 @@ export function autoClose(): void {
  * A real server with the fake agent. Agents share the project folder (`git.worktrees: false`, the Phase 2 behaviour) unless the
  * test passes a repository as `projectRoot` and `config: { git: { worktrees: true } }`.
  */
-export async function bootServer(o: { projectName?: string; language?: string; projectRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock; configDir?: string; /** Start with no project folder: only the remembered projects (projects.json in the config folder) are opened. */ noProject?: boolean; /** Replaces the native folder window. */ pickFolder?: () => Promise<unknown>; notifier?: Notifier; notifyClock?: NotifyClock; /** Replaces the command runner of the prerequisite checks and of the plugin list. */ runner?: Runner } = {}): Promise<Running> {
+export async function bootServer(o: { projectName?: string; language?: string; projectRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; sleepClock?: SleepClock; configDir?: string; /** Start with no project folder: only the remembered projects (projects.json in the config folder) are opened. */ noProject?: boolean; /** Replaces the native folder window. */ pickFolder?: () => Promise<unknown>; notifier?: Notifier; notifyClock?: NotifyClock; /** Replaces the command runner of the prerequisite checks and of the plugin list. */ runner?: Runner; /** The desktop app's update control (a fake in the tests). */ updates?: UpdateControl } = {}): Promise<Running> {
   const configDir = o.configDir ?? mkdtempSync(join(tmpdir(), 'h-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en', git: { worktrees: false }, ...o.config }));
   const s = await startServer({
     port: 0, ...(o.noProject ? {} : { projectRoot: o.projectRoot ?? mkdtempSync(join(tmpdir(), 'h-project-')), projectName: o.projectName ?? 'shop-api' }), configDir,
     claudeCommand: [process.execPath, fixture], prereqRunner: o.runner ?? goodRunner, modDir: null, afterWorktreeCreated: o.afterWorktreeCreated, launchCheckMs: o.launchCheckMs,
     // Transcripts: a folder of the test's own (or one nobody writes to), never the user's ~/.claude/projects.
-    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, sleepClock: o.sleepClock, ...(o.pickFolder ? { pickFolder: o.pickFolder as () => Promise<PickFolderResult> } : {}), notifier: o.notifier, notifyClock: o.notifyClock,
+    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, sleepClock: o.sleepClock, ...(o.pickFolder ? { pickFolder: o.pickFolder as () => Promise<PickFolderResult> } : {}), notifier: o.notifier, notifyClock: o.notifyClock, ...(o.updates ? { updates: o.updates } : {}),
   });
   running.push(s);
   configFiles.set(s, join(configDir, 'config.json'));

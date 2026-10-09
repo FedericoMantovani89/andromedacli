@@ -1,5 +1,6 @@
 /** Wire types shared by the server and the browser UI. Codes are English constants, never sentences (P11). */
 import type { Activity } from './activity';
+import type { UpdateState } from './update';
 import type { NotificationsConfig, ToastStatus } from './notify';
 
 export const PROFILES = ['developer', 'reviewer', 'recovery'] as const;
@@ -105,6 +106,8 @@ export interface StateMessage {
   projects?: ProjectTab[];
   /** The last assisted install that ended (Phase 6F); absent until one did since the console started. */
   install?: { id: string; result: 'needs_admin' | 'failed' | 'done'; exitCode: number };
+  /** A newer version of the desktop app (SPEC 33.4); absent when there is none or the console is not the desktop app. */
+  update?: UpdateState;
   /** Phase 6B: whether a native toast can be shown (`unknown` until checked, shown as n/a) and the notification settings. */
   notifications?: { toast: ToastStatus; config: NotificationsConfig };
 }

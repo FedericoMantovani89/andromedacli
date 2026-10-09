@@ -132,3 +132,51 @@ describe('fix wave', () => {
     renderStatusBar(el, make());
   });
 });
+
+describe('update item (SPEC 33.4)', () => {
+  const buttons = (el: HTMLElement): HTMLButtonElement[] => [...el.querySelectorAll<HTMLButtonElement>('button')].filter((b) => b.classList.contains('statusbar-update'));
+
+  it('shows nothing without an update, and goes away when it does', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make());
+    expect(byKey(el, 'statusbar.update.available')).toBeUndefined();
+    expect(buttons(el).every((b) => b.hidden)).toBe(true);
+    renderStatusBar(el, make({ update: { phase: 'available', version: '0.0.2' } }));
+    expect(params(byKey(el, 'statusbar.update.available')!)).toEqual({ version: '0.0.2' });
+    renderStatusBar(el, make());
+    expect(byKey(el, 'statusbar.update.available')).toBeUndefined();
+    expect(buttons(el).every((b) => b.hidden)).toBe(true);
+  });
+  it('available: the version and a Download button that POSTs /api/update/download', async () => {
+    const calls: { url: string; method?: string }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: { method?: string }) => { calls.push({ url, method: init.method }); return { status: 204, json: async () => { throw new Error('empty'); } }; }));
+    const el = document.createElement('div');
+    renderStatusBar(el, make({ update: { phase: 'available', version: '0.0.2' } }));
+    const b = buttons(el).find((x) => !x.hidden)!;
+    expect(b.dataset.i18n).toBe('statusbar.update.download');
+    b.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([{ url: '/api/update/download', method: 'POST' }]);
+  });
+  it('downloading: the percent and no button; ready: a Restart button that POSTs /api/update/install', async () => {
+    const calls: { url: string; method?: string }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: { method?: string }) => { calls.push({ url, method: init.method }); return { status: 204, json: async () => { throw new Error('empty'); } }; }));
+    const el = document.createElement('div');
+    renderStatusBar(el, make({ update: { phase: 'downloading', version: '0.0.2', percent: 40 } }));
+    expect(params(byKey(el, 'statusbar.update.downloading')!)).toEqual({ version: '0.0.2', percent: 40 });
+    expect(buttons(el).every((b) => b.hidden)).toBe(true);
+    renderStatusBar(el, make({ update: { phase: 'ready', version: '0.0.2' } }));
+    const b = buttons(el).find((x) => !x.hidden)!;
+    expect(b.dataset.i18n).toBe('statusbar.update.install');
+    b.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([{ url: '/api/update/install', method: 'POST' }]);
+  });
+  it('the button never takes the keyboard focus (mousedown is prevented)', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make({ update: { phase: 'ready', version: '0.0.2' } }));
+    const ev = new MouseEvent('mousedown', { cancelable: true, bubbles: true });
+    buttons(el)[0]!.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+});

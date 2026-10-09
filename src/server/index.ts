@@ -22,6 +22,7 @@ import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
 import { PermissionMemory } from './questions/permission-memory';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
+import type { UpdateControl } from '../shared/update';
 import { ReadingStore } from './reading/store';
 import { failQueuedStart, launchAgent, launchResume, spawnAgent } from './agents/spawn';
 import { ResumeService, type WakeResult } from './agents/resume';
@@ -78,6 +79,8 @@ export interface StartOptions {
   projectName?: string;
   /** A test seam: replaces the native "choose a folder" window. */
   pickFolder?: () => Promise<PickFolderResult>;
+  /** The desktop app's update control (SPEC 33.4); absent when the console runs from a terminal. */
+  updates?: UpdateControl;
   /** Folder with messages_<lang>.properties (default: the shipped ones; tests). */
   i18nDir?: string;
   claudeCommand?: string[];
@@ -627,7 +630,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
 
   const ctx: Context = {
     getPort: () => shared.getPort(),
-    utilityPtys: shared.utilityPtys, installer: shared.installer,
+    utilityPtys: shared.utilityPtys, installer: shared.installer, update: () => o.updates?.state(),
     notifier, presence, notify,
     get notificationsConfig() { return config.notifications; },
     applyNotifications: (n) => { config.notifications = n; },
@@ -1048,6 +1051,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     get projects() { return shared.projectsApi; },
     ensurePrereq: () => shared.ensurePrereq(),
     // The window's title follows the interface language ("auto" is resolved by the browser, so the server uses English for it).
+    ...(o.updates ? { updates: o.updates } : {}),
     pickFolder: o.pickFolder ?? createFolderPicker({
       title: () => {
         const lang = shared.language() !== 'auto' && shared.bundles.has(shared.language()) ? shared.language() : 'en';
@@ -1068,6 +1072,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     return name === undefined || name === '' ? runtimes[0]?.ctx : runtimes.find((r) => r.name === name)?.ctx;
   }
   const ws = attachWebSockets(server, projectCtx);
+  o.updates?.onChange(() => ws.broadcastState()); // a found, downloading or downloaded version reaches the page at once
 
   const persistProjects = (): void => {
     writeJsonAtomic(projectsFile(o.configDir), runtimes.map((r) => ({ root: r.root, name: r.name })));

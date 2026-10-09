@@ -6,6 +6,10 @@ import { bindText, k, t } from './i18n-client';
 interface Bar {
   budget: HTMLElement;
   quota: HTMLElement;
+  /** A newer version of the desktop app (SPEC 33.4): the text and the one button of the phase (download, or restart). */
+  update: HTMLElement;
+  updateBtn: HTMLButtonElement;
+  updateAction?: 'download' | 'install';
   sleep: HTMLElement;
   resume: HTMLButtonElement;
   agents: HTMLElement;
@@ -27,6 +31,13 @@ function build(el: HTMLElement): Bar {
   const budget = span();
   budget.append(label(k('statusbar.budget')), gap(), na());
   const quota = span();
+  const update = span();
+  update.hidden = true;
+  const updateBtn = document.createElement('button');
+  updateBtn.type = 'button';
+  updateBtn.className = 'statusbar-update';
+  updateBtn.hidden = true;
+  updateBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // clicking never takes the keyboard from where it is
   const sleep = span();
   sleep.hidden = true;
   // Always visible (SPEC 18.4), usable only while the console sleeps; clicking it never takes the keyboard from where it is.
@@ -39,8 +50,11 @@ function build(el: HTMLElement): Bar {
   resume.addEventListener('click', () => { void api('/api/sleep/resume', { method: 'POST' }).catch(() => undefined); });
   const agents = span();
   const suspended = span();
-  const bar: Bar = { budget, quota, sleep, resume, agents, suspended };
-  el.replaceChildren(budget, quota, sleep, resume, agents, suspended);
+  const bar: Bar = { budget, quota, update, updateBtn, sleep, resume, agents, suspended };
+  updateBtn.addEventListener('click', () => {
+    if (bar.updateAction) void api(`/api/update/${bar.updateAction}`, { method: 'POST' }).catch(() => undefined);
+  });
+  el.replaceChildren(budget, quota, sleep, resume, update, updateBtn, agents, suspended);
   return bar;
 }
 
@@ -61,6 +75,24 @@ export function formatWhen(until: string | undefined, now: number): string | nul
   return at - now > 24 * 60 * 60_000
     ? d.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** The update chip: found (Download), downloading (the percent), downloaded (Restart); nothing when there is no newer version. */
+function paintUpdate(bar: Bar, u: StateMessage['update']): void {
+  bar.update.hidden = u === undefined;
+  bar.updateAction = u?.phase === 'available' ? 'download' : u?.phase === 'ready' ? 'install' : undefined;
+  bar.updateBtn.hidden = bar.updateAction === undefined;
+  if (!u) {
+    delete bar.update.dataset.i18n;
+    delete bar.update.dataset.i18nParams;
+    bar.update.textContent = '';
+    return;
+  }
+  if (u.phase === 'available') bindText(bar.update, 'statusbar.update.available', { version: u.version });
+  else if (u.phase === 'downloading') bindText(bar.update, 'statusbar.update.downloading', { version: u.version, percent: u.percent ?? 0 });
+  else bindText(bar.update, 'statusbar.update.ready', { version: u.version });
+  if (bar.updateAction === 'download') bindText(bar.updateBtn, 'statusbar.update.download');
+  else if (bar.updateAction === 'install') bindText(bar.updateBtn, 'statusbar.update.install');
 }
 
 function paintSleep(bar: Bar): void {
@@ -97,6 +129,7 @@ export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
     const v = span(); bindText(v, 'common.notAvailable');
     bar.quota.append(l, gap(), v, gap());
   }
+  paintUpdate(bar, state.update);
   bar.sleepState = state.sleep && state.sleep.phase !== 'awake' ? state.sleep : undefined;
   paintSleep(bar);
   if (bar.sleepState && bar.timer === undefined) bar.timer = setInterval(() => paintSleep(bar), 1000);

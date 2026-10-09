@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- Desktop app: it looks for a newer version on the GitHub releases (after 30 s, then every 4 hours); the status bar offers Download, then Restart to update, and nothing happens without the user (a repository that is private, or a release without `latest.yml`, shows nothing). The version of a release is the tag that was pushed.
 - Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
 
 ### Changed

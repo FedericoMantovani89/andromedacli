@@ -28,6 +28,7 @@ import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
 import type { UiAssets } from './ui-assets';
+import type { UpdateControl, UpdateState } from '../shared/update';
 import { isValidProjectField, isValidTestCommand, PROJECT_FIELDS, PROJECT_RANGES } from './project-store';
 import { loadTemplates } from './templates/load';
 import { detectProject } from './templates/detect';
@@ -101,6 +102,8 @@ export interface Context extends V1Context {
   utilityPtys: PtyManager;
   /** Assisted installation of prerequisites: console-wide, one install at a time. */
   installer: InstallService;
+  /** A newer version of the desktop app, if the app found one (SPEC 33.4). */
+  update(): UpdateState | undefined;
   /** Wakes a dormant agent (Phase 6A). */
   wake: WakeService;
   /** Read at each use: a change made in the Settings dialog applies to the sessions launched afterwards. */
@@ -214,8 +217,10 @@ export function buildState(ctx: Context): StateMessage {
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
   const installed = ctx.installer.state();
+  const update = ctx.update();
   return {
     ...(installed ? { install: installed } : {}),
+    ...(update ? { update } : {}),
     ...(worst ? { quota: { percent: worst.percent, kind: worst.kind } } : {}),
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.
@@ -243,6 +248,8 @@ export interface HostContext {
   info(): HostInfo;
   /** The native "choose a folder" window (the server runs on the user's own machine). */
   pickFolder(): Promise<PickFolderResult>;
+  /** The desktop app's update control; absent when the console runs from a terminal. */
+  updates?: UpdateControl;
 }
 
 export function createRequestHandler(source: Context | ProjectResolver, host: HostContext) {
@@ -290,6 +297,15 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
 
     // Opening and closing projects are not about one project; every other route below is, and takes it from `?project=` (absent: the first).
     if ((req.method === 'POST' && path === '/api/projects') || (req.method === 'DELETE' && /^\/api\/projects\/[^/]+$/.test(path))) return handleProjectsRoute(host, req, res, path);
+    // The desktop app's update (SPEC 33.4): the user chooses to download, then to restart; nothing happens on its own.
+    if (req.method === 'POST' && (path === '/api/update/download' || path === '/api/update/install')) {
+      if (!host.updates) return fail(res, 404, 'not_found');
+      if (path === '/api/update/download') host.updates.download();
+      else await host.updates.install();
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     // The sessions of every project start again with the settings saved so far (Options asks after a change they only read at launch).
     if (req.method === 'POST' && path === '/api/restart') {
       try {

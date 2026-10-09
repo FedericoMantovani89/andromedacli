@@ -6,6 +6,7 @@ import { loadBundles } from '../server/i18n-bundles';
 import { startServer, type RunningServer } from '../server/index';
 import type { PickFolderResult } from '../server/pick-folder';
 import { createTranslator, type Translate } from '../shared/i18n';
+import { createUpdates } from './updates';
 import { isInternalUrl } from './window';
 
 // The packaged app finds its shipped folders next to the program (SPEC 33.3); in development the repository root is used.
@@ -39,17 +40,20 @@ async function shutdown(): Promise<void> {
   try { await server?.close(); } finally { app.exit(0); }
 }
 
-async function confirmThenShutdown(): Promise<void> {
+/** True when it is fine to stop: no agent is running, or the user agreed to stop them (the window's close and an update's restart both ask). */
+async function confirmStop(): Promise<boolean> {
   const running = server?.runningAgentCount() ?? 0;
-  if (running > 0 && win) {
-    const t = translator();
-    const answer = await dialog.showMessageBox(win, {
-      type: 'question', buttons: [t('app.quit.yes'), t('app.quit.no')], defaultId: 1, cancelId: 1, noLink: true,
-      title: t('app.quit.title'), message: t('app.quit.title'), detail: t('app.quit.detail'),
-    });
-    if (answer.response !== 0) return;
-  }
-  await shutdown();
+  if (running === 0 || !win) return true;
+  const t = translator();
+  const answer = await dialog.showMessageBox(win, {
+    type: 'question', buttons: [t('app.quit.yes'), t('app.quit.no')], defaultId: 1, cancelId: 1, noLink: true,
+    title: t('app.quit.title'), message: t('app.quit.title'), detail: t('app.quit.detail'),
+  });
+  return answer.response === 0;
+}
+
+async function confirmThenShutdown(): Promise<void> {
+  if (await confirmStop()) await shutdown();
 }
 
 function createWindow(url: string, port: number): BrowserWindow {
@@ -80,9 +84,11 @@ function createWindow(url: string, port: number): BrowserWindow {
 
 async function start(): Promise<void> {
   await app.whenReady();
+  // Looking for a new version only makes sense in the installed app, never in development (SPEC 33.4); CONSOLE_NO_UPDATES=1 switches it off.
+  const updates = app.isPackaged && process.env.CONSOLE_NO_UPDATES !== '1' ? createUpdates({ confirmStop }) : undefined;
   try {
     server = await startServer({
-      port: PORT, configDir: configDir(), ...(app.isPackaged ? { version: app.getVersion() } : {}),
+      port: PORT, configDir: configDir(), ...(app.isPackaged ? { version: app.getVersion() } : {}), ...(updates ? { updates } : {}),
       // The native folder window of Electron instead of a PowerShell one: one process less (the server's own picker is for the CLI).
       pickFolder: async (): Promise<PickFolderResult> => {
         const options = { title: translator()('folder.pick.title'), properties: ['openDirectory' as const] };
