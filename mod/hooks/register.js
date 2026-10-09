@@ -326,6 +326,14 @@ function describeInput(input) {
   return '';
 }
 
+/** The whole input as one string, so "always" is exact even when the line shown to the user is cut; too long: no key, nothing is remembered. */
+function permissionKey(input) {
+  try {
+    const s = JSON.stringify(input);
+    return typeof s === 'string' && s.length <= 20000 ? s : undefined;
+  } catch (err) { return undefined; }
+}
+
 /**
  * An agent's permission prompt would sit unseen in its terminal. When the engine says "ask", the request goes to the
  * console queue instead and the human's answer becomes the verdict. Anything but an explicit "allow" is a deny; if the
@@ -337,9 +345,9 @@ async function onToolCheck($, e, next) {
     if (!ctx || ctx.role === 'main' || !e.tool_use_id || !verdict || verdict.decision !== 'ask') return verdict;
     if (e.tool === 'AskUserQuestion' || String(e.tool).indexOf('mcp__console-mod__') === 0) return verdict;
     const a = await askConsole($, verdict.reason || 'Permission requested', undefined, false,
-      { kind: 'permission', tool: String(e.tool), detail: describeInput(e.input) });
+      { kind: 'permission', tool: String(e.tool), detail: describeInput(e.input), key: permissionKey(e.input) });
     if (!a.ok) return verdict;
-    return String(a.answer).indexOf('allow') === 0
+    return a.answer === 'allow' || a.answer === 'allow_always'
       ? { decision: 'allow', reason: 'Allowed by the user in the console.' }
       : { decision: 'deny', reason: 'The user denied this in the console.' };
   } catch (err) {

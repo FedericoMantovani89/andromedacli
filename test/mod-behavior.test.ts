@@ -183,6 +183,27 @@ it('"allow_always" and "deny_always" from the console are an allow and a deny', 
     expect((await find('tool.check')(f.$, bashCheck, asking)).decision).toBe(decision);
   }
 });
+it('sends the whole input as the key of an "always" (the shown detail may be cut), and none when it is too long', async () => {
+  const { find } = await loadMod();
+  const posted: any[] = [];
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: (url, init) => {
+    if (init.method === 'POST' && url.endsWith('/v1/tools/ask_user')) { posted.push(JSON.parse(init.body!)); return { ok: true, text: JSON.stringify({ id: 'p1' }) }; }
+    return permissionFetch('allow')(url, init);
+  } });
+  await find('session.start')(f.$, {}, next);
+  const input = { url: 'https://a.example', note: 'x'.repeat(3000) };
+  await find('tool.check')(f.$, { tool: 'WebFetch', input, tool_use_id: 'tu2' }, asking);
+  expect(posted[0].key).toBe(JSON.stringify(input));
+  expect(posted[0].detail.length).toBe(2000);
+  await find('tool.check')(f.$, { tool: 'WebFetch', input: { note: 'x'.repeat(30000) }, tool_use_id: 'tu3' }, asking);
+  expect(posted[1].key).toBeUndefined();
+});
+it('only the exact answers "allow" and "allow_always" allow; a look-alike is a deny', async () => {
+  const { find } = await loadMod();
+  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: permissionFetch('allowance') });
+  await find('session.start')(f.$, {}, next);
+  expect((await find('tool.check')(f.$, bashCheck, asking)).decision).toBe('deny');
+});
 it('leaves alone: an engine "allow" or "deny", the main session, queries without a call id, and the console\'s own tools', async () => {
   const { find } = await loadMod();
   const agent = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: permissionFetch('allow') });

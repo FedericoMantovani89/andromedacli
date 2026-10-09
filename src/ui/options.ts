@@ -116,7 +116,7 @@ function saveEntry(env: Env, path: string, value: unknown): void {
 }
 
 type FieldKind = 'number' | 'text' | 'bool' | 'lines';
-interface FieldDef { path: string; label: string; kind: FieldKind; help?: string }
+interface FieldDef { path: string; label: string; kind: FieldKind; help?: string; /** An (i) tooltip next to a text or number input. */ tip?: string }
 
 /** One editable entry: a change is staged for Save (PUT /api/config); a value that is not a number is refused at once. */
 function createField(env: Env, def: FieldDef): HTMLElement {
@@ -164,6 +164,7 @@ function createField(env: Env, def: FieldDef): HTMLElement {
       saveEntry(env, def.path, wanted);
     });
     row.append(text, input);
+    if (def.tip) row.append(infoIcon(def.tip));
   }
   if (def.help && def.kind !== 'bool') {
     const wrap = el('div', 'options-field-wrap');
@@ -280,7 +281,7 @@ function budgetTab(env: Env): HTMLElement {
       { path: 'budget.loop.sameError', label: k('options.budget.loop.sameError'), kind: 'number' },
       { path: 'budget.loop.compactions', label: k('options.budget.loop.compactions'), kind: 'number' },
       { path: 'budget.loop.stepMinutes', label: k('options.budget.loop.stepMinutes'), kind: 'number' },
-      { path: 'budget.loop.silenceMinutes', label: k('options.budget.loop.silenceMinutes'), kind: 'number' },
+      { path: 'budget.loop.silenceMinutes', label: k('options.budget.loop.silenceMinutes'), kind: 'number', tip: k('options.budget.loop.silenceMinutes.tip') },
     ]),
     heading(k('options.budget.quota')),
     sliderGroup(env, [

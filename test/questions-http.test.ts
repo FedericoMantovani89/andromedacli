@@ -102,7 +102,7 @@ it('a permission request from an agent is queued as a permission, shows the agen
 });
 it('"always allow" is remembered for that agent and the exact same call: the next one is answered at once and never queued', async () => {
   const s = await withAgent();
-  const perm = (detail: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail, question: 'q' });
+  const perm = (detail: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail, key: detail, question: 'q' });
   const first = (await perm('npm test')).body.id;
   expect((await ui(s, `/api/queue/${first}/answer`, 'POST', { answer: 'allow_always' })).status).toBe(200);
   expect((await mod(s, 'fix-login', `/v1/questions/${first}?wait=1`)).body).toEqual({ answered: true, answer: 'allow_always' });
@@ -114,7 +114,7 @@ it('"always allow" is remembered for that agent and the exact same call: the nex
 });
 it('"always deny" answers a deny at once, and an empty detail is never remembered', async () => {
   const s = await withAgent();
-  const perm = (detail?: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', ...(detail !== undefined ? { detail } : {}), question: 'q' });
+  const perm = (detail?: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', ...(detail !== undefined ? { detail, key: detail } : {}), question: 'q' });
   const a = (await perm('rm -rf build')).body.id;
   await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'deny_always' });
   const b = (await perm('rm -rf build')).body.id;
@@ -123,6 +123,52 @@ it('"always deny" answers a deny at once, and an empty detail is never remembere
   await ui(s, `/api/queue/${c}/answer`, 'POST', { answer: 'allow_always' });
   await perm();
   expect((await state(s)).queue).toHaveLength(1);
+});
+it('a permission without a key (the mod could not build one) is never remembered, even with the same detail', async () => {
+  const s = await withAgent();
+  const perm = () => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'WebFetch', detail: '{"url":"https://a.example"}', question: 'q' });
+  const a = (await perm()).body.id;
+  await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow_always' });
+  await perm();
+  expect((await state(s)).queue).toHaveLength(1);
+});
+it('"always" is exact on the key, not on the shown detail: the same cut-short detail with another key is asked again', async () => {
+  const s = await withAgent();
+  const perm = (key: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'WebFetch', detail: 'same first 2000 chars', key, question: 'q' });
+  const a = (await perm('{"url":"a","tail":1}')).body.id;
+  await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow_always' });
+  await perm('{"url":"a","tail":2}');
+  expect((await state(s)).queue).toHaveLength(1);
+});
+it('"always" is for one agent: another agent asking the same call is queued', async () => {
+  const s = await withAgent();
+  await ui(s, '/api/agents', 'POST', { slug: 'other-job', profile: 'developer' });
+  await modEvent(s, 'other-job', 'session.start');
+  await modEvent(s, 'other-job', 'turn.start');
+  const perm = (slug: string) => mod(s, slug, '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'npm test', key: 'npm test', question: 'q' });
+  const a = (await perm('fix-login')).body.id;
+  await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow_always' });
+  await perm('other-job');
+  expect((await state(s)).queue.map((q: any) => q.from)).toEqual(['other-job']);
+});
+it('an "always" survives the end of a turn and is forgotten when the agent\'s process ends', async () => {
+  const s = await withAgent();
+  const perm = () => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'npm test', key: 'npm test', question: 'q' });
+  const a = (await perm()).body.id;
+  await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow_always' });
+  await modEvent(s, 'fix-login', 'turn.complete');
+  const kept = (await perm()).body.id;
+  expect((await mod(s, 'fix-login', `/v1/questions/${kept}?wait=1`)).body).toEqual({ answered: true, answer: 'allow' });
+});
+it('an "always" also answers the identical requests of the same agent that already wait (parallel tool calls)', async () => {
+  const s = await withAgent();
+  const perm = () => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'npm test', key: 'npm test', question: 'q' });
+  const first = (await perm()).body.id;
+  const second = (await perm()).body.id;
+  const other = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'ls', key: 'ls', question: 'q' })).body.id;
+  await ui(s, `/api/queue/${first}/answer`, 'POST', { answer: 'allow_always' });
+  expect((await mod(s, 'fix-login', `/v1/questions/${second}?wait=1`)).body).toEqual({ answered: true, answer: 'allow' });
+  expect((await state(s)).queue.map((q: any) => q.id)).toEqual([other]);
 });
 it('permission details are length-limited', async () => {
   const s = await withAgent();

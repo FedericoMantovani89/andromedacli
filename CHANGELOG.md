@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- Review fixes for the above: the silence chip is pushed when it appears or goes (no longer waits for another event) and never shows for an agent that has just woken up; reviewers and recoveries get it too; "Always" is exact on the whole tool input (not the shortened line shown) and also answers identical requests already waiting; the silence threshold in Options has a tooltip.
 - Agents: the "not started" chip says why (Claude Code never reported in, or it has not taken its goal); a working agent with no sign of life for longer than the silence threshold (Options, Budget and limits) shows a chip too (report only, nothing is stopped).
 - Queue: a permission can be answered "Always allow" or "Always deny": it is remembered for that agent and the exact same tool call until its session ends (the guard still applies); each agent's panel shows how many of its items wait for the user.
 - Options: the (i) hint is drawn by the page, half as wide and taller; in Models the refresh button is square and the catalog address box is as wide as the model menu; in Profiles the two notes sit at the bottom of the panel, full width; the new-profile name hint is one line with a typed-characters counter (0/40) under the box; the profile token budget is a slider like in Budget and limits, starting at the default.

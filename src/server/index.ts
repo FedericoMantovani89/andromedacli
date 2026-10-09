@@ -410,6 +410,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     },
     stop: (slug) => { keepHandover(slug); return finishAgent(slug); },
     workingSlugs: () => registry.list().filter((a) => a.role === 'agent' && a.state === 'working').map((a) => a.slug),
+    isWorking: (slug) => { const a = registry.get(slug); return a !== undefined && a.role !== 'main' && a.state === 'working'; },
     processAlive: (slug) => ptys.status(slug) === 'running',
     changed: () => broadcast(),
   });
@@ -656,7 +657,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     },
     afterTool: () => broadcast(),
     // A guard question or a console tool call is a sign of life too: a long turn without events is not a silence.
-    activity: (slug) => { if (registry.get(slug)?.role === 'agent') loop.detector.onModEvent(slug); },
+    activity: (slug) => { const role = registry.get(slug)?.role; if (role !== undefined && role !== 'main') { loop.detector.onModEvent(slug); refreshSilence(); } },
     handleModEvent: (slug, e) => {
       // The account's limits are not agent activity: they never reach the registry nor reset the loop detector's silence. Never awaited.
       if (e.type === 'quota') {
@@ -667,12 +668,13 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       if (e.type === 'session.start') resumedAwaitingStart.delete(slug);
       // The turn ended: a question its tool call was waiting on (for example an aborted turn) has no asker any more.
       if (e.type === 'turn.complete') questions.dropFrom(slug);
+      // A sign of life ends a silence before the registry's change is broadcast, or the panel would show the old silence (SPEC 32.2).
+      if (registry.get(slug) !== undefined && registry.get(slug)?.role !== 'main') loop.detector.onModEvent(slug);
       registry.onModEvent(slug, e);
       // The assistant's final text of a turn feeds the "read" panel (never read from the terminal).
       if (e.type === 'turn.complete' && typeof e.data?.answer === 'string') reading.add(slug, e.data.answer);
       if (e.type === 'turn.start') turns.set(slug, (turns.get(slug) ?? 0) + 1);
       const isAgent = registry.get(slug)?.role === 'agent';
-      if (isAgent) loop.detector.onModEvent(slug);
       // The budget reads the transcript after each turn, and the loop detector looks at the events it read. Never awaited: the mod must not wait for the console.
       if (e.type === 'turn.complete' && isAgent) {
         void (async () => {
@@ -718,17 +720,27 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const permission = b.kind === 'permission';
         const tool = typeof b.tool === 'string' ? b.tool : '';
         const detail = typeof b.detail === 'string' ? b.detail : '';
+        // The whole input as the mod saw it ("always" is exact; the detail shown to the user may be cut short). No key: never remembered.
+        const key = typeof b.key === 'string' ? b.key : '';
         // SPEC 32.3: an "always" answer given earlier for this exact call is answered at once, never shown (the guard still runs separately).
-        const known = permission ? permissions.recall(slug, tool, detail) : undefined;
+        const known = permission ? permissions.recall(slug, tool, key) : undefined;
         if (known) return questions.answerNow({ from: slug }, known);
-        return questions.ask({
+        let askedId = '';
+        const asked = questions.ask({
           from: slug, text: b.question, options: options && options.length > 0 ? options : undefined, multiSelect: b.multiSelect === true,
           kind: permission ? 'permission' : 'question',
           tool: tool || undefined, detail: detail || undefined,
         }, permission ? (answer) => {
-          if (answer === 'allow_always') permissions.remember(slug, tool, detail, 'allow');
-          else if (answer === 'deny_always') permissions.remember(slug, tool, detail, 'deny');
+          permissions.untrack(askedId);
+          const verdict = answer === 'allow_always' ? 'allow' : answer === 'deny_always' ? 'deny' : undefined;
+          if (!verdict) return;
+          permissions.remember(slug, tool, key, verdict);
+          // Identical requests of the same agent already waiting (parallel tool calls) get the same answer.
+          for (const sibling of permissions.siblings(slug, tool, key, askedId)) { permissions.untrack(sibling); questions.answer(sibling, verdict); }
         } : undefined);
+        askedId = asked.id;
+        if (permission) permissions.track(asked.id, slug, tool, key);
+        return asked;
       },
       checklist_set: async (slug, body) => {
         const items = (body as { items?: unknown } | null)?.items;
@@ -877,7 +889,11 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   registry.on((slug) => persister.onChange(slug));
   // A session waits for the user exactly while it has an open question.
   questions.onChange(() => {
-    for (const a of registry.list()) registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
+    for (const a of registry.list()) {
+      // The wait is over: the minutes spent waiting for the user are not a silence.
+      if (a.role !== 'main' && a.state === 'waiting_user' && !questions.hasPending(a.slug)) loop.detector.onModEvent(a.slug);
+      registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
+    }
     broadcast();
   });
   ptys.onExit((id) => {
@@ -900,10 +916,19 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     permissions.forget(id);
     broadcast();
   });
+  // The silence chip changes with the clock, not with an event: the state is pushed when what it would show has changed.
+  let silenceShown = '';
+  const refreshSilence = (): void => {
+    const now = registry.list().filter((a) => a.role !== 'main').map((a) => `${a.slug}:${loop.silentFor(a.slug) ?? ''}`).join('|');
+    if (now === silenceShown) return;
+    silenceShown = now;
+    broadcast();
+  };
   // Only the grace period can move a budget step without a turn: checked on a timer that never keeps the process alive.
   const budgetTick = setInterval(() => {
     void budget.tick().catch((err) => budget.reportFailure('all agents', err));
     loop.tick(); // never throws: the time signals only warn the main
+    try { refreshSilence(); } catch { /* the chip is only a hint */ }
   }, o.tickMs ?? 30_000);
   budgetTick.unref?.();
   /** One quota reading: a wake-up probe waiting for it judges it once the steps have been applied. */

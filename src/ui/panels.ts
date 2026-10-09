@@ -27,7 +27,7 @@ function applyStalled(el: HTMLElement, stall: StallInfo | undefined): void {
   if (stall?.launch === 'no_session') bindText(el, k('panel.launchStalled.no_session'));
   else if (stall?.launch === 'goal_not_taken') bindText(el, k('panel.launchStalled.goal_not_taken'));
   else if (stall?.silentMinutes !== undefined) bindText(el, k('panel.silent'), { minutes: String(stall.silentMinutes) });
-  else { el.textContent = ''; delete el.dataset.i18n; }
+  else { el.textContent = ''; delete el.dataset.i18n; delete el.dataset.i18nParams; }
 }
 
 /** The stale chip: the worktree has not been touched for many days. */

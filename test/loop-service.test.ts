@@ -15,7 +15,7 @@ const MINUTE = 60_000;
 const call = (command: string, id = 'x'): TranscriptEvent => ({ kind: 'tool_use', id, name: 'Bash', input: { command } });
 const repeat = (n: number, command = 'npm test'): TranscriptEvent[] => Array.from({ length: n }, (_, i) => call(command, `c${i}`));
 
-function rig(o: { restrictThrows?: boolean; stopThrows?: boolean; wip?: { ok: true } | { ok: false; detail: string }; alive?: boolean; onWip?: (tickets: TicketStore) => void } = {}) {
+function rig(o: { restrictThrows?: boolean; stopThrows?: boolean; wip?: { ok: true } | { ok: false; detail: string }; alive?: boolean; onWip?: (tickets: TicketStore) => void; isWorking?: (slug: string) => boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'h-loop-'));
   const tickets = new TicketStore(dir);
   tickets.setChecklist('a', [{ n: 1, title: 'x', done: false }] as never);
@@ -39,6 +39,7 @@ function rig(o: { restrictThrows?: boolean; stopThrows?: boolean; wip?: { ok: tr
     wipCommit: async (_s, reason) => { calls.push(`wip:${reason}`); o.onWip?.(tickets); return o.wip ?? { ok: true }; },
     stop: async () => { calls.push('stop'); if (o.stopThrows) throw new Error('stop boom'); },
     workingSlugs: () => working,
+    ...(o.isWorking ? { isWorking: o.isWorking } : {}),
     processAlive: () => o.alive ?? true,
     changed: () => { calls.push('changed'); },
   };
@@ -298,6 +299,13 @@ describe('LoopService fix wave', () => {
 });
 
 describe('LoopService.silentFor', () => {
+  it('uses isWorking when the host provides it, so a reviewer or recovery session is covered too', () => {
+    const r = rig({ isWorking: (s) => s === 'reviewer-x' });
+    r.detector.onModEvent('reviewer-x');
+    r.advance(7 * MINUTE);
+    expect(r.svc.silentFor('reviewer-x')).toBe(7);
+    expect(r.svc.silentFor('a')).toBeUndefined(); // in workingSlugs, but isWorking says no
+  });
   it('reports the silence of a working agent only; a waiting one (not working) is not silent', () => {
     const r = rig();
     r.detector.onModEvent('a');

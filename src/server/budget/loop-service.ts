@@ -13,6 +13,8 @@ export interface LoopDeps {
   wipCommit(slug: string, reason: string): Promise<{ ok: true } | { ok: false; detail: string }>;
   stop(slug: string): Promise<void>;
   workingSlugs(): string[];
+  /** Any session but the main that is working (reviewers and recoveries too); the silence chip uses it. Absent: `workingSlugs`. */
+  isWorking?(slug: string): boolean;
   /** The agent's process is still running (a silence is reported with it: a long tool, or a dead process). */
   processAlive(slug: string): boolean;
   changed(): void;
@@ -38,7 +40,7 @@ export class LoopService {
 
   /** Minutes of silence of an agent that is working (a waiting agent is not silent, SPEC 17.2); undefined otherwise. */
   silentFor(slug: string): number | undefined {
-    try { return this.d.workingSlugs().includes(slug) ? this.d.detector.silentMinutes(slug) : undefined; } catch { return undefined; }
+    try { return (this.d.isWorking ? this.d.isWorking(slug) : this.d.workingSlugs().includes(slug)) ? this.d.detector.silentMinutes(slug) : undefined; } catch { return undefined; }
   }
 
   /** Calls for one agent run one after the other, so effects never overlap. */
