@@ -19,7 +19,7 @@
     "shot": "tsx scripts/shot.ts",
     "build:app": "tsx scripts/build-app.ts",
     "dist:dir": "npm run build:app && electron-builder --dir",
-    "dist": "npm run build:app && electron-builder",
+    "dist": "npm run build:app && electron-builder --publish never",
     "smoke:app": "tsx scripts/smoke-app.ts"
   },
   "dependencies": {
