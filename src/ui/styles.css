@@ -97,14 +97,15 @@ button[disabled] { opacity: .45; cursor: default; }
 /* Chips: small outlined facts next to the state. */
 .panel-stalled { color: var(--warn); font-weight: 600; }
 .panel-stalled[hidden] { display: none; }
-.panel-ticket, .panel-progress, .panel-budget, .panel-loop, .panel-stale {
+.panel-ticket, .panel-progress, .panel-budget, .panel-loop, .panel-waiting, .panel-stale {
   padding: 0 7px; border: 1px solid var(--seam-strong); border-radius: 9px; color: var(--muted); font-size: 11.5px; line-height: 17px; }
-.panel-ticket[hidden], .panel-progress[hidden], .panel-budget[hidden], .panel-loop[hidden], .panel-stale[hidden] { display: none; }
+.panel-ticket[hidden], .panel-progress[hidden], .panel-budget[hidden], .panel-loop[hidden], .panel-waiting[hidden], .panel-stale[hidden] { display: none; }
 .panel-ticket.in_review, .panel-ticket.in_progress { color: var(--accent); border-color: var(--accent); }
 .panel-ticket.approved, .panel-ticket.merged, .panel-ticket.released { color: var(--ok); border-color: var(--ok); }
 .panel-ticket.conflict, .panel-ticket.needs_user, .panel-ticket.changes_requested,
 .panel-ticket.suspended_budget, .panel-ticket.suspended_limit, .panel-ticket.recovering { color: var(--warn); border-color: var(--warn); }
 .panel-ticket.blocked { color: var(--bad); border-color: var(--bad); }
+.panel-waiting { color: var(--accent); border-color: var(--accent); }
 .panel-loop { color: var(--warn); border-color: var(--warn); }
 .panel-loop.level3 { color: var(--bad); border-color: var(--bad); font-weight: 600; }
 .panel-budget.ok { color: var(--ok); border-color: var(--ok); }

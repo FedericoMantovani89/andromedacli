@@ -23,6 +23,17 @@ const start = (slug: string): void => registry.onModEvent(slug, { type: 'session
 const work = (slug: string): void => registry.onModEvent(slug, { type: 'turn.start', sessionId: 's' });
 
 describe('LaunchWatch', () => {
+  it('says why an agent is flagged: no_session, then goal_not_taken, and nothing once it works', async () => {
+    launch('fix-login');
+    expect(watch.reason('fix-login')).toBeUndefined(); // not reported yet
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(watch.reason('fix-login')).toBe('no_session');
+    start('fix-login');
+    expect(watch.reason('fix-login')).toBe('goal_not_taken');
+    work('fix-login');
+    expect(watch.reason('fix-login')).toBeUndefined();
+    expect(watch.stalled('fix-login')).toBe(false);
+  });
   it('stays silent when the agent started and took its goal in time', async () => {
     launch('fix-login');
     start('fix-login');

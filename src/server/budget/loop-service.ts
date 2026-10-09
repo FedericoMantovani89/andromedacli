@@ -36,6 +36,11 @@ export class LoopService {
 
   level(slug: string): LoopLevel { return this.levels.get(slug) ?? 0; }
 
+  /** Minutes of silence of an agent that is working (a waiting agent is not silent, SPEC 17.2); undefined otherwise. */
+  silentFor(slug: string): number | undefined {
+    try { return this.d.workingSlugs().includes(slug) ? this.d.detector.silentMinutes(slug) : undefined; } catch { return undefined; }
+  }
+
   /** Calls for one agent run one after the other, so effects never overlap. */
   private serial<T>(slug: string, fn: () => Promise<T>): Promise<T> {
     const run = (this.chains.get(slug) ?? Promise.resolve()).then(fn, fn);

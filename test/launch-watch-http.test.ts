@@ -17,9 +17,11 @@ it('an agent that never reports in is flagged and the main is told after the lau
   expect(text).toMatch(/Launch check/);
   expect(text).toMatch(/has not started/);
   expect((await state(s)).agents[0].launchStalled).toBe(true);
+  expect((await state(s)).agents[0].launchProblem).toBe('no_session');
   await modEvent(s, 'fix-login', 'session.start');
   await modEvent(s, 'fix-login', 'turn.start');
   expect((await state(s)).agents[0].launchStalled).toBeUndefined();
+  expect((await state(s)).agents[0].launchProblem).toBeUndefined();
 });
 it('an agent that starts working in time causes no message', async () => {
   const s = await bootServer({ launchCheckMs: 300 });

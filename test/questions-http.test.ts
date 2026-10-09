@@ -92,11 +92,37 @@ it('a permission request from an agent is queued as a permission, shows the agen
   const s = await withAgent();
   const { id } = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'echo hi > out.txt', question: 'Bash needs approval' })).body;
   const st = await state(s);
-  expect(st.queue).toMatchObject([{ id, from: 'fix-login', kind: 'permission', tool: 'Bash', detail: 'echo hi > out.txt', options: ['allow', 'deny'] }]);
+  expect(st.queue).toMatchObject([{ id, from: 'fix-login', kind: 'permission', tool: 'Bash', detail: 'echo hi > out.txt', options: ['allow', 'deny', 'allow_always', 'deny_always'] }]);
   expect(st.agents[0].state).toBe('waiting_user');
+  expect(st.agents[0].waiting).toBe(1);
   expect((await ui(s, `/api/queue/${id}/answer`, 'POST', { answer: 'maybe' })).status).toBe(400);
   expect((await ui(s, `/api/queue/${id}/answer`, 'POST', { answer: 'allow' })).status).toBe(200);
   expect((await mod(s, 'fix-login', `/v1/questions/${id}?wait=1`)).body).toEqual({ answered: true, answer: 'allow' });
+  expect((await state(s)).agents[0].waiting).toBeUndefined();
+});
+it('"always allow" is remembered for that agent and the exact same call: the next one is answered at once and never queued', async () => {
+  const s = await withAgent();
+  const perm = (detail: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail, question: 'q' });
+  const first = (await perm('npm test')).body.id;
+  expect((await ui(s, `/api/queue/${first}/answer`, 'POST', { answer: 'allow_always' })).status).toBe(200);
+  expect((await mod(s, 'fix-login', `/v1/questions/${first}?wait=1`)).body).toEqual({ answered: true, answer: 'allow_always' });
+  const again = (await perm('npm test')).body.id;
+  expect((await mod(s, 'fix-login', `/v1/questions/${again}?wait=1`)).body).toEqual({ answered: true, answer: 'allow' });
+  expect((await state(s)).queue).toEqual([]);
+  await perm('npm test --watch'); // another detail is asked again
+  expect((await state(s)).queue).toHaveLength(1);
+});
+it('"always deny" answers a deny at once, and an empty detail is never remembered', async () => {
+  const s = await withAgent();
+  const perm = (detail?: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', ...(detail !== undefined ? { detail } : {}), question: 'q' });
+  const a = (await perm('rm -rf build')).body.id;
+  await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'deny_always' });
+  const b = (await perm('rm -rf build')).body.id;
+  expect((await mod(s, 'fix-login', `/v1/questions/${b}?wait=1`)).body).toEqual({ answered: true, answer: 'deny' });
+  const c = (await perm()).body.id;
+  await ui(s, `/api/queue/${c}/answer`, 'POST', { answer: 'allow_always' });
+  await perm();
+  expect((await state(s)).queue).toHaveLength(1);
 });
 it('permission details are length-limited', async () => {
   const s = await withAgent();

@@ -19,6 +19,7 @@ import { AgentRegistry } from './agents/registry';
 import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
 import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
+import { PermissionMemory } from './questions/permission-memory';
 import { ReadingStore } from './reading/store';
 import { failQueuedStart, launchAgent, launchResume, spawnAgent } from './agents/spawn';
 import { ResumeService, type WakeResult } from './agents/resume';
@@ -217,6 +218,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) && hasMainTranscript(savedMainSession) ? savedMainSession : undefined;
   registry.register({ slug: projectName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
   const questions = new QuestionQueue();
+  const permissions = new PermissionMemory();
   const reading = new ReadingStore(join(o.projectRoot, '.andromedacli', 'state', 'reading'));
   // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
   /** The global secret patterns plus the project's own (Phase 6D). */
@@ -713,11 +715,20 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
         if (typeof b.question !== 'string' || b.question.trim() === '') return { status: 'error', code: 'bad_request' };
         const options = Array.isArray(b.options) ? b.options.filter((o): o is string => typeof o === 'string').slice(0, 8).map((o) => o.slice(0, 200)) : undefined;
+        const permission = b.kind === 'permission';
+        const tool = typeof b.tool === 'string' ? b.tool : '';
+        const detail = typeof b.detail === 'string' ? b.detail : '';
+        // SPEC 32.3: an "always" answer given earlier for this exact call is answered at once, never shown (the guard still runs separately).
+        const known = permission ? permissions.recall(slug, tool, detail) : undefined;
+        if (known) return questions.answerNow({ from: slug }, known);
         return questions.ask({
           from: slug, text: b.question, options: options && options.length > 0 ? options : undefined, multiSelect: b.multiSelect === true,
-          kind: b.kind === 'permission' ? 'permission' : 'question',
-          tool: typeof b.tool === 'string' ? b.tool : undefined, detail: typeof b.detail === 'string' ? b.detail : undefined,
-        });
+          kind: permission ? 'permission' : 'question',
+          tool: tool || undefined, detail: detail || undefined,
+        }, permission ? (answer) => {
+          if (answer === 'allow_always') permissions.remember(slug, tool, detail, 'allow');
+          else if (answer === 'deny_always') permissions.remember(slug, tool, detail, 'deny');
+        } : undefined);
       },
       checklist_set: async (slug, body) => {
         const items = (body as { items?: unknown } | null)?.items;
@@ -886,6 +897,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     inbox.clear(id);
     restrictions.clear(id);
     loop.forget(id);
+    permissions.forget(id);
     broadcast();
   });
   // Only the grace period can move a budget step without a turn: checked on a timer that never keeps the process alive.

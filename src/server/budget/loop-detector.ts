@@ -141,6 +141,12 @@ export class LoopDetector {
     return out;
   }
 
+  /** Whole minutes without any sign of life, once the silence threshold is reached; undefined before (the panel chip, SPEC 32.2). */
+  silentMinutes(slug: string): number | undefined {
+    const silent = this.now() - this.state(slug).lastEventAt;
+    return silent >= this.cfg().silenceMinutes * MINUTE ? Math.floor(silent / MINUTE) : undefined;
+  }
+
   /** Starts a signal's count again (all of them without `signal`). */
   reset(slug: string, signal?: LoopSignal): void {
     const s = this.slugs.get(slug);

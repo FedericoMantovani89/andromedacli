@@ -184,7 +184,7 @@ export function buildState(ctx: Context): StateMessage {
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
-    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.stalled(a.slug) ? { launchStalled: true } : {}), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.reason(a.slug) ? { launchStalled: true as const, launchProblem: ctx.launchWatch.reason(a.slug)! } : {}), ...(ctx.loop.silentFor(a.slug) !== undefined ? { silentMinutes: ctx.loop.silentFor(a.slug)! } : {}), ...(ctx.questions.pendingCount(a.slug) > 0 ? { waiting: ctx.questions.pendingCount(a.slug) } : {}), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let testsDisabled: boolean | undefined;
   let squash: boolean | undefined;

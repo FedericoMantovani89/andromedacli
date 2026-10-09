@@ -64,6 +64,18 @@ export function applyProgress(el: HTMLElement, progress: SessionInfo['progress']
   bindText(el, k('panel.progress'), { done: progress.done, total: progress.total });
 }
 
+/** "N waiting for you" when the agent has items in the queue; hidden otherwise. */
+export function applyWaiting(el: HTMLElement, n: number | undefined): void {
+  if (!n) {
+    clear(el);
+    el.className = 'panel-waiting';
+    return;
+  }
+  el.hidden = false;
+  el.className = 'panel-waiting';
+  bindText(el, k('panel.waiting'), { count: n });
+}
+
 const LOOP_KEYS: Record<1 | 2 | 3, string> = { 1: k('panel.loop.1'), 2: k('panel.loop.2'), 3: k('panel.loop.3') };
 
 /** The loop chip: "Corrected", "Limited", "Stopped on a loop". Hidden while the agent is not looping. */

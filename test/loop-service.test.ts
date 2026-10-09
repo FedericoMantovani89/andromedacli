@@ -296,3 +296,16 @@ describe('LoopService fix wave', () => {
     expect(r.svc.level('a')).toBe(0);
   });
 });
+
+describe('LoopService.silentFor', () => {
+  it('reports the silence of a working agent only; a waiting one (not working) is not silent', () => {
+    const r = rig();
+    r.detector.onModEvent('a');
+    r.detector.onModEvent('b');
+    r.advance(7 * MINUTE);
+    expect(r.svc.silentFor('a')).toBe(7);
+    expect(r.svc.silentFor('b')).toBeUndefined(); // 'b' is not in workingSlugs()
+    r.setWorking([]);
+    expect(r.svc.silentFor('a')).toBeUndefined();
+  });
+});

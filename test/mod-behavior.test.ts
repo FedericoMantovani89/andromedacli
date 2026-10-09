@@ -175,6 +175,14 @@ it('anything but an explicit allow is a deny (never allows by accident)', async 
   await find('session.start')(f.$, {}, next);
   expect((await find('tool.check')(f.$, bashCheck, asking)).decision).toBe('deny');
 });
+it('"allow_always" and "deny_always" from the console are an allow and a deny', async () => {
+  const { find } = await loadMod();
+  for (const [answer, decision] of [['allow_always', 'allow'], ['deny_always', 'deny']] as const) {
+    const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: permissionFetch(answer) });
+    await find('session.start')(f.$, {}, next);
+    expect((await find('tool.check')(f.$, bashCheck, asking)).decision).toBe(decision);
+  }
+});
 it('leaves alone: an engine "allow" or "deny", the main session, queries without a call id, and the console\'s own tools', async () => {
   const { find } = await loadMod();
   const agent = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: permissionFetch('allow') });

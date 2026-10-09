@@ -8,6 +8,8 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- Agents: the "not started" chip says why (Claude Code never reported in, or it has not taken its goal); a working agent with no sign of life for longer than the silence threshold (Options, Budget and limits) shows a chip too (report only, nothing is stopped).
+- Queue: a permission can be answered "Always allow" or "Always deny": it is remembered for that agent and the exact same tool call until its session ends (the guard still applies); each agent's panel shows how many of its items wait for the user.
 - Options: the (i) hint is drawn by the page, half as wide and taller; in Models the refresh button is square and the catalog address box is as wide as the model menu; in Profiles the two notes sit at the bottom of the panel, full width; the new-profile name hint is one line with a typed-characters counter (0/40) under the box; the profile token budget is a slider like in Budget and limits, starting at the default.
 - Agents and main: the agent prompt now says that the goal message, the main's review notes and the console's answers are its instructions (Claude Code labels a plugin message as coming from a plugin, and the old wording made small models refuse the goal); the goal is also saved as `.andromedacli/goal-<name>.md` in the agent's checkout; the main is told the profiles that really exist (the old fixed list backend/dba/frontend was stale).
 - Repository tooling: `npm run shot` (a screenshot of the real UI), `npm run hooks` (pre-commit: `npm run check` and a CHANGELOG line for a change to the product), and a Claude Code hook that refuses a git commit until `npm test` has run green since the last code change (`wip:` skips it).

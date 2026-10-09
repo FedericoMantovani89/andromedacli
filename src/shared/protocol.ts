@@ -34,6 +34,12 @@ export interface SessionInfo {
   ticket?: { status: string; round: number; maxRounds: number };
   /** The launch check found the agent not started or not working on its goal; clears when it starts working. */
   launchStalled?: true;
+  /** Why `launchStalled` is set: Claude Code never reported in (often a trust dialog), or it runs but has not taken its goal. */
+  launchProblem?: 'no_session' | 'goal_not_taken';
+  /** Minutes without a sign of life of a working agent, once past `budget.loop.silenceMinutes`; absent otherwise (SPEC 32.2). */
+  silentMinutes?: number;
+  /** Items of this agent waiting in the queue (questions, permissions); absent when none. */
+  waiting?: number;
   /** Loop handling (Phase 5): 1 corrected, 2 limited, 3 stopped; absent when none. */
   loop?: 1 | 2 | 3;
   /** Token budget of the agent's ticket (Phase 5); absent when the agent has none (no worktree, a reviewer): shown as n/a. */

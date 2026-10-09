@@ -4,7 +4,7 @@ export interface Question {
   id: string;
   from: string;
   /**
-   * `permission`: an agent's tool wants approval ("allow" / "deny"). `confirm`: the console asks the user to approve something
+   * `permission`: an agent's tool wants approval ("allow" / "deny", or the same remembered for that exact call: "allow_always" / "deny_always"). `confirm`: the console asks the user to approve something
    * ("approve" / "reject"). `decision`: the console asks the user to choose among its own option codes. The last two come from
    * the console itself (from "console") and run a handler when answered.
    */
@@ -57,7 +57,7 @@ export class QuestionQueue {
     const confirm = kind === 'confirm';
     this.open.set(id, {
       id, from: q.from, kind, text: q.text.slice(0, MAX_TEXT),
-      options: permission ? ['allow', 'deny'] : confirm ? ['approve', 'reject'] : q.options,
+      options: permission ? ['allow', 'deny', 'allow_always', 'deny_always'] : confirm ? ['approve', 'reject'] : q.options,
       multiSelect: permission || confirm || kind === 'decision' ? false : q.multiSelect,
       ...(permission ? { tool: (q.tool ?? '').slice(0, 100), detail: (q.detail ?? '').slice(0, 4000) } : {}),
       ...(q.payload !== undefined ? { payload: boundedPayload(q.payload) } : {}),
@@ -108,6 +108,20 @@ export class QuestionQueue {
   }
 
   pending(): Question[] { return [...this.open.values()]; }
+
+  /** A permission answered at once from memory: the asker's poll can read it; nothing is shown and nobody is notified. */
+  answerNow(q: { from: string }, answer: string): { id: string } {
+    this.forgetOldAnswers();
+    const id = randomUUID();
+    this.answered.set(id, { from: q.from, answer, at: Date.now() });
+    return { id };
+  }
+
+  pendingCount(from: string): number {
+    let n = 0;
+    for (const q of this.open.values()) if (q.from === from) n += 1;
+    return n;
+  }
 
   hasPending(from: string): boolean {
     for (const q of this.open.values()) if (q.from === from) return true;

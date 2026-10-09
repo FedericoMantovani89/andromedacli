@@ -339,7 +339,7 @@ async function onToolCheck($, e, next) {
     const a = await askConsole($, verdict.reason || 'Permission requested', undefined, false,
       { kind: 'permission', tool: String(e.tool), detail: describeInput(e.input) });
     if (!a.ok) return verdict;
-    return a.answer === 'allow'
+    return String(a.answer).indexOf('allow') === 0
       ? { decision: 'allow', reason: 'Allowed by the user in the console.' }
       : { decision: 'deny', reason: 'The user denied this in the console.' };
   } catch (err) {

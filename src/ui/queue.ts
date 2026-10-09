@@ -2,6 +2,7 @@ import type { QueueItem } from '../shared/protocol';
 import { api } from './api';
 import { reconcile } from './dom';
 import { bindText, k, setPlaceholder } from './i18n-client';
+import { infoIcon } from './info-icon';
 import { createBudgetEntry, createConfirmEntry, createDecisionEntry, createWeeklyEntry, type Entry } from './console-items';
 
 /** Buttons that must not take the keyboard from where it is (answering from the queue never moves the focus). */
@@ -39,7 +40,7 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
   el.append(from, text);
 
   if (item.kind === 'permission') {
-    // An agent's tool wants approval: show what it would do, offer only Allow and Deny (answers "allow" / "deny").
+    // An agent's tool wants approval: show what it would do, offer Allow, Deny and their "always" forms (answers "allow" / "deny" / "allow_always" / "deny_always").
     const what = document.createElement('div');
     what.className = 'queue-permission';
     bindText(what, 'queue.permission', { tool: item.tool ?? '' });
@@ -48,7 +49,7 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
     detail.textContent = item.detail ?? ''; // data: shown as plain text, never as HTML
     const row = document.createElement('div');
     row.className = 'queue-options';
-    for (const [value, key] of [['allow', k('queue.allow')], ['deny', k('queue.deny')]] as const) {
+    for (const [value, key] of [['allow', k('queue.allow')], ['deny', k('queue.deny')], ['allow_always', k('queue.allowAlways')], ['deny_always', k('queue.denyAlways')]] as const) {
       const b = document.createElement('button');
       b.type = 'button';
       bindText(b, key);
@@ -57,6 +58,7 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
       keepFocus(b);
       row.append(b);
     }
+    row.append(infoIcon(k('queue.alwaysInfo')));
     el.append(what, detail, row);
     return { el };
   }

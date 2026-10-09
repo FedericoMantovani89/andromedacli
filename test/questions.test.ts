@@ -77,10 +77,10 @@ it('knows which sessions still have an open question', () => {
   expect(queue.hasPending('other-job')).toBe(false);
 });
 
-it('a permission question only accepts "allow" or "deny"', () => {
+it('a permission question only accepts its own four answers', () => {
   const queue = new QuestionQueue();
   const { id } = queue.ask({ from: 'fix-login', text: 'Bash needs approval', kind: 'permission', tool: 'Bash', detail: 'git push' });
-  expect(queue.pending()[0]).toMatchObject({ kind: 'permission', tool: 'Bash', detail: 'git push', options: ['allow', 'deny'] });
+  expect(queue.pending()[0]).toMatchObject({ kind: 'permission', tool: 'Bash', detail: 'git push', options: ['allow', 'deny', 'allow_always', 'deny_always'] });
   expect(queue.answer(id, 'maybe')).toBe('invalid');
   expect(queue.answer(id, 'allow')).toBe('ok');
 });
@@ -146,4 +146,19 @@ it('console items belong to a source no agent or project can be called, so no tu
   queue.ask({ from: CONSOLE_FROM, text: 'Release?', kind: 'confirm' });
   for (const slug of ['console', 'main', 'shop-api']) queue.dropFrom(slug);
   expect(queue.pending()).toHaveLength(1);
+});
+
+it('answerNow gives a late long-poll its answer without ever showing an item', async () => {
+  const queue = new QuestionQueue();
+  const { id } = queue.answerNow({ from: 'fix-login' }, 'allow');
+  expect(queue.pending()).toEqual([]);
+  expect(await queue.wait(id, 1000, 'fix-login')).toEqual({ answered: true, answer: 'allow' });
+});
+it('a permission offers four answers and accepts the two "always" ones; pendingCount counts per asker', () => {
+  const queue = new QuestionQueue();
+  const { id } = queue.ask({ from: 'fix-login', text: 'ok?', kind: 'permission', tool: 'Bash', detail: 'ls' });
+  expect(queue.pending()[0]!.options).toEqual(['allow', 'deny', 'allow_always', 'deny_always']);
+  expect(queue.pendingCount('fix-login')).toBe(1);
+  expect(queue.pendingCount('other')).toBe(0);
+  expect(queue.answer(id, 'allow_always')).toBe('ok');
 });

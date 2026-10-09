@@ -38,12 +38,17 @@ export class LaunchWatch {
     this.timers.set(slug, timer);
   }
 
+  /** Why the agent is flagged (from the report until it works); a process that ended is not a panel reason (its state says so). */
+  reason(slug: string): 'no_session' | 'goal_not_taken' | undefined {
+    const a = this.o.registry.get(slug);
+    if (!a || !this.reported.has(slug)) return undefined;
+    const p = problemOf(a);
+    return p === 'no_session' || p === 'goal_not_taken' ? p : undefined;
+  }
+
   /** True from the report until the agent starts working (or ends). */
   stalled(slug: string): boolean {
-    const a = this.o.registry.get(slug);
-    if (!a || !this.reported.has(slug)) return false;
-    const p = problemOf(a);
-    return p === 'no_session' || p === 'goal_not_taken';
+    return this.reason(slug) !== undefined;
   }
 
   close(): void {

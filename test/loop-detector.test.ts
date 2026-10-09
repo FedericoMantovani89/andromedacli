@@ -320,3 +320,16 @@ describe('LoopDetector forget', () => {
     expect(d.tick(['a'])).toEqual([]);
   });
 });
+
+describe('LoopDetector silentMinutes', () => {
+  it('is undefined before the threshold, whole minutes after it, and undefined again after a sign of life', () => {
+    const { d, clock } = make();
+    d.onModEvent('a');
+    clock.t += 4 * MIN;
+    expect(d.silentMinutes('a')).toBeUndefined();
+    clock.t += 3 * MIN + 30_000;
+    expect(d.silentMinutes('a')).toBe(7);
+    d.onModEvent('a');
+    expect(d.silentMinutes('a')).toBeUndefined();
+  });
+});
