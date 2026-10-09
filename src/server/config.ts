@@ -10,7 +10,7 @@ export type Language = string;
 export interface Config {
   schema: 1;
   language: Language;
-  agents: { bypassPermissions: boolean; maxActiveGlobal: number; maxActivePerProject: number };
+  agents: { bypassPermissions: boolean; maxActiveGlobal: number; maxActivePerProject: number; requestTimeoutMinutes: number; requestMaxHops: number };
   claude: { command: string[] };
   mod: { enabled: boolean };
   /** Worktrees and commits by the console (SPEC 9). `worktrees: false` keeps the Phase 2 behaviour: agents share the project folder. */
@@ -34,7 +34,7 @@ export interface BudgetConfig {
 }
 /** Allowed whole-number range of every numeric entry (the single source: validation and the message that names the limits both read it). */
 export const CONFIG_RANGES: Readonly<Record<string, readonly [number, number]>> = {
-  'agents.maxActiveGlobal': [1, 64], 'agents.maxActivePerProject': [1, 64],
+  'agents.maxActiveGlobal': [1, 64], 'agents.maxActivePerProject': [1, 64], 'agents.requestTimeoutMinutes': [1, 240], 'agents.requestMaxHops': [1, 10],
   'git.testTimeoutMinutes': [1, 240], 'git.staleWorktreeDays': [1, 365],
   'budget.agentTokens': [1000, 100_000_000], 'budget.graceMinutes': [0, 120],
   'budget.alertPercent': [1, 200], 'budget.limitPercent': [1, 200], 'budget.stopPercent': [1, 200],
@@ -51,7 +51,7 @@ export interface ConfigError { path: string; code: 'config.invalid' | 'config.un
 export const DEFAULT_CONFIG: Config = {
   schema: 1,
   language: 'en',
-  agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerProject: 3 },
+  agents: { bypassPermissions: false, maxActiveGlobal: 4, maxActivePerProject: 3, requestTimeoutMinutes: 15, requestMaxHops: 3 },
   claude: { command: ['claude'] },
   mod: { enabled: true },
   git: { worktrees: true, secretPatterns: DEFAULT_SECRET_PATTERNS, testTimeoutMinutes: 15, staleWorktreeDays: 10, staleCheck: true },
@@ -118,7 +118,7 @@ export function validateConfig(raw: Record<string, unknown>): { config: Config; 
         if (typeof a.bypassPermissions === 'boolean') config.agents.bypassPermissions = a.bypassPermissions;
         else bad('agents.bypassPermissions');
       }
-      for (const key of ['maxActiveGlobal', 'maxActivePerProject'] as const) {
+      for (const key of ['maxActiveGlobal', 'maxActivePerProject', 'requestTimeoutMinutes', 'requestMaxHops'] as const) {
         if (!(key in a)) continue;
         const v = a[key];
         if (typeof v === 'number' && Number.isInteger(v) && v >= R(`agents.${key}`)[0] && v <= R(`agents.${key}`)[1]) config.agents[key] = v;

@@ -14,6 +14,7 @@ export interface InboxMessage { id: string; text: string }
 export class Inbox {
   private readonly boxes = new Map<string, InboxMessage[]>();
   private readonly pushListeners: ((slug: string) => void)[] = [];
+  private readonly ackListeners: ((slug: string, id: string) => void)[] = [];
   private frozen = false;
 
   constructor(private readonly file?: string) {}
@@ -33,6 +34,9 @@ export class Inbox {
 
   /** Called after every push, with the target slug (a dormant agent wakes when work arrives for it). A throwing callback is ignored. */
   onPush(cb: (slug: string) => void): void { this.pushListeners.push(cb); }
+
+  /** Called after a message was acknowledged (the session received it), with its slug and id. A throwing callback is ignored. */
+  onAck(cb: (slug: string, id: string) => void): void { this.ackListeners.push(cb); }
 
   /** Shutdown: the file keeps what was undelivered. Killing the processes would otherwise empty their boxes (`clear`). */
   freeze(): void { this.frozen = true; }
@@ -63,6 +67,9 @@ export class Inbox {
     if (!box || i < 0) return false;
     box.splice(i, 1);
     this.save();
+    for (const cb of this.ackListeners) {
+      try { cb(slug, id); } catch { /* the acknowledgement itself succeeded */ }
+    }
     return true;
   }
 

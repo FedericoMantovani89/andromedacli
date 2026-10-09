@@ -59,14 +59,14 @@ it('registers the tools of its role once and starts one inbox poller, even if se
   const f = fake$();
   await find('session.start')(f.$, {}, next);
   await find('session.start')(f.$, {}, next);
-  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup']);
+  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup']);
   expect(f.ticks).toHaveLength(1);
 });
 it('an agent gets list_agents and the ticket tools, never spawn_agent', async () => {
   const { find } = await loadMod();
   const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' } });
   await find('session.start')(f.$, {}, next);
-  expect(f.registeredTools).toEqual(['list_agents', 'checklist_set', 'step_done', 'report_blocked']);
+  expect(f.registeredTools).toEqual(['list_agents', 'send_message', 'checklist_set', 'step_done', 'report_blocked']);
 });
 it('delivers an inbox message only after the console confirmed receiving it', async () => {
   const { find } = await loadMod();

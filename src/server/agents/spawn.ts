@@ -20,7 +20,7 @@ export type SpawnOutcome =
 export const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
 
 /** The console's own tools an agent may call without a permission prompt. */
-export const AGENT_TOOLS = ['list_agents', 'checklist_set', 'step_done', 'report_blocked'].map((t) => `mcp__console-mod__${t}`);
+export const AGENT_TOOLS = ['list_agents', 'send_message', 'checklist_set', 'step_done', 'report_blocked'].map((t) => `mcp__console-mod__${t}`);
 export const REVIEWER_TOOLS = ['list_agents', 'review_verdict'].map((t) => `mcp__console-mod__${t}`);
 export const RECOVERY_TOOLS = ['list_agents', 'recovery_report'].map((t) => `mcp__console-mod__${t}`);
 

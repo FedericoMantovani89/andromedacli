@@ -1,7 +1,13 @@
-export interface Step { n: number; title: string; done: boolean; skipped?: boolean; note?: string; sha?: string }
+export interface Step {
+  n: number; title: string; done: boolean; skipped?: boolean; note?: string; sha?: string;
+  /** A question sent for this step is unanswered: the step stays open and `step_done` goes past it (SPEC 10). */
+  waitingOn?: { requestId: string; to: string };
+  /** Ids of the requests this step waited for and got answered: their `TODO-<id>` comments must be gone before it closes. */
+  resolved?: string[];
+}
 
 export type ChecklistError =
-  | 'too_short' | 'too_long' | 'empty_title' | 'no_study' | 'no_tests_first' | 'no_validation' | 'no_docs' | 'duplicate_titles' | 'changes_done';
+  | 'too_short' | 'too_long' | 'empty_title' | 'no_study' | 'no_tests_first' | 'no_validation' | 'no_docs' | 'duplicate_titles' | 'changes_done' | 'changes_waiting';
 
 export type ChecklistResult = { ok: true; steps: Step[] } | { ok: false; code: ChecklistError; detail: string };
 
@@ -34,6 +40,11 @@ export function validateChecklist(items: string[], previous?: Step[]): Checklist
     if (titles[s.n - 1] !== s.title) return fail('changes_done', `step ${s.n} is already done and must stay "${s.title}"`);
   }
 
+  const open = (previous ?? []).filter((s) => !s.done);
+  for (const s of open) {
+    if (s.waitingOn && !titles.includes(s.title)) return fail('changes_waiting', `step "${s.title}" is waiting for ${s.waitingOn.requestId} and must stay in the checklist`);
+  }
+
   if (titles.length < MIN_STEPS) return fail('too_short', `at least ${MIN_STEPS} steps: study, tests, implementation, validation, documentation`);
   if (!STUDY.test(titles[0]!)) return fail('no_study', 'the first step must be the study of the code');
   if (!TESTS.test(titles[1]!)) return fail('no_tests_first', 'the second step must write the tests first (or define how to verify)');
@@ -48,7 +59,14 @@ export function validateChecklist(items: string[], previous?: Step[]): Checklist
 
   const steps: Step[] = titles.map((title, i) => {
     const old = kept.find((s) => s.n === i + 1);
-    return old ? { ...old, title } : { n: i + 1, title, done: false };
+    if (old) return { ...old, title };
+    // An open step that waits for an answer (or already got one) keeps that, wherever its number moved.
+    const carried = open.find((s) => s.title === title && (s.waitingOn !== undefined || s.resolved !== undefined));
+    return {
+      n: i + 1, title, done: false,
+      ...(carried?.waitingOn ? { waitingOn: carried.waitingOn } : {}),
+      ...(carried?.resolved ? { resolved: carried.resolved } : {}),
+    };
   });
   return { ok: true, steps };
 }

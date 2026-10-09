@@ -1,5 +1,6 @@
 /** Wire types shared by the server and the browser UI. Codes are English constants, never sentences (P11). */
 import type { Activity } from './activity';
+import type { RequestRow, RequestsInfo } from './requests';
 import type { UpdateState } from './update';
 import type { NotificationsConfig, ToastStatus } from './notify';
 
@@ -47,6 +48,8 @@ export interface SessionInfo {
   budget?: { used: number; limit: number; step: 'ok' | 'alert' | 'limit' | 'stopped' };
   /** Phase 6A: the agent's worktree has not been touched for longer than `git.staleWorktreeDays`. */
   stale?: true;
+  /** Requests between agents (SPEC 10): steps waiting for an answer and requests this agent still owes; absent when none. */
+  requests?: RequestsInfo;
 }
 
 export interface PrereqResult {
@@ -96,6 +99,8 @@ export interface StateMessage {
   projectRoot: string;
   /** Everything that waits for the user: questions from the main and the agents. */
   queue: QueueItem[];
+  /** The live requests between agents and the latest settled ones (SPEC 10); absent when there are none. */
+  requests?: RequestRow[];
   /** The console is waiting for a usage limit to lift (Phase 5); absent when it is not. `until` is when the next probe is due. */
   sleep?: { until?: string; phase: 'sleeping' | 'probing' | 'awake'; attempt: number; weekly: boolean };
   /** The most used usage limit of the subscription; ABSENT when unknown (shown as n/a, never as zero). */

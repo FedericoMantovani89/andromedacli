@@ -8,6 +8,12 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- Requests between agents: `send_message` (question, answer, info, unknown, escalate) routed by the console; a question returns an id `TODO-xxxxxx` at once and the asker keeps working.
+- A checklist step can wait for an answer (`Step.waitingOn`): `step_done` goes past it, the validation and documentation steps refuse (`pending_requests`) while one waits, and a step cannot close while its `TODO-<id>` comment is still in the code (`todo_left`); the ticket is not delivered with any such comment left.
+- An agent cannot close its validation or documentation step while a request addressed to it is open (`unanswered_requests`), nor close the step named after an open request ("Answer TODO-x") before answering it (`request_unanswered`).
+- A stopped agent (budget, loop, usage limit, replacement) keeps the requests it made and their waiting steps; they are cancelled only when it ends for good, and the waiting steps are then released and the holder told. A late answer from the original recipient of an escalated request is accepted; `list_agents` shows the main the requests it still has to answer; a console start restarts the request clocks; the two request settings apply without a restart.
+- An unanswered question goes to the main after `agents.requestTimeoutMinutes` (15 by default, counted from the moment the colleague received it); chains of requests are limited by `agents.requestMaxHops` (3); a recipient that is not running sends the question to the main at once.
+- The agent bar shows "waiting for <colleague> (TODO-x)" and "to answer for <colleague> (TODO-x)"; a Requests drawer lists the requests between agents.
 - Desktop app: it looks for a newer version on the GitHub releases (after 30 s, then every 4 hours); the status bar offers Download, then Restart to update, and nothing happens without the user (a repository that is private, or a release without `latest.yml`, shows nothing). The version of a release is the tag that was pushed.
 - Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
 

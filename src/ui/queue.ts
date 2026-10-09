@@ -138,6 +138,7 @@ export function createQueueDrawer(root: HTMLElement) {
   return {
     isOpen: () => open,
     toggle: () => setOpen(!open),
+    close: (): void => setOpen(false),
     /** A notification click: opens the drawer and brings that item into view (scrolling, never focus). */
     openOn(id: string): void {
       setOpen(true);

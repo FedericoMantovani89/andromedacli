@@ -40,3 +40,14 @@ it('the Phase 5 hooks are registered by name in the module', () => {
   for (const tool of ['start_recovery', 'recovery_report', 'resume_agent', 'worktree_cleanup']) expect(src, tool).toContain(`{ tool: 'mcp__console-mod__${tool}' }`);
   expect(src).toContain('$.session.usage()');
 });
+
+it('send_message is registered for the main and the agents, with its call, and last', () => {
+  const src = readFileSync(join(modDir, 'hooks', 'register.js'), 'utf8');
+  expect(src).toMatch(/main: \[[^\]]*'send_message'/);
+  expect(src).toMatch(/agent: \[[^\]]*'send_message'/);
+  expect(src).not.toMatch(/(reviewer|recovery): \[[^\]]*'send_message'/);
+  expect(src).toContain("{ tool: 'mcp__console-mod__send_message' }");
+  expect(src).toContain("if (name === 'send_message') return { to: e.to, type: e.type, text: e.text, in_reply_to: e.in_reply_to, step:");
+  // Last: `claude plugin validate` cuts its hook list, so new hooks go after every earlier one.
+  expect(src.indexOf("mcp__console-mod__send_message' }")).toBeGreaterThan(src.indexOf("on('tool.call', { tool: 'Task' }"));
+});

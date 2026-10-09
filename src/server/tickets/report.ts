@@ -78,7 +78,7 @@ export function buildReport(i: ReportInput): string {
 
   const done = i.steps.filter((s) => s.done).length;
   out.push(`## ${t('report.checklist', { done, total: i.steps.length })}`, '');
-  for (const s of i.steps) out.push(`- [${s.done ? 'x' : ' '}] ${s.n}. ${s.title}${s.skipped ? ` (${t('report.skipped')})` : ''}`);
+  for (const s of i.steps) out.push(`- [${s.done ? 'x' : ' '}] ${s.n}. ${s.title}${s.skipped ? ` (${t('report.skipped')})` : ''}${s.waitingOn ? ` (${s.waitingOn.requestId})` : ''}`);
   if (i.steps.length === 0) out.push(na);
   out.push('');
 
