@@ -36,6 +36,8 @@ win:
   # No code signing and no icon yet: this also avoids electron-builder's signing tool download.
   signAndEditExecutable: false
 nsis:
+  # No spaces: GitHub turns them into dots in a release asset's name.
+  artifactName: AndromedaCli-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
