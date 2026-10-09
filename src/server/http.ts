@@ -23,6 +23,7 @@ import type { Scheduler } from './agents/scheduler';
 import type { ReadingStore } from './reading/store';
 import type { TicketStore } from './tickets/store';
 import type { StepService } from './tickets/steps';
+import type { RequestService } from './requests/service';
 import type { ReviewService } from './tickets/review';
 import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
@@ -83,6 +84,8 @@ export interface Context extends V1Context {
   version: string;
   tickets: TicketStore;
   steps: StepService;
+  /** Requests between agents (SPEC 10). */
+  requests: RequestService;
   launchWatch: LaunchWatch;
   review: ReviewService;
   /** Recovery after a stop (SPEC 16.5). */
@@ -201,11 +204,17 @@ export function buildState(ctx: Context): StateMessage {
     const n = ctx.questions.pendingCount(slug);
     return n > 0 ? { waiting: n } : {};
   };
+  // Steps waiting for an answer come from the ticket (the record that survives a restart); what the agent owes, from the requests.
+  const requestsOf = (slug: string): Pick<SessionInfo, 'requests'> => {
+    const waiting = (ctx.tickets.get(slug)?.steps ?? []).filter((s) => !s.done && s.waitingOn).map((s) => s.waitingOn!);
+    const info = ctx.requests.infoFor(slug, waiting);
+    return info ? { requests: info } : {};
+  };
   const main: SessionInfo = { slug: ctx.projectName, profile: 'main', role: 'main', status: status(ctx.projectName), state: stateOf(ctx.projectName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
-    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...launchOf(a.slug), ...silenceOf(a.slug), ...waitingOf(a.slug), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...launchOf(a.slug), ...silenceOf(a.slug), ...waitingOf(a.slug), ...requestsOf(a.slug), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let testsDisabled: boolean | undefined;
   let squash: boolean | undefined;
@@ -227,6 +236,7 @@ export function buildState(ctx: Context): StateMessage {
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
     type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(testsDisabled ? { testsDisabled } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, profileNamesOf(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
     prereq: ctx.getPrereq(), helperUse: ctx.getHelperUse(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
+    ...(() => { const rows = ctx.requests.rows(); return rows.length > 0 ? { requests: rows } : {}; })(),
     queue: ctx.questions.pending(),
     ...(ctx.projects ? { projects: ctx.projects.list() } : {}),
     notifications: { toast: ctx.notify.toast(), config: ctx.notificationsConfig },
@@ -301,7 +311,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'POST' && (path === '/api/update/download' || path === '/api/update/install')) {
       if (!host.updates) return fail(res, 404, 'not_found');
       if (path === '/api/update/download') host.updates.download();
-      else await host.updates.install();
+      // Not awaited: the install asks the user, then stops this very server, which would wait for this request to end.
+      else void Promise.resolve(host.updates.install()).catch(() => undefined);
       res.writeHead(204);
       res.end();
       return;

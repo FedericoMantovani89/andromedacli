@@ -133,6 +133,12 @@ export class BudgetService {
     }
   }
 
+  /** The agent is about to be resumed (`--resume`): what its transcript holds now was counted in an earlier run. */
+  primeTranscript(slug: string): void {
+    const file = this.d.transcriptOf(slug);
+    if (file) this.d.reader.prime(file);
+  }
+
   /** Reads the new transcript events and writes one ledger line. n/a (missing or unreadable file) writes nothing. */
   private readAndAppend(slug: string, session: { sessionId: string; turn: number }, reportMissing = false): TranscriptEvent[] {
     const file = this.d.transcriptOf(slug);

@@ -112,3 +112,25 @@ export function applyBudget(el: HTMLElement, info: Pick<SessionInfo, 'budget' | 
   clear(el);
   el.className = 'panel-budget';
 }
+
+function requestChip<T extends { id: string }>(el: HTMLElement, cls: string, list: T[], who: (r: T) => string, one: string, more: string): void {
+  if (list.length === 0) {
+    clear(el);
+    el.className = cls;
+    return;
+  }
+  el.hidden = false;
+  el.className = cls;
+  const first = list[0]!;
+  if (list.length === 1) bindText(el, one, { who: who(first), id: first.id });
+  else bindText(el, more, { who: who(first), id: first.id, more: list.length - 1 });
+}
+
+/**
+ * The requests between agents (SPEC 10): "waiting for be-orders (TODO-7f3a15)" for a step that waits for an answer, and
+ * "to answer for fe-pages (TODO-...)" for a question the agent still owes a reply to. Each chip is hidden when it has nothing.
+ */
+export function applyRequests(waitingEl: HTMLElement, owedEl: HTMLElement, requests: SessionInfo['requests']): void {
+  requestChip(waitingEl, 'panel-requests waiting', requests?.waiting ?? [], (r) => r.to, k('panel.requests.waiting'), k('panel.requests.waitingMore'));
+  requestChip(owedEl, 'panel-requests owed', requests?.owed ?? [], (r) => r.from, k('panel.requests.owed'), k('panel.requests.owedMore'));
+}

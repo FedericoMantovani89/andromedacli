@@ -162,3 +162,17 @@ it('a permission offers four answers and accepts the two "always" ones; pendingC
   expect(queue.pendingCount('other')).toBe(0);
   expect(queue.answer(id, 'allow_always')).toBe('ok');
 });
+
+it('a dropped question forgets its answer handler (nothing is kept for an asker that is gone)', () => {
+  const queue = new QuestionQueue();
+  queue.ask({ from: 'fix-login', text: 'ok?', kind: 'permission', tool: 'Bash', detail: 'ls' }, () => undefined);
+  expect((queue as unknown as { handlers: Map<string, unknown> }).handlers.size).toBe(1);
+  queue.dropFrom('fix-login');
+  expect((queue as unknown as { handlers: Map<string, unknown> }).handlers.size).toBe(0);
+});
+it('a permission that cannot be remembered offers only allow and deny', () => {
+  const queue = new QuestionQueue();
+  queue.ask({ from: 'fix-login', text: 'ok?', kind: 'permission', tool: 'WebFetch', detail: 'x', canRemember: false });
+  expect(queue.pending()[0]!.options).toEqual(['allow', 'deny']);
+  expect(queue.answer(queue.pending()[0]!.id, 'allow_always')).toBe('invalid');
+});

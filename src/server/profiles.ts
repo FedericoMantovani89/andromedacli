@@ -209,7 +209,8 @@ export function renderAgentPrompt(o: { profile: Profile; slug: string; project: 
   const text = fill(template, { slug: o.slug, project: o.project, profile: o.profile.body, git: gitRules });
   // The project's rules reach every session; the documents to update concern only the one that writes the work (not a review or a recovery).
   const docs = o.docs && o.docs.length > 0 && !o.review && !o.recovery ? `At the last step update: ${o.docs.join(', ')}.` : undefined;
-  const extra = [o.helpers, o.noGitignore && !o.review && !o.recovery ? GITIGNORE_AGENT : undefined, projectText(o.projectRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
+  const requests = !o.review && !o.recovery ? readFileSync(join(promptsDir(), 'agent-requests.md'), 'utf8').replace(/\r\n/g, '\n').trim() : undefined;
+  const extra = [o.helpers, requests, o.noGitignore && !o.review && !o.recovery ? GITIGNORE_AGENT : undefined, projectText(o.projectRoot, 'rules.md'), docs].filter((x): x is string => x !== undefined);
   const full = extra.length > 0 ? `${text.trimEnd()}\n\n${extra.join('\n\n')}\n` : text;
   return writePrompt(o.outDir, `agent-${o.slug}.md`, full.replace(/\n{3,}/g, '\n\n'));
 }

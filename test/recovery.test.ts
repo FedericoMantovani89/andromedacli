@@ -371,6 +371,20 @@ describe('fix wave', () => {
     expect(replacements[0]!.goal).toContain('FROM THE FILE: half of step 3');
     expect(tickets.get('a-job-r2')!.handover).toBe('FROM THE FILE: half of step 3, see notes.md');
   });
+
+  it('a replacement tells who follows the name, and the undo after a failed start too', async () => {
+    const renames: [string, string][] = [];
+    deps.renamed = (from, to) => { renames.push([from, to]); };
+    expect(await svc.restart('a-job', { limit: 1500 })).toEqual({ ok: true, agent: 'a-job-r2' });
+    expect(renames).toEqual([['a-job', 'a-job-r2']]);
+  });
+  it('a replacement that cannot start tells that the name went back', async () => {
+    const renames: [string, string][] = [];
+    deps.renamed = (from, to) => { renames.push([from, to]); };
+    replacementResult = { ok: false, code: 'agent.spawnFailed', detail: 'boom' };
+    await svc.restart('a-job', { limit: 1500 });
+    expect(renames).toEqual([['a-job', 'a-job-r2'], ['a-job-r2', 'a-job']]);
+  });
 });
 
 describe('replacementCheckout', () => {
@@ -378,5 +392,19 @@ describe('replacementCheckout', () => {
     expect(replacementCheckout(true, undefined)).toEqual({ ok: false, code: 'no_worktree' });
     expect(replacementCheckout(true, { worktree: 'w', branch: 'agent/p/a' })).toEqual({ ok: true });
     expect(replacementCheckout(false, undefined)).toEqual({ ok: true });
+  });
+});
+
+describe('a step waiting for an answer (SPEC 10)', () => {
+  it('the facts, the recovery goal and the take-over goal say which step waits and for what', async () => {
+    tickets.setWaiting('a-job', 3, { requestId: 'TODO-7f3a15', to: 'be-orders' });
+    const f = await recoveryFacts(deps, 'a-job');
+    expect(f.checklist[2]).toMatchObject({ n: 3, done: false, waitingOn: { requestId: 'TODO-7f3a15', to: 'be-orders' } });
+    expect(f.checklist[0]!.waitingOn).toBeUndefined();
+    const rec = await started();
+    expect(recoveries.at(-1)!.goal).toContain('3. [ ] Implement a (waiting for TODO-7f3a15 (be-orders))');
+    expect(await svc.report(rec, { ...REPORT, remedy: 'split' })).toMatchObject({ ok: true, outcome: 'restarted' });
+    expect(replacements[0]!.goal).toContain('3. [ ] Implement a (waiting for TODO-7f3a15 (be-orders))');
+    expect(tickets.get('a-job-r2')!.steps[2]!.waitingOn).toEqual({ requestId: 'TODO-7f3a15', to: 'be-orders' });
   });
 });

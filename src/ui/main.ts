@@ -5,6 +5,7 @@ import { neighbourProject, openCloseProjectDialog, renderProjectTabs, titleWithW
 import { bindText, initI18n, initI18nAnonymous, resolveLanguage } from './i18n-client';
 import { createNewAgentControl } from './new-agent';
 import { createQueueDrawer, queueIdFromHash } from './queue';
+import { createRequestsDrawer } from './requests';
 import { showBrowserNotification, titleWithCount } from './notify-browser';
 import { startPresence } from './presence';
 import type { NotifyMessage } from '../shared/notify';
@@ -28,6 +29,10 @@ let stateSocket: WebSocket | undefined;
 const baseTitle = document.title;
 let wizardShown = false;
 const queueDrawer = createQueueDrawer($('drawer'));
+const requestsDrawer = createRequestsDrawer($('requests'));
+// The two drawers take the same place: opening one closes the other (the queue needs the user, it must never sit underneath).
+const toggleQueue = (): void => { if (!queueDrawer.isOpen()) requestsDrawer.close(); queueDrawer.toggle(); };
+const toggleRequests = (): void => { if (!requestsDrawer.isOpen()) queueDrawer.close(); requestsDrawer.toggle(); };
 const reader = createReader($('reader'));
 const listeners: ((s: StateMessage) => void)[] = [];
 
@@ -47,6 +52,9 @@ function renderChrome(s: StateMessage): void {
   });
   document.title = titleWithWaiting(baseTitle, projects);
   bindText($('queue-btn'), 'header.queue', { count: s.queue.length });
+  const live = (s.requests ?? []).filter((r) => r.state === 'open' || r.state === 'escalated').length;
+  $('requests-btn').hidden = (s.requests ?? []).length === 0 && !requestsDrawer.isOpen();
+  bindText($('requests-btn'), 'header.requests', { count: live });
   bindText($('settings-btn'), 'header.settings');
   renderStatusBar($('statusbar'), s);
   document.title = titleWithCount(document.title, s.queue.length); // the number of things waiting (6C replaces it with the all-projects total)
@@ -154,6 +162,7 @@ function apply(s: StateMessage): void {
   workspace = entry.ws;
   workspace.update(s.main, s.agents);
   queueDrawer.update(s.queue);
+  requestsDrawer.update(s.requests ?? []);
   // A tab chosen by the user takes the keyboard once its workspace is on screen.
   if (pendingShow) { pendingShow = false; workspace.show(); }
   // Opening the console is the user's action, so main starts as the active input. Not while the first-start wizard is
@@ -225,7 +234,7 @@ window.addEventListener('keydown', (ev) => {
 window.addEventListener('keydown', (ev) => {
   if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
   const key = ev.key.toLowerCase();
-  if (key === 'q') { ev.preventDefault(); queueDrawer.toggle(); return; }
+  if (key === 'q') { ev.preventDefault(); toggleQueue(); return; }
   if (key === 'l') { ev.preventDefault(); if (workspace) void reader.toggle(workspace.active); return; }
   // Alt+Left / Alt+Right switch projects (Alt+Left is also the browser's "back": taken here).
   if (key === 'arrowleft' || key === 'arrowright') {
@@ -245,7 +254,8 @@ window.addEventListener('keydown', (ev) => {
 window.addEventListener('console-select-project', (ev) => { selectProject((ev as CustomEvent<string>).detail); });
 
 $('settings-btn').addEventListener('click', () => openSettings(() => state));
-$('queue-btn').addEventListener('click', () => queueDrawer.toggle());
+$('queue-btn').addEventListener('click', () => toggleQueue());
+$('requests-btn').addEventListener('click', () => toggleRequests());
 
 async function boot(): Promise<void> {
   // A console with no project open has no state to show: it asks for a project first (and reloads once there is one).
@@ -268,6 +278,7 @@ async function boot(): Promise<void> {
   // A click on a notification opens the page at `#queue=<id>`: show that item (opening the drawer is not a focus move).
   const wanted = queueIdFromHash(location.hash);
   if (wanted) {
+    requestsDrawer.close();
     queueDrawer.openOn(wanted);
     history.replaceState(null, '', location.pathname + location.search);
   }

@@ -4,6 +4,11 @@ productName: AndromedaCli
 directories:
   output: release
 asar: true
+# Fuses of the Electron program itself: the exe cannot be turned into a plain Node interpreter (ELECTRON_RUN_AS_NODE) nor take options
+# from NODE_OPTIONS. The inspector arguments stay on: the smoke test drives the app through them.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
 # New versions come from the releases of this repository (SPEC 33.4): this writes app-update.yml into the app and latest.yml next to the installer.
 publish:
   provider: github

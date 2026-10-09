@@ -44,7 +44,12 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
     detail.textContent = item.detail ?? ''; // data: shown as plain text, never as HTML
     const row = document.createElement('div');
     row.className = 'queue-options';
-    for (const [value, key] of [['allow', k('queue.allow')], ['deny', k('queue.deny')], ['allow_always', k('queue.allowAlways')], ['deny_always', k('queue.denyAlways')]] as const) {
+    // The buttons are the answers the console offers: the "always" ones only for a call it can remember.
+    const labels: Record<string, string> = { allow: k('queue.allow'), deny: k('queue.deny'), allow_always: k('queue.allowAlways'), deny_always: k('queue.denyAlways') };
+    const offered = item.options ?? ['allow', 'deny'];
+    for (const value of offered) {
+      const key = labels[value];
+      if (!key) continue;
       const b = document.createElement('button');
       b.type = 'button';
       bindText(b, key);
@@ -53,7 +58,7 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
       keepFocus(b);
       row.append(b);
     }
-    row.append(infoIcon(k('queue.alwaysInfo')));
+    if (offered.includes('allow_always')) row.append(infoIcon(k('queue.alwaysInfo')));
     el.append(what, detail, row);
     return { el };
   }
@@ -133,6 +138,7 @@ export function createQueueDrawer(root: HTMLElement) {
   return {
     isOpen: () => open,
     toggle: () => setOpen(!open),
+    close: (): void => setOpen(false),
     /** A notification click: opens the drawer and brings that item into view (scrolling, never focus). */
     openOn(id: string): void {
       setOpen(true);

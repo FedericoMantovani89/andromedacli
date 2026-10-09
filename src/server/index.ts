@@ -20,6 +20,7 @@ import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
 import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
 import { PermissionMemory } from './questions/permission-memory';
+import { describeKey } from './questions/describe';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
@@ -28,6 +29,8 @@ import { failQueuedStart, launchAgent, launchResume, spawnAgent } from './agents
 import { ResumeService, type WakeResult } from './agents/resume';
 import { TicketStore } from './tickets/store';
 import { StepService } from './tickets/steps';
+import { RequestService } from './requests/service';
+import { RequestStore } from './requests/store';
 import { ReviewService } from './tickets/review';
 import { RecoveryService, replacementCheckout } from './tickets/recovery';
 import { MergeService } from './tickets/merge';
@@ -100,6 +103,8 @@ export interface StartOptions {
   projectsDir?: string;
   /** How often the budget grace period is checked without a turn (default 30 s; tests use less). */
   tickMs?: number;
+  /** A test seam: the clock of the requests between agents (the timeout is counted on it). */
+  requestNow?: () => number;
   /** A test seam: the clock of the sleep timer (the real one is used by default). */
   sleepClock?: SleepClock;
   /** A test seam: replaces the shipped table of installable tools (Phase 6F), so a test runs a trivial command instead of winget. */
@@ -308,8 +313,14 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     askConfirm: (q, onAnswer) => questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'confirm', payload: q.payload }, onAnswer).id,
     changed: () => broadcast(),
   });
-  /** Ends a session on purpose (a merged ticket, a finished review): its state becomes "finished", not "interrupted". */
-  const finishAgent = async (slug: string): Promise<void> => {
+  /**
+   * Ends a session on purpose: its state becomes "finished", not "interrupted". By default it ended for good (a merged ticket, a
+   * finished review) and its own requests are cancelled; `stopped` (a budget or loop stop, a limit suspension, a replacement) means
+   * its work goes on later, so its requests and their waiting steps stay for the resume or the replacement.
+   */
+  const finishAgent = async (slug: string, o: { stopped?: boolean } = {}): Promise<void> => {
+    if (o.stopped) requests.agentStopped(slug);
+    else requests.agentGone(slug);
     registry.markFinished(slug);
     await ptys.killTree(slug);
   };
@@ -351,7 +362,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tellAgent: (slug, text) => { inbox.push(slug, text); },
     tellMain: (text) => { inbox.push(projectName, text); },
     restrict: (slug, why) => { restrictions.set(slug, { reason: why }); },
-    stop: (slug) => { keepHandover(slug); return finishAgent(slug); },
+    stop: (slug) => { keepHandover(slug); return finishAgent(slug, { stopped: true }); },
     // The answer handler lives in budget/answers.ts; the service only asks.
     askUser: (q) => {
       questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, (answer) => { void onBudgetAnswer(answer, q.payload as { ticket: string }).catch((err) => budget.reportFailure('the budget answer', err)); });
@@ -371,7 +382,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     spawnReplacement: async (r) => {
       // The stopped agent's restriction goes with its session; the new name never inherits one.
       restrictions.clear(r.from);
-      if (ptys.status(r.from) === 'running') await finishAgent(r.from);
+      if (ptys.status(r.from) === 'running') await finishAgent(r.from, { stopped: true });
       const old = registry.get(r.from)?.git;
       // No fallback to a normal spawn: without the stopped agent's worktree the new one would start on a NEW branch.
       const checkout = replacementCheckout(runtime.git.worktrees, old);
@@ -398,6 +409,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     budget,
     profileOf: (ticket) => store.listAgents().find((a) => a.slug === ticket)?.profile ?? registry.get(ticket)?.profile ?? 'developer',
     readHandover,
+    // The live requests follow the ticket to the replacement's name (and back, when its start fails).
+    renamed: (from, to) => { requests.rename(from, to); },
     changed: () => broadcast(),
   });
   const onBudgetAnswer = budgetAnswerHandler({ budget, tickets, recovery, tellMain: (text) => { inbox.push(projectName, text); }, changed: () => broadcast() });
@@ -416,7 +429,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
       return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
     },
-    stop: (slug) => { keepHandover(slug); return finishAgent(slug); },
+    stop: (slug) => { keepHandover(slug); return finishAgent(slug, { stopped: true }); },
     workingSlugs: () => registry.list().filter((a) => a.role === 'agent' && a.state === 'working').map((a) => a.slug),
     isWorking: (slug) => { const a = registry.get(slug); return a !== undefined && a.role !== 'main' && a.state === 'working'; },
     processAlive: (slug) => ptys.status(slug) === 'running',
@@ -497,7 +510,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       // status it was stopped in): it is ended on purpose, so its exit alone would not give it back.
       const role = registry.get(slug)?.role;
       if (role === 'agent' && ticketStatusOf(slug) === 'in_progress') tickets.move(slug, 'suspended_limit');
-      await finishAgent(slug);
+      // An agent is resumed later and keeps its requests; a reviewer or a recovery ends for good.
+      await finishAgent(slug, { stopped: role === 'agent' });
       if (role === 'reviewer') review.abandonReview(slug);
       else if (role === 'recovery') recovery.abandon(slug);
     },
@@ -568,7 +582,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     changed: () => broadcast(),
   });
   const guardLog = new GuardLog(join(o.projectRoot, '.andromedacli', 'state', 'guard.jsonl'));
-  const steps = new StepService({
+  const steps: StepService = new StepService({
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: effectiveTestCommand,
@@ -578,7 +592,26 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     notifyMain: (_slug, text) => { inbox.push(projectName, text); },
     changed: () => broadcast(),
     stepClosed: (slug, o) => loop.onStepDone(slug, o),
+    // The request service is created just below; these are only called when a tool runs.
+    debts: (slug) => requests.debts(slug),
+    requestIds: (slug) => requests.idsFrom(slug),
   });
+  // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
+  const requestStore = new RequestStore(join(o.projectRoot, '.andromedacli', 'state', 'requests.json'));
+  requestStore.load();
+  const requests: RequestService = new RequestService({
+    store: requestStore, mainSlug: projectName,
+    agent: (slug) => { const a = registry.get(slug); return a ? { role: a.role, state: a.state } : undefined; },
+    ticketStatus: (slug) => tickets.get(slug)?.status,
+    push: (slug, text) => inbox.push(slug, text),
+    markWaiting: (slug, n, w) => steps.markWaiting(slug, n, w),
+    clearWaiting: (slug, id) => steps.clearWaiting(slug, id),
+    timeoutMs: () => config.agents.requestTimeoutMinutes * 60_000,
+    maxHops: () => config.agents.requestMaxHops,
+    now: o.requestNow ?? Date.now,
+    changed: () => broadcast(),
+  });
+  inbox.onAck((slug, id) => requests.onDelivered(slug, id));
   const launchLog = new Map<string, string[]>();
   // The scheduler's callbacks reach `ctx` (defined below) lazily, only once the server is running.
   const scheduler = new Scheduler({
@@ -603,7 +636,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       command: ctx.claudeCommand, role: 'main', slug: projectName, project: projectName,
       url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
       pluginDir: ctx.modDir, displayName: `${projectName} AndromedaCli`,
-      allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
+      allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__send_message', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup'] : undefined,
       appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), profiles: pickableProfiles(store.fields().profiles, listProfileNames(o.projectRoot, join(o.configDir, 'profiles'))), helpers: helperToolsText(shared.getPrereq()),
         noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedacli', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
       ...(resumeId !== undefined ? { resumeId } : {}),
@@ -635,7 +668,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get notificationsConfig() { return config.notifications; },
     applyNotifications: (n) => { config.notifications = n; },
     version: o.version ?? resolveVersion(appRoot()),
-    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
+    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, requests, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep, wake: waker,
     afterWorktreeCreated: o.afterWorktreeCreated,
     get git() { return runtime.git; },
@@ -675,7 +708,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       }
       if (e.type === 'session.start') resumedAwaitingStart.delete(slug);
       // The turn ended: a question its tool call was waiting on (for example an aborted turn) has no asker any more.
-      if (e.type === 'turn.complete') questions.dropFrom(slug);
+      if (e.type === 'turn.complete') { questions.dropFrom(slug); permissions.forgetPending(slug); }
       // A sign of life ends a silence before the registry's change is broadcast, or the panel would show the old silence (SPEC 32.2).
       if (registry.get(slug) !== undefined && registry.get(slug)?.role !== 'main') loop.detector.onModEvent(slug);
       registry.onModEvent(slug, e);
@@ -693,15 +726,20 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       }
     },
     tools: {
-      list_agents: async () => ({
-        agents: registry.list().map((a) => ({
-          slug: a.slug, profile: a.profile, role: a.role, state: a.state,
-          ...(a.goal ? { goal: a.goal.length > 300 ? `${a.goal.slice(0, 300)}…` : a.goal } : {}),
-          ...(a.state === 'queued' ? { queuedPosition: scheduler.position(a.slug) } : {}),
-          // Where the ticket is when it is not simply being written (suspended, delivered...): the main decides what to resume from it.
-          ...(() => { const t = a.role === 'agent' ? ticketStatusOf(a.slug) : undefined; return t && t !== 'in_progress' ? { ticket: t } : {}; })(),
-        })),
-      }),
+      list_agents: async (caller) => {
+        // The main also sees what only it can settle (escalated requests, questions to it): a restart or a lost message forgets nothing.
+        const held = caller === projectName ? requests.forMain() : [];
+        return {
+          agents: registry.list().map((a) => ({
+            slug: a.slug, profile: a.profile, role: a.role, state: a.state,
+            ...(a.goal ? { goal: a.goal.length > 300 ? `${a.goal.slice(0, 300)}…` : a.goal } : {}),
+            ...(a.state === 'queued' ? { queuedPosition: scheduler.position(a.slug) } : {}),
+            // Where the ticket is when it is not simply being written (suspended, delivered...): the main decides what to resume from it.
+            ...(() => { const t = a.role === 'agent' ? ticketStatusOf(a.slug) : undefined; return t && t !== 'in_progress' ? { ticket: t } : {}; })(),
+          })),
+          ...(held.length > 0 ? { requests: held } : {}),
+        };
+      },
       resume_agent: async (_slug, body) => {
         const names = (body as { names?: unknown } | null)?.names;
         if (!Array.isArray(names) || names.length === 0 || names.length > 50 || !names.every((n): n is string => typeof n === 'string' && n !== '')) {
@@ -727,9 +765,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const options = Array.isArray(b.options) ? b.options.filter((o): o is string => typeof o === 'string').slice(0, 8).map((o) => o.slice(0, 200)) : undefined;
         const permission = b.kind === 'permission';
         const tool = typeof b.tool === 'string' ? b.tool : '';
-        const detail = typeof b.detail === 'string' ? b.detail : '';
-        // The whole input as the mod saw it ("always" is exact; the detail shown to the user may be cut short). No key: never remembered.
+        // The whole input as the mod saw it ("always" is exact). No key (the input was too long to keep): never remembered.
         const key = typeof b.key === 'string' ? b.key : '';
+        // What the user is shown is built here from that key, so it is the call that gets remembered, not a text the client chose.
+        const detail = (key !== '' ? describeKey(key) : undefined) ?? (typeof b.detail === 'string' ? b.detail : '');
         // SPEC 32.3: an "always" answer given earlier for this exact call is answered at once, never shown (the guard still runs separately).
         const known = permission ? permissions.recall(slug, tool, key) : undefined;
         if (known) return questions.answerNow({ from: slug }, known);
@@ -737,7 +776,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const asked = questions.ask({
           from: slug, text: b.question, options: options && options.length > 0 ? options : undefined, multiSelect: b.multiSelect === true,
           kind: permission ? 'permission' : 'question',
-          tool: tool || undefined, detail: detail || undefined,
+          tool: tool || undefined, detail: detail || undefined, canRemember: key.trim() !== '',
         }, permission ? (answer) => {
           permissions.untrack(askedId);
           const verdict = answer === 'allow_always' ? 'allow' : answer === 'deny_always' ? 'deny' : undefined;
@@ -764,6 +803,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
           n: b.n, note: typeof b.note === 'string' ? b.note : undefined, skip: b.skip === true,
         });
       },
+      send_message: async (slug, body) => requests.send(slug, body),
       report_blocked: async (slug, body) => {
         const reason = (body as { reason?: unknown } | null)?.reason;
         if (typeof reason !== 'string' || reason.trim() === '') return { status: 'error', code: 'bad_request' };
@@ -863,7 +903,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     applyConfig: (next, applied) => {
       // In place, per sub-object: closures that read `config.budget` / `runtime.git` keep seeing the live object.
       if (isPlain(applied.agents)) {
-        for (const key of ['maxActiveGlobal', 'maxActivePerProject'] as const) {
+        // The request settings are read on every use (RequestService deps), so copying them is enough.
+        for (const key of ['maxActiveGlobal', 'maxActivePerProject', 'requestTimeoutMinutes', 'requestMaxHops'] as const) {
           if (key in applied.agents) config.agents[key] = next.agents[key];
         }
         limits.global = config.agents.maxActiveGlobal;
@@ -934,6 +975,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   // Only the grace period can move a budget step without a turn: checked on a timer that never keeps the process alive.
   const budgetTick = setInterval(() => {
     void budget.tick().catch((err) => budget.reportFailure('all agents', err));
+    try { requests.tick(); } catch { /* a failed tick is tried again at the next one */ } // a question nobody answered in time goes to the main
     loop.tick(); // never throws: the time signals only warn the main
     try { refreshSilence(); } catch { /* the chip is only a hint */ }
   }, o.tickMs ?? 30_000);
@@ -956,6 +998,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       records: store.listAgents(), registry, tickets, worktrees: runtime.git.worktrees, cleanStop: previousRunWasClean,
       worktreeExists: (path) => existsSync(path), abandonReview: (reviewer) => review.abandonReview(reviewer),
     });
+    // The time the console was off does not count against the requests' timeout.
+    requests.restartClocks();
     // What an earlier run never delivered stays only for agents that can still read it.
     for (const slug of inbox.slugs()) {
       const state = registry.get(slug)?.state;

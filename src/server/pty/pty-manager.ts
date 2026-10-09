@@ -11,6 +11,8 @@ interface Entry {
 }
 
 const SCROLLBACK_BYTES = 4 * 1024 * 1024;
+/** What a session that has ended keeps: reviewers get a new name every round, so the ended ones add up over a day. */
+const EXITED_SCROLLBACK_BYTES = 256 * 1024;
 
 type PtyOptions = { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> };
 
@@ -39,6 +41,7 @@ export class PtyManager {
     const old = this.entries.get(o.id);
     if (old && !old.exited) throw new Error(`pty ${o.id} already exists`);
     const pty = spawnPty(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
+    old?.ring.resize(SCROLLBACK_BYTES); // a resumed session has the full room again
     const entry: Entry = { pty, ring: old?.ring ?? new ByteRing(SCROLLBACK_BYTES), subs: old?.subs ?? new Set(), exited: false, cols: o.cols, rows: o.rows };
     this.entries.set(o.id, entry);
     pty.onData((data) => {
@@ -48,6 +51,7 @@ export class PtyManager {
     });
     pty.onExit(({ exitCode }) => {
       entry.exited = true;
+      entry.ring.resize(EXITED_SCROLLBACK_BYTES); // an ended session keeps its last part to read, not 4 MB for the rest of the run
       // A late exit of a process whose id was started again (a resume) is not the new session's exit: it must not mark it
       // interrupted nor revoke its token.
       if (this.entries.get(o.id) !== entry) return;

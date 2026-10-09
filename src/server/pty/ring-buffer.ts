@@ -16,12 +16,22 @@ export class ByteRing {
   private readonly modes = new Map<number, boolean>();
   private carry = '';
 
-  constructor(private readonly capacity: number) {}
+  constructor(private capacity: number) {}
 
   append(chunk: Buffer): void {
     this.trackModes(chunk);
     this.chunks.push(chunk);
     this.size += chunk.length;
+    this.trim();
+  }
+
+  /** A new limit: a smaller one drops the oldest part now (a session that ended keeps only its tail), a larger one gives room again. */
+  resize(capacity: number): void {
+    this.capacity = capacity;
+    this.trim();
+  }
+
+  private trim(): void {
     while (this.chunks.length > 1 && this.size - this.chunks[0]!.length >= this.capacity) {
       this.size -= this.chunks.shift()!.length;
       this.wrapped = true;

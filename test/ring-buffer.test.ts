@@ -52,3 +52,17 @@ it('appending to a full 4 MiB buffer stays cheap', () => {
   for (let i = 0; i < 2000; i++) r.append(chunk);
   expect(performance.now() - t).toBeLessThan(200);
 });
+
+it('resize keeps the tail of what is there, and the new size is the limit from then on; growing it back restores the room', () => {
+  const r = new ByteRing(100);
+  for (let i = 0; i < 10; i++) r.append(Buffer.from(`line ${i}\n`)); // 70 bytes
+  r.resize(20);
+  const small = r.snapshot().toString();
+  expect(small.length).toBeLessThanOrEqual(20);
+  expect(small.endsWith('line 9\n')).toBe(true);
+  for (let i = 10; i < 20; i++) r.append(Buffer.from(`line ${i}\n`));
+  expect(r.snapshot().length).toBeLessThanOrEqual(20);
+  r.resize(100);
+  for (let i = 20; i < 30; i++) r.append(Buffer.from(`line ${i}\n`));
+  expect(r.snapshot().length).toBeGreaterThan(40); // it grows again
+});

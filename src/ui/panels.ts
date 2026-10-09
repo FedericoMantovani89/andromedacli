@@ -7,7 +7,7 @@ import { api, wsUrl } from './api';
 import { reconcile } from './dom';
 import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
-import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyTicket, applyWaiting } from './chips';
+import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyRequests, applyTicket, applyWaiting } from './chips';
 import { SCROLLBACK, TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
 
@@ -39,7 +39,7 @@ function applyStale(el: HTMLElement, stale: boolean | undefined): void {
 }
 
 interface Panel extends PanelHandle {
-  setState(state: Activity, progress?: SessionInfo['progress'], stall?: StallInfo, ticket?: SessionInfo['ticket'], budget?: SessionInfo['budget'], loop?: SessionInfo['loop'], waiting?: number): void;
+  setState(state: Activity, progress?: SessionInfo['progress'], stall?: StallInfo, ticket?: SessionInfo['ticket'], budget?: SessionInfo['budget'], loop?: SessionInfo['loop'], waiting?: number, requests?: SessionInfo['requests']): void;
   dispose(): void;
   /** Fits the terminal to its box again (after the project's tab was hidden). */
   refit(): void;
@@ -83,11 +83,17 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
   const waitingEl = document.createElement('span');
   waitingEl.className = 'panel-waiting';
   waitingEl.hidden = true;
+  const requestsWaitingEl = document.createElement('span');
+  requestsWaitingEl.className = 'panel-requests waiting';
+  requestsWaitingEl.hidden = true;
+  const requestsOwedEl = document.createElement('span');
+  requestsOwedEl.className = 'panel-requests owed';
+  requestsOwedEl.hidden = true;
   readBtn.className = 'panel-read';
   bindText(readBtn, 'reader.open');
   readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
   readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
-  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, progressEl, readBtn);
+  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, requestsWaitingEl, requestsOwedEl, progressEl, readBtn);
 
   const host = document.createElement('div');
   host.className = 'panel-term';
@@ -137,7 +143,8 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
 
   return {
     root, term, refit,
-    setState: (state, progress, stall, ticket, budget, loop, waiting) => {
+    setState: (state, progress, stall, ticket, budget, loop, waiting, requests) => {
+      applyRequests(requestsWaitingEl, requestsOwedEl, requests);
       applyLoop(loopEl, loop);
       applyWaiting(waitingEl, waiting);
       applyStalled(stalledEl, stall);
@@ -166,7 +173,7 @@ export class Workspace {
   private lastAgents: SessionInfo[] = [];
   private newAgentControl: HTMLElement | undefined;
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
-  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; budget: HTMLElement; loop: HTMLElement; waiting: HTMLElement; pending: boolean; dormant: boolean; stale: HTMLElement }>();
+  private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; budget: HTMLElement; loop: HTMLElement; waiting: HTMLElement; requestsWaiting: HTMLElement; requestsOwed: HTMLElement; pending: boolean; dormant: boolean; stale: HTMLElement }>();
 
   /** `project` is the project this workspace shows: its terminals connect with it, whichever tab is on screen. */
   constructor(private readonly mainCol: HTMLElement, private readonly agentsCol: HTMLElement, mainId: string, private readonly project?: string) {
@@ -227,7 +234,7 @@ export class Workspace {
       const info = bySlug.get(item.slug)!;
       if (item.mode === 'panel') {
         const p = this.ensurePanel(info);
-        p.setState(info.state, info.progress, stallOf(info), info.ticket, info.budget, info.loop, info.waiting);
+        p.setState(info.state, info.progress, stallOf(info), info.ticket, info.budget, info.loop, info.waiting, info.requests);
         children.push(p.root);
       } else {
         this.dropPanel(item.slug); // the server keeps the scrollback; reconnecting restores it
@@ -281,6 +288,7 @@ export class Workspace {
       applyBudget(cached.budget, info);
       applyLoop(cached.loop, info.loop);
       applyWaiting(cached.waiting, info.waiting);
+      applyRequests(cached.requestsWaiting, cached.requestsOwed, info.requests);
       return cached.el;
     }
     const el = document.createElement('div');
@@ -309,9 +317,12 @@ export class Workspace {
     const waiting = document.createElement('span');
     waiting.className = 'panel-waiting';
     applyWaiting(waiting, info.waiting);
+    const requestsWaiting = document.createElement('span');
+    const requestsOwed = document.createElement('span');
+    applyRequests(requestsWaiting, requestsOwed, info.requests);
     const stale = document.createElement('span');
     applyStale(stale, info.stale);
-    el.append(title, meta, state, stalled, ticket, budget, loop, waiting, stale, progress);
+    el.append(title, meta, state, stalled, ticket, budget, loop, waiting, requestsWaiting, requestsOwed, stale, progress);
     if (dormant) this.dormantControls(el, info.slug);
     if (!pending) { // a queued agent has no terminal to expand yet
       const expand = document.createElement('button');
@@ -319,7 +330,7 @@ export class Workspace {
       expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
       el.append(expand);
     }
-    this.bars.set(info.slug, { el, state, progress, stalled, ticket, budget, loop, waiting, pending, dormant, stale });
+    this.bars.set(info.slug, { el, state, progress, stalled, ticket, budget, loop, waiting, requestsWaiting, requestsOwed, pending, dormant, stale });
     return el;
   }
 

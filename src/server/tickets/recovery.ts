@@ -11,7 +11,7 @@ export type Remedy = (typeof REMEDIES)[number];
 export interface RecoveryReport { verifiedSteps: number[]; diagnosis: string; remedy: Remedy; notes?: string }
 
 export interface RecoveryFacts {
-  checklist: { n: number; title: string; done: boolean }[];
+  checklist: { n: number; title: string; done: boolean; waitingOn?: { requestId: string; to: string } }[];
   commits: string[];
   diffStat: string;
   handover?: string;
@@ -21,6 +21,10 @@ export interface RecoveryFacts {
   repeatedTools: { tool: string; count: number }[];
   cause: 'budget' | 'loop';
 }
+
+/** A step line of the checklist as the recovery texts print it (a step waiting for an answer says so). */
+const stepLine = (s: { n: number; title: string; done: boolean; waitingOn?: { requestId: string; to: string } }): string =>
+  `  ${s.n}. [${s.done ? 'x' : ' '}] ${s.title}${s.waitingOn ? ` (waiting for ${s.waitingOn.requestId} (${s.waitingOn.to}))` : ''}`;
 
 type SpawnResult = { ok: true } | { ok: false; code: string; detail?: string };
 
@@ -52,6 +56,8 @@ export interface RecoveryDeps {
    * wrote none. Absent: the ticket's recorded note is used as it is.
    */
   readHandover?(slug: string): string | undefined;
+  /** The ticket record moved from `from` to `to` (a replacement, or its undo after a failed start): what names the agent follows. */
+  renamed?(from: string, to: string): void;
   changed(): void;
 }
 
@@ -126,7 +132,7 @@ export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' |
   const repeatedTools = [...seen].filter(([, count]) => count > REPEATED_OVER).map(([tool, count]) => ({ tool, count })).sort((a, b) => b.count - a.count || a.tool.localeCompare(b.tool));
 
   return {
-    checklist: t.steps.map((s) => ({ n: s.n, title: s.title, done: s.done })),
+    checklist: t.steps.map((s) => ({ n: s.n, title: s.title, done: s.done, ...(s.waitingOn ? { waitingOn: s.waitingOn } : {}) })),
     commits: log.code === 0 ? log.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [],
     diffStat: stat.code === 0 ? stat.stdout.trim().slice(0, 4000) : '',
     ...(t.handover ? { handover: t.handover } : {}),
@@ -148,7 +154,7 @@ export function recoveryGoal(i: { ticket: string; project: string; attempt: numb
     'Facts from the console (git, its own test run and the token ledger; not from the stopped agent):',
     `- stop cause: ${f.cause}`,
     '- checklist:',
-    ...(f.checklist.length > 0 ? f.checklist.map((s) => `  ${s.n}. [${s.done ? 'x' : ' '}] ${s.title}`) : ['  (no checklist)']),
+    ...(f.checklist.length > 0 ? f.checklist.map(stepLine) : ['  (no checklist)']),
     `- commits on the branch since project/${i.project}:`,
     ...(f.commits.length > 0 ? f.commits.map((c) => `  ${c}`) : ['  (none)']),
     `- changed files (git diff --stat project/${i.project}...HEAD):`,
@@ -191,7 +197,7 @@ export function replacementGoal(i: { from: string; project: string; ticket: Tick
     `Objective:\n${t.goal?.trim() ? t.goal.trim() : '(none recorded)'}`,
     '',
     'Checklist (kept; the closed steps are already committed on your branch):',
-    ...(t.steps.length > 0 ? t.steps.map((s) => `  ${s.n}. [${s.done ? 'x' : ' '}] ${s.title}`) : ['  (no checklist yet: study the code and save one with checklist_set)']),
+    ...(t.steps.length > 0 ? t.steps.map(stepLine) : ['  (no checklist yet: study the code and save one with checklist_set)']),
     '',
     `Handover note of the previous agent: ${t.handover?.trim() ? t.handover.trim() : '(none written)'}`,
   ];
@@ -404,6 +410,7 @@ export class RecoveryService {
     const goal = replacementGoal({ from, project: this.d.project, ticket: t, report: o.report, limit });
     const profile = this.d.profileOf(from);
     this.d.tickets.rename(from, to);
+    this.d.renamed?.(from, to);
     this.d.tickets.restart(to);
     if (limit !== undefined) this.d.budget.restart(to, limit);
     let started: SpawnResult;
@@ -414,6 +421,7 @@ export class RecoveryService {
     }
     if (!started.ok) {
       this.d.tickets.rename(to, from);
+      this.d.renamed?.(to, from);
       this.d.tickets.move(from, 'needs_user');
       this.d.changed();
       return { ok: false, code: 'spawn_failed', detail: started.detail ?? started.code };

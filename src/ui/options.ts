@@ -261,6 +261,8 @@ function budgetTab(env: Env): HTMLElement {
     fields(env, [
       { path: 'agents.maxActiveGlobal', label: k('options.agents.maxActiveGlobal'), kind: 'number' },
       { path: 'agents.maxActivePerProject', label: k('options.agents.maxActivePerProject'), kind: 'number' },
+      { path: 'agents.requestTimeoutMinutes', label: k('options.agents.requestTimeoutMinutes'), kind: 'number', tip: k('options.agents.requestTimeoutMinutes.tip') },
+      { path: 'agents.requestMaxHops', label: k('options.agents.requestMaxHops'), kind: 'number', tip: k('options.agents.requestMaxHops.tip') },
     ]),
     note(k('options.agents.maxActive.help')),
     heading(k('options.budget.tokens')),

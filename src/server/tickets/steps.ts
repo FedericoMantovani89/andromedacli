@@ -3,13 +3,15 @@ import { join } from 'node:path';
 import { commitStep } from '../git/commit';
 import { git } from '../git/git';
 import { pushBranch } from '../git/push';
+import { findMarkers } from '../requests/markers';
 import { validateChecklist, type ChecklistError, type Step } from './checklist';
 import type { TicketStore } from './store';
 import { runValidation } from './validate';
 
 export type StepRefusal =
   | 'out_of_order' | 'no_checklist' | 'no_worktree' | 'note_required' | 'secrets' | 'index_locked' | 'commit_failed'
-  | 'validation_failed' | 'no_test_command' | 'docs_empty' | 'already_delivered';
+  | 'validation_failed' | 'no_test_command' | 'docs_empty' | 'already_delivered'
+  | 'pending_requests' | 'unanswered_requests' | 'request_unanswered' | 'todo_left' | 'todo_check_failed';
 
 export type StepResult =
   | { status: 'closed'; n: number; total: number; sha?: string; delivered?: boolean; pushed?: boolean; pushNote?: string }
@@ -37,6 +39,10 @@ export interface StepDeps {
    * progress for the loop handling.
    */
   stepClosed?(slug: string, o: { skipped: boolean; empty: boolean }): void;
+  /** Open requests addressed to this session: what it still owes an answer to (SPEC 10). */
+  debts?(slug: string): string[];
+  /** Every request this session made, in any state: their `TODO-<id>` comments must be gone before the ticket is delivered. */
+  requestIds?(slug: string): string[];
 }
 
 const MIN_STUDY_NOTE = 10;
@@ -84,13 +90,45 @@ export class StepService {
     this.d.changed();
   }
 
+  /** A question was sent for step `n` (SPEC 10): the step stays open and `step_done` goes past it until the answer arrives. */
+  markWaiting(slug: string, n: number, w: { requestId: string; to: string }): Promise<{ ok: true } | { ok: false; detail: string }> {
+    return this.serial(slug, async () => {
+      const ticket = this.d.tickets.get(slug);
+      if (!ticket || ticket.steps.length === 0) return { ok: false as const, detail: 'save a checklist first (checklist_set)' };
+      const step = ticket.steps.find((s) => s.n === n);
+      if (!step) return { ok: false as const, detail: `there is no step ${n}` };
+      if (step.done) return { ok: false as const, detail: `step ${n} is already closed` };
+      if (step.waitingOn) return { ok: false as const, detail: `step ${n} already waits for ${step.waitingOn.requestId}: a step waits for one request, so ask for everything in one message or wait for that answer` };
+      if (n >= ticket.steps.length - 1) return { ok: false as const, detail: 'the validation and documentation steps cannot wait for an answer' };
+      const updated = this.d.tickets.setWaiting(slug, n, w);
+      const wt = this.d.worktreeOf(slug);
+      if (wt) this.writeChecklistFile(slug, wt.worktree, updated.steps);
+      this.d.changed();
+      return { ok: true as const };
+    });
+  }
+
+  /** The answer arrived: the step is workable again. Returns the step it was on; undefined when none waited for that request. */
+  clearWaiting(slug: string, requestId: string): Promise<{ n: number; title: string } | undefined> {
+    return this.serial(slug, async () => {
+      if (!this.d.tickets.get(slug)) return undefined;
+      const r = this.d.tickets.clearWaiting(slug, requestId);
+      if (!r) return undefined;
+      const wt = this.d.worktreeOf(slug);
+      if (wt) this.writeChecklistFile(slug, wt.worktree, r.ticket.steps);
+      this.d.changed();
+      return { n: r.step.n, title: r.step.title };
+    });
+  }
+
   private async close(slug: string, o: { n: number; note?: string; skip?: boolean }): Promise<StepResult> {
     const wt = this.d.worktreeOf(slug);
     if (!wt) return refuse('no_worktree', { detail: 'this agent has no worktree' });
     const ticket = this.d.tickets.get(slug);
     if (!ticket || ticket.steps.length === 0) return refuse('no_checklist', { detail: 'call checklist_set first' });
     if (ticket.status !== 'in_progress') return refuse('already_delivered', { detail: 'every step is closed and the branch was delivered' });
-    const next = ticket.steps.find((s) => !s.done);
+    // A step that waits for an answer is gone past: the agent works on the next one (SPEC 10).
+    const next = ticket.steps.find((s) => !s.done && !s.waitingOn);
     if (!next || next.n !== o.n) return refuse('out_of_order', { detail: next ? `the next open step is ${next.n}` : 'every step is closed' });
 
     const total = ticket.steps.length;
@@ -103,6 +141,29 @@ export class StepService {
       if (note.length < MIN_SKIP_NOTE) return refuse('note_required', { detail: `skipping a step needs a written reason of at least ${MIN_SKIP_NOTE} characters` });
     } else if (o.n === 1 && note.length < MIN_STUDY_NOTE) {
       return refuse('note_required', { detail: 'step 1 needs a note with what you found (files, conventions, risks)' });
+    }
+
+    // Requests (SPEC 10): the last two steps cannot close with a question open, and a comment of an answered request cannot stay.
+    const owed = this.d.debts?.(slug) ?? [];
+    if (isValidation || isDocs) {
+      const waiting = ticket.steps.filter((s) => s.waitingOn);
+      if (waiting.length > 0) {
+        return refuse('pending_requests', { detail: `these steps still wait for an answer: ${waiting.map((s) => `${s.n} (${s.waitingOn!.requestId})`).join(', ')}. Go on with the other steps; the console messages you when an answer arrives. If only waiting steps are left, end your turn.` });
+      }
+      if (owed.length > 0) return refuse('unanswered_requests', { detail: `answer these requests first with send_message: ${owed.join(', ')}` });
+    }
+    const owedHere = owed.filter((id) => next.title.includes(id));
+    if (owedHere.length > 0) return refuse('request_unanswered', { detail: `${owedHere.join(', ')} is still open: reply with send_message (type answer or unknown) before closing this step` });
+    const markerIds = isDocs ? (this.d.requestIds?.(slug) ?? []) : (next.resolved ?? []);
+    if (markerIds.length > 0) {
+      const hits = await findMarkers(wt.worktree, markerIds);
+      if (hits === undefined) return refuse('todo_check_failed', { detail: 'the console could not search the worktree for the TODO comments: try again in a moment' });
+      if (hits.length > 0) {
+        return refuse('todo_left', {
+          files: hits.map((h) => `${h.file}:${h.line}`),
+          detail: `these comments are still in the code: ${[...new Set(hits.map((h) => h.id))].join(', ')}. Finish the code each one stands for and remove the comment`,
+        });
+      }
     }
 
     if (isValidation && this.d.testsDisabled?.() !== true) {
@@ -170,7 +231,7 @@ export class StepService {
 
   /** The checklist as a file in the worktree (SPEC 8.4): it survives a compaction of the agent's context. */
   private writeChecklistFile(slug: string, worktree: string, steps: Step[]): void {
-    const lines = steps.map((s) => `- [${s.done ? 'x' : ' '}] ${s.n}. ${s.title}${s.skipped ? ' (skipped)' : ''}${s.note ? ` — ${s.note.replace(/\s+/g, ' ')}` : ''}`);
+    const lines = steps.map((s) => `- [${s.done ? 'x' : ' '}] ${s.n}. ${s.title}${s.skipped ? ' (skipped)' : ''}${s.waitingOn ? ` (waiting for ${s.waitingOn.requestId} (${s.waitingOn.to}))` : ''}${s.note ? ` — ${s.note.replace(/\s+/g, ' ')}` : ''}`);
     try {
       mkdirSync(join(worktree, '.andromedacli'), { recursive: true });
       writeFileSync(join(worktree, '.andromedacli', 'checklist.md'), `---\nticket: ${slug}\n---\n${lines.join('\n')}\n`, 'utf8');

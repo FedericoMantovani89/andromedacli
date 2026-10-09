@@ -36,6 +36,8 @@ const TOOL_ROLES: Record<string, Role[]> = {
   checklist_set: ['agent'],
   step_done: ['agent'],
   report_blocked: ['agent'],
+  // Requests between agents (SPEC 10): the console routes, checks the rules and keeps the clock.
+  send_message: ['main', 'agent'],
   // The review and merge flow (SPEC 15): the main asks, the reviewer answers once, the console does the rest.
   ticket_report: ['main'],
   request_review: ['main'],

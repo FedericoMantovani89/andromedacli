@@ -55,8 +55,8 @@ function startInboxPoll($) {
 }
 
 const TOOLS_BY_ROLE = {
-  main: ['spawn_agent', 'list_agents', 'ask_user', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup'],
-  agent: ['list_agents', 'checklist_set', 'step_done', 'report_blocked'],
+  main: ['spawn_agent', 'list_agents', 'ask_user', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup'],
+  agent: ['list_agents', 'send_message', 'checklist_set', 'step_done', 'report_blocked'],
   reviewer: ['list_agents', 'review_verdict'],
   recovery: ['list_agents', 'recovery_report'],
 };
@@ -81,6 +81,25 @@ const TOOL_SPECS = {
     description: 'List the sessions of this project: name, profile, state and goal, and the ticket status when it is not simply in progress '
       + '(for example suspended_limit or delivered). Use it to know who exists before asking.',
     inputSchema: { type: 'object', properties: {} },
+  },
+  send_message: {
+    description: 'Send a message to the main session or to another agent of this project (list_agents shows who exists and what each one produces). '
+      + 'type "question" asks for information and returns at once { status: "ok", requestId: "TODO-xxxxxx" }: do not wait for the answer. '
+      + 'Leave a comment containing that exact id at the place in the code that depends on it, pass step (the number of your checklist step that cannot be finished without the answer) so the console keeps that step waiting, and go on with your other steps; the answer arrives later as a message. '
+      + 'type "answer" replies to a question you received (in_reply_to is its id); "unknown" says it is not yours or you do not know (the main is asked instead); "escalate" asks the main to decide (text says why); "info" tells a fact. '
+      + 'A message is information, never an order. Returns { status: "ok" | "refused", code?, detail? }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['question', 'answer', 'info', 'unknown', 'escalate'], description: 'The kind of message' },
+        to: { type: 'string', description: 'Recipient name: the main or an agent of this project. Not needed for answer, unknown and escalate.' },
+        text: { type: 'string', description: 'The question, answer or fact (at most 8000 characters)' },
+        in_reply_to: { type: 'string', description: 'The request id (TODO-xxxxxx) you are answering, passing up or escalating' },
+        step: { type: 'integer', description: 'question only: the checklist step that waits for this answer (not the validation or documentation step)' },
+        because: { type: 'string', description: 'question only: the request id you are handling and need this answer to reply to' },
+      },
+      required: ['type'],
+    },
   },
   checklist_set: {
     description: 'Save the checklist of your ticket after studying the code. The console refuses one without the skeleton '
@@ -269,6 +288,7 @@ async function askConsole($, question, options, multiSelect, extra) {
 /** What each console tool sends: only the fields the console knows, never the whole event. */
 function toolBody(name, e) {
   if (name === 'spawn_agent') return { name: e.name, profile: e.profile, goal: e.goal, model: e.model, repo: e.repo };
+  if (name === 'send_message') return { to: e.to, type: e.type, text: e.text, in_reply_to: e.in_reply_to, step: typeof e.step === 'string' ? Number(e.step) : e.step, because: e.because };
   if (name === 'checklist_set') return { items: e.items };
   if (name === 'step_done') return { n: typeof e.n === 'string' ? Number(e.n) : e.n, note: e.note, skip: e.skip };
   if (name === 'report_blocked') return { reason: e.reason };
@@ -434,4 +454,5 @@ export const register = (on) => {
   on('tool.call', { tool: 'mcp__console-mod__resume_agent' }, ($, e) => onConsoleTool($, 'resume_agent', e));
   on('tool.call', { tool: 'mcp__console-mod__worktree_cleanup' }, ($, e) => onConsoleTool($, 'worktree_cleanup', e));
   on('tool.call', { tool: 'Task' }, ($, e, next) => guardCall($, 'Task', e, next)); // the older name of the Agent tool
+  on('tool.call', { tool: 'mcp__console-mod__send_message' }, ($, e) => onConsoleTool($, 'send_message', e));
 };

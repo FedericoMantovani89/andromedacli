@@ -43,3 +43,15 @@ it('onPush is called with the slug after each push and a throwing callback is ig
   expect(seen).toEqual(['w']);
   expect(a.slugs()).toEqual(['w']);
 });
+
+it('onAck is called with the slug and id of an acknowledged message only, and a throwing callback is ignored', () => {
+  const a = new Inbox();
+  const seen: string[] = [];
+  a.onAck(() => { throw new Error('boom'); });
+  a.onAck((slug, id) => seen.push(`${slug}:${id}`));
+  const id = a.push('w', 'm');
+  expect(a.ack('w', 'nope')).toBe(false);
+  expect(seen).toEqual([]);
+  expect(a.ack('w', id)).toBe(true);
+  expect(seen).toEqual([`w:${id}`]);
+});

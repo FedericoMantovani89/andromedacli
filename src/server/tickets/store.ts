@@ -110,17 +110,35 @@ export class TicketStore {
     return this.save({ ...this.existing(slug), tests });
   }
 
-  /** Closes the next open step. Anything else is refused, so a repeated or out-of-order `step_done` cannot double-commit. */
+  /** Closes the next open step that is not waiting for an answer. Anything else is refused, so a repeated or out-of-order `step_done` cannot double-commit. */
   markDone(slug: string, n: number, o: { note?: string; sha?: string; skipped?: boolean }): Ticket {
     const t = this.get(slug);
     if (!t || t.steps.length === 0) throw new Error('ticket.missing');
-    const next = t.steps.find((s) => !s.done);
+    const next = t.steps.find((s) => !s.done && !s.waitingOn);
     if (!next || next.n !== n) throw new Error('step.out_of_order');
     const closed: Step = { ...next, done: true };
     if (o.note !== undefined) closed.note = o.note;
     if (o.sha !== undefined) closed.sha = o.sha;
     if (o.skipped) closed.skipped = true;
     return this.save({ ...t, steps: t.steps.map((s) => (s.n === n ? closed : s)) });
+  }
+
+  /** A question was sent for step `n`: the step stays open but `markDone` goes past it until the answer arrives. */
+  setWaiting(slug: string, n: number, w: { requestId: string; to: string }): Ticket {
+    const t = this.existing(slug);
+    if (!t.steps.some((s) => s.n === n)) throw new Error('step.missing');
+    return this.save({ ...t, steps: t.steps.map((s) => (s.n === n ? { ...s, waitingOn: w } : s)) });
+  }
+
+  /** The answer arrived: the step is workable again and remembers the request (its comment must be removed before it closes). */
+  clearWaiting(slug: string, requestId: string): { ticket: Ticket; step: Step } | undefined {
+    const t = this.get(slug);
+    const found = t?.steps.find((s) => s.waitingOn?.requestId === requestId);
+    if (!t || !found) return undefined;
+    const { waitingOn: _gone, ...rest } = found;
+    const step: Step = { ...rest, resolved: [...(found.resolved ?? []), requestId] };
+    const ticket = this.save({ ...t, steps: t.steps.map((s) => (s.n === found.n ? step : s)) });
+    return { ticket, step };
   }
 
   block(slug: string, reason: string): Ticket {

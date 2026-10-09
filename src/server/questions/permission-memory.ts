@@ -33,6 +33,11 @@ export class PermissionMemory {
     return [...this.asked].filter(([id, a]) => id !== exceptId && a.slug === slug && a.tool === tool && a.key === key).map(([id]) => id);
   }
 
+  /** The waiting items of one agent are gone (its turn ended); what it was told to remember stays. */
+  forgetPending(slug: string): void {
+    for (const [id, a] of this.asked) if (a.slug === slug) this.asked.delete(id);
+  }
+
   forget(slug: string): void {
     this.bySlug.delete(slug);
     for (const [id, a] of this.asked) if (a.slug === slug) this.asked.delete(id);
