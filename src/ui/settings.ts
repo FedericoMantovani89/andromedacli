@@ -3,7 +3,6 @@ import type { PrereqResult, StateMessage } from '../shared/protocol';
 /** How often the shell commands of the agents used each optional helper (from the state), shown next to the helper. */
 export type HelperUse = NonNullable<StateMessage['helperUse']>;
 import { api } from './api';
-import { openOptions } from './options';
 import { openInstallDialog } from './install-dialog';
 import { bindText, k, language, languageName, resolveLanguage, setLanguage } from './i18n-client';
 
@@ -133,5 +132,15 @@ export function closeOverlay(): void {
 
 /** Opens the Options dialog (tabs: models, budget, git, guard, projects, language, prerequisites, plugins...; see options.ts). */
 export function openSettings(getState: () => StateMessage | undefined): void {
-  void openOptions(getState);
+  // The dialog's code (about 50 KB) loads when it is first opened (SPEC 33.2).
+  void import('./options').then((m) => m.openOptions(getState)).catch(showLoadFailed);
+}
+
+/** A part of the page could not be loaded (the console stopped?): one line at the bottom, gone after a few seconds. */
+export function showLoadFailed(): void {
+  const note = document.createElement('div');
+  note.className = 'load-failed';
+  bindText(note, k('common.loadFailed'));
+  document.body.append(note);
+  setTimeout(() => note.remove(), 4000);
 }

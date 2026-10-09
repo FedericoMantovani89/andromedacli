@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_FIELDS, ProjectStore } from '../project-store';
+import { PROFILE_FILE_RE } from '../../shared/slug';
 
-const PROFILE_FILE_RE = /^[a-z0-9]+(-[a-z0-9]+)*\.md$/;
 
 export type CopyResult = { ok: true } | { ok: false; code: string; detail?: string };
 

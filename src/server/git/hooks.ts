@@ -2,9 +2,9 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './git';
 import { commonDir, GitError, withRepoLock } from './worktree';
+import { SLUG_RE } from '../../shared/slug';
 
 const BRANCH = /^[A-Za-z0-9._/-]+$/;
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** The pre-push script (SPEC 9.5): only the agent's own branch, never a force, a delete or a tag. */
 const script = (branch: string): string => `#!/bin/sh
@@ -38,7 +38,7 @@ export function installPushHook(o: { repo: string; worktree: string; branch: str
 
 async function installPushHookUnlocked(o: { repo: string; worktree: string; branch: string; slug: string }): Promise<void> {
   if (!BRANCH.test(o.branch)) throw new GitError('git.badName', `invalid branch name ${o.branch}`);
-  if (!SLUG.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
+  if (!SLUG_RE.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
   const dir = join(await commonDir(o.repo), 'console-hooks', o.slug);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'pre-push');

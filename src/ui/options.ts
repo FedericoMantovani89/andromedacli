@@ -11,6 +11,7 @@ import { fillModelSelect, loadModelSelect } from './model-select';
 import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
 import { openSaveTemplateDialog } from './new-project';
+import { el } from './dom';
 
 /** What `GET /api/options` returns (the config is the effective one, defaults filled in). */
 interface OptionsPayload {
@@ -60,11 +61,6 @@ interface Env {
   profileEditing(on: boolean): void;
 }
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
-  const e = document.createElement(tag);
-  if (className) e.className = className;
-  return e;
-};
 const note = (key: string, params?: Record<string, string | number>): HTMLElement => {
   const p = el('p', 'settings-note');
   bindText(p, key, params);

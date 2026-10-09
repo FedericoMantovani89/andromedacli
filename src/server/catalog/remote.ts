@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resourcePath } from '../paths';
 import { writeJsonAtomic } from '../fs-atomic';
 
 export type CatalogSource = 'remote' | 'cache' | 'shipped';
@@ -13,7 +14,7 @@ export const FETCH_MAX_BYTES = 1024 * 1024;
 const RETRY_AFTER_FAILURE_MS = 60_000;
 
 /** Where the shipped catalogs live (a top-level folder, like `prompts/`). */
-export const catalogDir = (): string => resolve(import.meta.dirname, '..', '..', '..', 'catalog');
+export const catalogDir = (): string => resourcePath('catalog');
 
 export function readShipped(file: string): unknown {
   return JSON.parse(readFileSync(resolve(catalogDir(), file), 'utf8'));

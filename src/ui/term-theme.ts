@@ -1,5 +1,8 @@
 import type { ITerminalOptions } from '@xterm/xterm';
 
+/** Lines each agent terminal keeps in the page (SPEC 33.2): the server keeps the full scrollback and replays it on connect. */
+export const SCROLLBACK = 10_000;
+
 /** Terminal look shared by every xterm: it matches the console's graphite palette (see styles.css). */
 export const TERM_OPTIONS: ITerminalOptions = {
   fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace',

@@ -7,7 +7,11 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Added
+- Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
+
 ### Changed
+- Lighter console: the UI is minified and split (the reader's markdown libraries and the Options dialog load when first used) and served with ETag and Brotli instead of `no-store`; state pushes are merged and built once per project instead of once per socket and per change; one slug regex and one JSON reader; terminals keep 10 000 lines in the page instead of 20 000.
 - Review fixes for the above: the silence chip is pushed when it appears or goes (no longer waits for another event) and never shows for an agent that has just woken up; reviewers and recoveries get it too; "Always" is exact on the whole tool input (not the shortened line shown) and also answers identical requests already waiting; the silence threshold in Options has a tooltip.
 - Agents: the "not started" chip says why (Claude Code never reported in, or it has not taken its goal); a working agent with no sign of life for longer than the silence threshold (Options, Budget and limits) shows a chip too (report only, nothing is stopped).
 - Queue: a permission can be answered "Always allow" or "Always deny": it is remembered for that agent and the exact same tool call until its session ends (the guard still applies); each agent's panel shows how many of its items wait for the user.

@@ -11,3 +11,15 @@ export function reconcile(parent: HTMLElement, desired: HTMLElement[]): void {
     if (parent.children[i] !== child) parent.insertBefore(child, parent.children[i] ?? null);
   });
 }
+
+/** `document.createElement` with an optional class: the one element builder of the UI. */
+export const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  return e;
+};
+
+/** Buttons that must not take the keyboard from where it is (answering from the queue never moves the focus). */
+export function keepFocus(button: HTMLElement): void {
+  button.addEventListener('mousedown', (ev) => ev.preventDefault());
+}

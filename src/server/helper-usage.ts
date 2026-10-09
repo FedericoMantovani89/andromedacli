@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { writeJsonAtomic } from './fs-atomic';
 import { HELPER_IDS, helpersUsedIn, type HelperId } from './helper-tools';
+import { readJsonFile } from './json-file';
 
 /** What the Prerequisites tab shows: how many shell commands used each helper since the count started. Only command names are kept, never a command. */
 export interface HelperUse { since: string; counts: Partial<Record<HelperId, number>> }
@@ -18,16 +18,12 @@ export class HelperUsage {
   }
 
   private load(): HelperUse {
-    try {
-      if (existsSync(this.file)) {
-        const parsed = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<HelperUse>;
-        if (typeof parsed.since === 'string' && typeof parsed.counts === 'object' && parsed.counts !== null) {
-          const counts: HelperUse['counts'] = {};
-          for (const id of HELPER_IDS) { const n = (parsed.counts as Record<string, unknown>)[id]; if (typeof n === 'number' && n >= 0) counts[id] = n; }
-          return { since: parsed.since, counts };
-        }
-      }
-    } catch { /* a damaged file starts the count again */ }
+    const parsed = readJsonFile(this.file) as Partial<HelperUse> | undefined; // missing or damaged: the count starts again
+    if (parsed && typeof parsed.since === 'string' && typeof parsed.counts === 'object' && parsed.counts !== null) {
+      const counts: HelperUse['counts'] = {};
+      for (const id of HELPER_IDS) { const n = (parsed.counts as Record<string, unknown>)[id]; if (typeof n === 'number' && n >= 0) counts[id] = n; }
+      return { since: parsed.since, counts };
+    }
     return { since: this.now().toISOString(), counts: {} };
   }
 

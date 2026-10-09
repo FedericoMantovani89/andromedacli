@@ -2,11 +2,11 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:f
 import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
 import type { ProjectInfo } from '../project-store';
-import { TEMPLATE_ID_RE, userTemplatesDir, type TemplateData } from './load';
+import { userTemplatesDir, type TemplateData } from './load';
+import { PROFILE_FILE_RE, SLUG_RE } from '../../shared/slug';
 
 export type SaveResult = { ok: true; dir: string } | { ok: false; code: 'template.idInvalid' | 'template.exists' | 'template.invalid'; detail?: string };
 
-const PROFILE_FILE_RE = /^[a-z0-9]+(-[a-z0-9]+)*\.md$/;
 const MAX_ID = 40;
 
 /**
@@ -17,7 +17,7 @@ const MAX_ID = 40;
 export function saveTemplate(o: {
   projectRoot: string; project: ProjectInfo; configDir: string; id: string; name?: unknown; overwrite?: boolean;
 }): SaveResult {
-  if (typeof o.id !== 'string' || o.id.length > MAX_ID || !TEMPLATE_ID_RE.test(o.id)) return { ok: false, code: 'template.idInvalid' };
+  if (typeof o.id !== 'string' || o.id.length > MAX_ID || !SLUG_RE.test(o.id)) return { ok: false, code: 'template.idInvalid' };
   const name = nameMap(o.name, o.id);
   if (!name) return { ok: false, code: 'template.invalid', detail: 'name' };
   const dir = join(userTemplatesDir(o.configDir), o.id);

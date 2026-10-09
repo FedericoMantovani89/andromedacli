@@ -28,7 +28,7 @@ for (const f of readdirSync(i18nDir)) {
 // family: t('state.' + x) / t(`state.${x}`) -> every key starting with "state." counts as used.
 const used = new Set<string>();
 const dynamicPrefixes: string[] = [];
-const files = [...walk(join(root, 'src', 'ui')), ...walk(join(root, 'src', 'server')), ...walk(join(root, 'src', 'shared'))]
+const files = [...walk(join(root, 'src', 'ui')), ...walk(join(root, 'src', 'server')), ...walk(join(root, 'src', 'shared')), ...walk(join(root, 'src', 'electron'))]
   .filter((f) => !f.endsWith('i18n-checks.ts'));
 for (const f of files) {
   const text = readFileSync(f, 'utf8');

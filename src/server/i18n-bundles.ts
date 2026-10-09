@@ -1,10 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { resourcePath } from './paths';
 import { parseProperties } from './properties';
 
 export type Bundles = Map<string, Record<string, string>>;
 
-export const defaultI18nDir = (): string => resolve(import.meta.dirname, '..', 'i18n');
+export const defaultI18nDir = (): string => resourcePath('src', 'i18n');
 
 /** Loads every messages_<lang>.properties; a new language is just a new file (SPEC 5.9). */
 export function loadBundles(dir: string = defaultI18nDir()): Bundles {

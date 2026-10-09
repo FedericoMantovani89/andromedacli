@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { buildClaudeLaunch } from './pty/claude-launch';
 import { PtyManager } from './pty/pty-manager';
@@ -27,6 +27,7 @@ import type { ReviewService } from './tickets/review';
 import type { RecoveryService } from './tickets/recovery';
 import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
+import type { UiAssets } from './ui-assets';
 import { isValidProjectField, isValidTestCommand, PROJECT_FIELDS, PROJECT_RANGES } from './project-store';
 import { loadTemplates } from './templates/load';
 import { detectProject } from './templates/detect';
@@ -69,7 +70,6 @@ export interface Context extends V1Context {
   bypass: boolean;
   language: string;
   bundles: Bundles;
-  uiDist: string;
   testMode: boolean;
   configPath: string;
   /** The repositories agents can work in (see `discoverRepos`), read at each use: a repo made later is seen. */
@@ -143,14 +143,20 @@ export interface Context extends V1Context {
   applyConfig(config: Config, applied: Record<string, unknown>): void;
 }
 
-const STATIC: Record<string, { file: string; type: string }> = {
-  '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
-  '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
-  '/app.js.map': { file: 'app.js.map', type: 'application/json' },
-  '/styles.css': { file: 'styles.css', type: 'text/css; charset=utf-8' },
-  '/splash.jpg': { file: 'splash.jpg', type: 'image/jpeg' },
-  '/xterm.css': { file: 'xterm.css', type: 'text/css; charset=utf-8' },
-};
+/** The built UI files the page may ask for: the entry, its lazy chunks, the styles and the splash (a `.map` exists only in a build made with --map). */
+const STATIC_FILE = /^\/(app\.js|styles\.css|xterm\.css|splash\.jpg|chunks\/[\w.-]+\.js)(\.map)?$/;
+
+/** The state is built on every push and lists the profile folders each time: a few seconds of memory is plenty (SPEC 33.2). */
+const profileNamesMemo = new Map<string, { at: number; names: string[] }>();
+const forgetProfileNames = (): void => profileNamesMemo.clear();
+function profileNamesOf(projectRoot: string, userDir: string): string[] {
+  const key = `${projectRoot}|${userDir}`;
+  const hit = profileNamesMemo.get(key);
+  if (hit && Date.now() - hit.at < 5000) return hit.names;
+  const names = listProfileNames(projectRoot, userDir);
+  profileNamesMemo.set(key, { at: Date.now(), names });
+  return names;
+}
 
 export function buildState(ctx: Context): StateMessage {
   const status = (slug: string): SessionInfo['status'] => {
@@ -170,7 +176,7 @@ export function buildState(ctx: Context): StateMessage {
       ? { ticket: { status: ticket.status, round: ticket.round, maxRounds: MAX_REWORK_ROUNDS } }
       : {};
     // No budget (a reviewer, an agent without a worktree) is left out, so the UI shows n/a rather than zero.
-    const usage = rt?.role === 'agent' ? ctx.budget.usage(slug) : undefined;
+    const usage = rt?.role === 'agent' ? ctx.budget.usage(slug, ticket) : undefined;
     const budget = usage ? { budget: usage } : {};
     if (!rt?.git) return { state: base, ...pipeline, ...budget };
     const total = ticket?.steps.length ?? 0;
@@ -180,11 +186,23 @@ export function buildState(ctx: Context): StateMessage {
     else if (total === 0 && base === 'working') state = 'studying';
     return { state, ...(progress ? { progress } : {}), ...pipeline, ...budget };
   };
+  const launchOf = (slug: string): Pick<SessionInfo, 'launchStalled' | 'launchProblem'> => {
+    const problem = ctx.launchWatch.reason(slug);
+    return problem ? { launchStalled: true, launchProblem: problem } : {};
+  };
+  const silenceOf = (slug: string): Pick<SessionInfo, 'silentMinutes'> => {
+    const minutes = ctx.loop.silentFor(slug);
+    return minutes !== undefined ? { silentMinutes: minutes } : {};
+  };
+  const waitingOf = (slug: string): Pick<SessionInfo, 'waiting'> => {
+    const n = ctx.questions.pendingCount(slug);
+    return n > 0 ? { waiting: n } : {};
+  };
   const main: SessionInfo = { slug: ctx.projectName, profile: 'main', role: 'main', status: status(ctx.projectName), state: stateOf(ctx.projectName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
-    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...(ctx.launchWatch.reason(a.slug) ? { launchStalled: true as const, launchProblem: ctx.launchWatch.reason(a.slug)! } : {}), ...(ctx.loop.silentFor(a.slug) !== undefined ? { silentMinutes: ctx.loop.silentFor(a.slug)! } : {}), ...(ctx.questions.pendingCount(a.slug) > 0 ? { waiting: ctx.questions.pendingCount(a.slug) } : {}), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...launchOf(a.slug), ...silenceOf(a.slug), ...waitingOf(a.slug), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let testsDisabled: boolean | undefined;
   let squash: boolean | undefined;
@@ -202,7 +220,7 @@ export function buildState(ctx: Context): StateMessage {
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(testsDisabled ? { testsDisabled } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
+    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(testsDisabled ? { testsDisabled } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, profileNamesOf(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
     prereq: ctx.getPrereq(), helperUse: ctx.getHelperUse(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
     queue: ctx.questions.pending(),
     ...(ctx.projects ? { projects: ctx.projects.list() } : {}),
@@ -214,7 +232,8 @@ export function buildState(ctx: Context): StateMessage {
 export interface HostContext {
   getPort(): number;
   token: string;
-  uiDist: string;
+  /** The built UI files (SPEC 33.2). */
+  assets: UiAssets;
   /** The user's config folder (templates live under it). */
   configDir: string;
   version: string;
@@ -234,12 +253,20 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     const path = url.pathname;
 
     // Static UI files: no token needed, the page itself carries the token in its URL.
-    const asset = req.method === 'GET' ? STATIC[path] : undefined;
-    if (asset) {
-      const file = join(host.uiDist, asset.file);
-      if (!existsSync(file)) return fail(res, 404, 'not_found');
-      res.writeHead(200, { 'content-type': asset.type, 'cache-control': 'no-store' });
-      res.end(path === '/' ? renderIndex(readFileSync(file, 'utf8'), host.version) : readFileSync(file));
+    if (req.method === 'GET' && path === '/') {
+      const index = host.assets.get('index.html');
+      if (!index) return fail(res, 404, 'not_found');
+      res.writeHead(200, { 'content-type': index.type, 'cache-control': 'no-cache' }); // the page carries the version and links the hashed chunks
+      res.end(renderIndex(index.body.toString('utf8'), host.version));
+      return;
+    }
+    const file = req.method === 'GET' && STATIC_FILE.test(path) ? host.assets.get(path.slice(1), String(req.headers['accept-encoding'] ?? '')) : undefined;
+    if (file) {
+      // `no-cache` means "ask again with the ETag": a new build is seen at once, an unchanged file costs a 304 and no bytes.
+      const headers: Record<string, string> = { 'content-type': file.type, 'cache-control': 'no-cache', etag: file.etag, vary: 'accept-encoding', ...(file.encoding ? { 'content-encoding': file.encoding } : {}) };
+      if (req.headers['if-none-match'] === file.etag) { res.writeHead(304, headers); res.end(); return; }
+      res.writeHead(200, { ...headers, 'content-length': String(file.body.length) });
+      res.end(file.body);
       return;
     }
 
@@ -415,6 +442,7 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'GET' && path === '/api/profiles') return send(res, 200, describeProfiles(ctx.projectRoot, userProfiles));
     if (req.method === 'POST' && path === '/api/profiles/restore') {
       const restored = restoreShippedProfiles(userProfiles);
+      forgetProfileNames();
       ctx.broadcastState();
       return send(res, 200, { restored });
     }
@@ -426,11 +454,13 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       if (!checked.ok) return fail(res, 422, 'profile.fieldInvalid', { field: checked.field });
       if (checked.input.name !== oneProfile[1]) return fail(res, 422, 'profile.fieldInvalid', { field: 'name' });
       saveUserProfile(userProfiles, checked.input);
+      forgetProfileNames();
       ctx.broadcastState();
       return send(res, 200, describeProfiles(ctx.projectRoot, userProfiles).find((p) => p.name === checked.input.name) ?? {});
     }
     if (oneProfile && req.method === 'DELETE') {
       if (!removeUserProfile(userProfiles, oneProfile[1]!)) return fail(res, 404, 'profile.notFound');
+      forgetProfileNames();
       ctx.broadcastState();
       return send(res, 200, { name: oneProfile[1] });
     }

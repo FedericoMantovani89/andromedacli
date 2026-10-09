@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "description": "AndromedaCli: a local console that runs and shows several Claude Code sessions",
+  "author": "AndromedaCli",
+  "main": "out/main/index.mjs",
   "engines": {
     "node": ">=22"
   },
@@ -13,7 +16,11 @@
     "test": "tsx scripts/stamp-tests.ts begin && vitest run && tsx scripts/stamp-tests.ts done",
     "check": "tsx scripts/check-i18n.ts && tsx scripts/check-ui-literals.ts && tsc -p tsconfig.json --noEmit",
     "hooks": "tsx scripts/install-hooks.ts",
-    "shot": "tsx scripts/shot.ts"
+    "shot": "tsx scripts/shot.ts",
+    "build:app": "tsx scripts/build-app.ts",
+    "dist:dir": "npm run build:app && electron-builder --dir",
+    "dist": "npm run build:app && electron-builder",
+    "smoke:app": "tsx scripts/smoke-app.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -29,6 +36,8 @@
     "@types/node": "^26.6.4",
     "@types/node-notifier": "^8.0.5",
     "@types/ws": "^8.18.2",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "jsdom": "^30.1.2",
     "playwright-core": "^1.63.0",

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
 import { writeJsonAtomic } from '../fs-atomic';
+import { readJsonFile } from '../json-file';
 
 export interface InboxMessage { id: string; text: string }
 
@@ -20,17 +20,15 @@ export class Inbox {
 
   /** Reads the saved boxes (before anything is pushed). A missing or damaged file means no messages. */
   load(): void {
-    if (!this.file || !existsSync(this.file)) return;
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return;
-      for (const [slug, list] of Object.entries(parsed)) {
-        if (!Array.isArray(list)) continue;
-        const box = list.filter((m): m is InboxMessage => typeof m === 'object' && m !== null && typeof (m as InboxMessage).id === 'string' && typeof (m as InboxMessage).text === 'string')
-          .map((m) => ({ id: m.id, text: m.text }));
-        if (box.length > 0) this.boxes.set(slug, box);
-      }
-    } catch { /* a damaged file must not take the console down */ }
+    if (!this.file) return;
+    const parsed = readJsonFile(this.file);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return; // missing or damaged: no messages
+    for (const [slug, list] of Object.entries(parsed)) {
+      if (!Array.isArray(list)) continue;
+      const box = list.filter((m): m is InboxMessage => typeof m === 'object' && m !== null && typeof (m as InboxMessage).id === 'string' && typeof (m as InboxMessage).text === 'string')
+        .map((m) => ({ id: m.id, text: m.text }));
+      if (box.length > 0) this.boxes.set(slug, box);
+    }
   }
 
   /** Called after every push, with the target slug (a dormant agent wakes when work arrives for it). A throwing callback is ignored. */

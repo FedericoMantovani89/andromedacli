@@ -3,7 +3,8 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { git } from '../git/git';
 import { ProjectStore } from '../project-store';
 import { detectProject } from './detect';
-import { findTemplate, TEMPLATE_ID_RE } from './load';
+import { findTemplate } from './load';
+import { PROFILE_FILE_RE, SLUG_RE } from '../../shared/slug';
 
 export type ApplyResult = { ok: true } | { ok: false; code: string; detail?: string };
 
@@ -24,7 +25,6 @@ export interface ApplyOptions {
   shippedDir?: string;
 }
 
-const PROFILE_FILE_RE = /^[a-z0-9]+(-[a-z0-9]+)*\.md$/;
 const copyIfPresent = (from: string, to: string): void => { if (existsSync(from)) copyFileSync(from, to); };
 
 /** True when `root` is inside a git work tree. */
@@ -55,7 +55,7 @@ export async function initRepo(root: string): Promise<ApplyResult> {
  * dirty the user's checkout and would not reach the worktrees (the rules travel in `.andromedacli/rules.md` instead).
  */
 export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
-  if (!TEMPLATE_ID_RE.test(o.templateId)) return { ok: false, code: 'template.notFound' };
+  if (!SLUG_RE.test(o.templateId)) return { ok: false, code: 'template.notFound' };
   const template = findTemplate(o.templateId, { configDir: o.configDir, shippedDir: o.shippedDir });
   if (!template) return { ok: false, code: 'template.notFound' };
   if (!template.valid || !template.data) return { ok: false, code: 'template.invalid', detail: template.reason };

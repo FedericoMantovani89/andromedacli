@@ -1,0 +1,43 @@
+# The desktop app (SPEC 33.3): Windows x64 only. `npm run dist:dir` makes release/win-unpacked, `npm run dist` also the installer.
+appId: it.andromedacli.console
+productName: AndromedaCli
+directories:
+  output: release
+asar: true
+# node-pty 1.1 is N-API: its prebuilt win32-x64 files run in Electron as they are, nothing is compiled.
+npmRebuild: false
+# Native files must be real files on disk: node-pty (the terminals) and node-notifier (the toast helper).
+asarUnpack:
+  - node_modules/node-pty/**
+  - node_modules/node-notifier/**
+files:
+  - out/main/**
+  - package.json
+  - '!**/*.map'
+  - '!**/*.pdb'
+  # The server is one bundle and the page comes from app-root: only the native packages (and what node-notifier needs) stay as modules.
+  - '!node_modules/@xterm/**'
+  - '!node_modules/@types/**'
+  - '!node_modules/dompurify/**'
+  - '!node_modules/marked/**'
+  - '!node_modules/ws/**'
+  - '!node_modules/node-addon-api/**'
+  - '!node_modules/node-pty/{src,deps,third_party,scripts,typings,build}/**'
+  - '!node_modules/node-pty/prebuilds/{darwin-arm64,darwin-x64,win32-arm64}/**'
+  - '!node_modules/**/{test,tests,docs,example,examples}/**'
+# The shipped folders the server reads at run time sit outside the asar, as plain files (SPEC 33.3).
+extraResources:
+  - from: out/app-root
+    to: app-root
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # No code signing and no icon yet: this also avoids electron-builder's signing tool download.
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+# Only the languages the console has.
+electronLanguages: [en-US, it]

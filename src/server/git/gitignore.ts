@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
+import { readJsonFile } from '../json-file';
 
 /** Whether the folder has a `.gitignore` of its own at its top (a repository, or a checkout of one). */
 export const hasGitignore = (dir: string): boolean => existsSync(join(dir, '.gitignore'));
@@ -14,10 +15,8 @@ export class GitignoreAsked {
   constructor(private readonly file: string) {}
 
   private read(): string[] {
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-    } catch { return []; }
+    const parsed = readJsonFile(this.file);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
   }
 
   /** The repositories (relative names, '' for the project folder) not yet brought up; they are marked as brought up now. */

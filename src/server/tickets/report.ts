@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Translate } from '../../shared/i18n';
 import type { Step } from './checklist';
 import type { TestResult, Verdict } from './store';
+import { SLUG_RE } from '../../shared/slug';
 
 export interface ChangedFile { path: string; /** null for a binary file */ added: number | null; removed: number | null }
 
@@ -26,7 +27,6 @@ export interface ReportInput {
   generatedAt?: string;
 }
 
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const PLAIN = /^[A-Za-z0-9._/-]{1,200}$/;
 const DOC_BASENAME = /^(readme|changelog|contributing|license|authors|history)(\.(md|txt|rst|adoc|markdown))?$/i;
 const TIMESTAMP = /^[0-9TZ:.+-]{10,40}$/;
@@ -40,7 +40,7 @@ export function isDocFile(path: string): boolean {
 }
 
 export function reportPath(root: string, slug: string): string {
-  if (!SLUG.test(slug)) throw new Error('ticket.badSlug');
+  if (!SLUG_RE.test(slug)) throw new Error('ticket.badSlug');
   return join(root, '.andromedacli', 'tickets', slug, 'report.md');
 }
 

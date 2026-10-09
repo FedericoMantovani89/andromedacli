@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readJsonFile } from './json-file';
 
 const DEFAULT_VERSION = '0.0.1';
 const SAFE = /^[0-9A-Za-z.+_-]{1,40}$/;
@@ -25,10 +25,8 @@ function latestTag(dir: string, ref: string): string | undefined {
 export function resolveVersion(dir: string): string {
   const fromTag = latestTag(dir, 'main') ?? latestTag(dir, 'HEAD');
   if (fromTag) return fromTag;
-  try {
-    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: unknown };
-    if (typeof pkg.version === 'string' && clean(pkg.version)) return clean(pkg.version)!;
-  } catch { /* no package.json */ }
+  const pkg = readJsonFile(join(dir, 'package.json')) as { version?: unknown } | undefined; // no package.json: the default
+  if (pkg && typeof pkg.version === 'string' && clean(pkg.version)) return clean(pkg.version)!;
   return DEFAULT_VERSION;
 }
 

@@ -1,14 +1,11 @@
 import type { QueueItem } from '../shared/protocol';
 import { bindText, k } from './i18n-client';
-import { renderMarkdown } from './markdown';
+import { renderInto } from './markdown-lazy';
 import { formatWhen } from './statusbar';
+import { keepFocus } from './dom';
 
 /** Items the console itself puts in the queue (not an agent's question): a release to approve, a ticket that needs the user. */
 export interface Entry { el: HTMLElement }
-
-function keepFocus(button: HTMLElement): void {
-  button.addEventListener('mousedown', (ev) => ev.preventDefault());
-}
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -111,7 +108,7 @@ export function createConfirmEntry(item: QueueItem, send: (answer: string) => vo
     }
     const report = document.createElement('div');
     report.className = 'queue-report';
-    report.innerHTML = renderMarkdown(str(t.report)); // sanitised: the report holds text written by agents
+    renderInto(report, str(t.report)); // sanitised when formatted: the report holds text written by agents
     body.push(details(k('queue.confirm.report'), {}, report));
     el.append(details(k('queue.confirm.ticket'), { slug: str(t.slug) }, ...body));
   }

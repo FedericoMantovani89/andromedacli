@@ -1,6 +1,8 @@
 docs/
 node_modules/
 dist/
+out/
+release/
 # the console's own state when it runs on this very repository
 .andromedacli/
 # scratch space of the executing-projects skill

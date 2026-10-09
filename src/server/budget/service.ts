@@ -89,8 +89,9 @@ export class BudgetService {
   }
 
   /** Undefined (n/a, never zero) without a budget or before the first turn this project recorded for the agent. Served from memory. */
-  usage(slug: string): { used: number; limit: number; step: BudgetStep } | undefined {
-    const b = this.d.tickets.get(slug)?.budget;
+  /** `ticket`: the agent's ticket when the caller has just read it (the state builder reads each file once). */
+  usage(slug: string, ticket?: { budget?: { limit: number; step: BudgetStep } }): { used: number; limit: number; step: BudgetStep } | undefined {
+    const b = (ticket ?? this.d.tickets.get(slug))?.budget;
     if (!b) return undefined;
     const total = this.d.ledger.totalFor(slug, this.scope);
     if (total.turns === 0) return undefined;

@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { SLUG_RE } from '../../shared/slug';
 
 export interface ReadingEntry {
   /** Per-agent sequence number, from 1. */
@@ -16,7 +17,6 @@ export interface ReadingOptions {
   keep?: number;
 }
 
-const SAFE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
  * The last answers of each session, for the "read" panel (SPEC 5.5). Kept in memory (last 50) and appended to a JSONL file
@@ -39,7 +39,7 @@ export class ReadingStore {
   on(cb: (slug: string, e: ReadingEntry) => void): void { this.listeners.push(cb); }
 
   add(slug: string, text: string): void {
-    if (!SAFE_NAME.test(slug) || text.trim() === '') return;
+    if (!SLUG_RE.test(slug) || text.trim() === '') return;
     const list = this.load(slug);
     const entry: ReadingEntry = { n: (this.counters.get(slug) ?? 0) + 1, at: new Date().toISOString(), text };
     if (Buffer.byteLength(text) > this.maxText) {
@@ -54,7 +54,7 @@ export class ReadingStore {
   }
 
   list(slug: string): ReadingEntry[] {
-    if (!SAFE_NAME.test(slug)) return [];
+    if (!SLUG_RE.test(slug)) return [];
     return [...this.load(slug)];
   }
 

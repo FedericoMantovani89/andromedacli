@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
+import { readJsonFile } from './json-file';
 
 /** `testCommand` is what the console runs for the validation step of every ticket (SPEC 8.3); the user writes it. */
 export interface ProjectInfo {
@@ -148,13 +149,8 @@ export class ProjectStore {
   }
 
   listAgents(): AgentRecord[] {
-    if (!existsSync(this.agentsFile)) return [];
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.agentsFile, 'utf8'));
-      return Array.isArray(parsed) ? (parsed as AgentRecord[]) : []; // a damaged file must not take the console down
-    } catch {
-      return [];
-    }
+    const parsed = readJsonFile(this.agentsFile); // missing or damaged: no agents
+    return Array.isArray(parsed) ? (parsed as AgentRecord[]) : [];
   }
 
   /** Forgets an agent whose creation failed (a normal agent stays on record: the name stays reserved). */
@@ -184,12 +180,8 @@ export class ProjectStore {
   }
 
   private readJson(name: string): Record<string, unknown> | undefined {
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(join(this.stateDir, name), 'utf8'));
-      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
-    } catch {
-      return undefined; // missing or damaged: treated as no saved state
-    }
+    const parsed = readJsonFile(join(this.stateDir, name)); // missing or damaged: treated as no saved state
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
   }
 
   /** The main's last session id (`state/main.json`), kept so a restart resumes its context. */

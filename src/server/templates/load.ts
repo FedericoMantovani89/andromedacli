@@ -1,9 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { resourcePath } from '../paths';
 import { isValidProjectField, isValidTestCommand } from '../project-store';
+import { SLUG_RE } from '../../shared/slug';
 
 /** Template ids are folder names: the slug rule (no separators, no traversal). */
-export const TEMPLATE_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_JSON_BYTES = 64 * 1024;
 
 export interface TemplateData {
@@ -36,7 +37,7 @@ export interface TemplateEntry {
 }
 
 /** Where the shipped templates live: `templates/` at the repository root, next to `prompts/`. */
-export const shippedTemplatesDir = (): string => resolve(import.meta.dirname, '..', '..', '..', 'templates');
+export const shippedTemplatesDir = (): string => resourcePath('templates');
 export const userTemplatesDir = (configDir: string): string => join(configDir, 'templates');
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -123,7 +124,7 @@ function scan(root: string, source: TemplateEntry['source']): TemplateEntry[] {
   if (!existsSync(root)) return [];
   const out: TemplateEntry[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !TEMPLATE_ID_RE.test(entry.name)) continue; // anything else is not a template
+    if (!entry.isDirectory() || !SLUG_RE.test(entry.name)) continue; // anything else is not a template
     out.push(readTemplate(join(root, entry.name), entry.name, source));
   }
   return out;
@@ -138,4 +139,4 @@ export function loadTemplates(o: { configDir: string; shippedDir?: string }): Te
 }
 
 export const findTemplate = (id: string, o: { configDir: string; shippedDir?: string }): TemplateEntry | undefined =>
-  TEMPLATE_ID_RE.test(id) ? loadTemplates(o).find((t) => t.id === id) : undefined;
+  SLUG_RE.test(id) ? loadTemplates(o).find((t) => t.id === id) : undefined;

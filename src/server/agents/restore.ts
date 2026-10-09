@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { resourcePath } from '../paths';
 import type { AgentRecord } from '../project-store';
 import type { AgentRegistry, Role } from './registry';
 import type { TicketStore, Ticket } from '../tickets/store';
@@ -102,7 +103,7 @@ const label = (a: RestoredAgent): string => `${a.slug}${a.ticket ? ` (ticket: ${
 /** The one message the main gets after a restart (`prompts/restart-notice.md` filled with the lists); undefined when nothing needs saying. */
 export function renderRestartNotice(r: RestoreResult, o: { promptsDir?: string } = {}): string | undefined {
   if (r.dormant.length + r.interrupted.length + r.stopped.length + r.repaired.length === 0) return undefined;
-  const dir = o.promptsDir ?? resolve(import.meta.dirname, '..', '..', '..', 'prompts');
+  const dir = o.promptsDir ?? resourcePath('prompts');
   const template = readFileSync(join(dir, 'restart-notice.md'), 'utf8').trim();
   const values: Record<string, string> = {
     dormant: list(r.dormant.map(label)),

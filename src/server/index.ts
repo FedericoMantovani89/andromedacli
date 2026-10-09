@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createRequestHandler, type Context, type HostContext } from './http';
@@ -20,6 +20,8 @@ import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
 import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
 import { PermissionMemory } from './questions/permission-memory';
+import { appRoot, resourcePath } from './paths';
+import { UiAssets } from './ui-assets';
 import { ReadingStore } from './reading/store';
 import { failQueuedStart, launchAgent, launchResume, spawnAgent } from './agents/spawn';
 import { ResumeService, type WakeResult } from './agents/resume';
@@ -66,6 +68,7 @@ import { WakeService } from './agents/wake';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
+import { readJsonFile } from './json-file';
 
 export interface StartOptions {
   port: number;
@@ -127,6 +130,8 @@ export interface RunningServer {
   closeProject(name: string, purge?: boolean): Promise<void>;
   /** The open projects, in the order they were opened. */
   projects(): ProjectTab[];
+  /** Agent sessions (not the mains) whose process is running, over every project: the desktop app asks before closing with any. */
+  runningAgentCount(): number;
   close(): Promise<void>;
 }
 
@@ -626,7 +631,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     notifier, presence, notify,
     get notificationsConfig() { return config.notifications; },
     applyNotifications: (n) => { config.notifications = n; },
-    version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
+    version: o.version ?? resolveVersion(appRoot()),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep, wake: waker,
     afterWorktreeCreated: o.afterWorktreeCreated,
@@ -634,7 +639,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get budgetConfig() { return config.budget; },
     get guardMode() { return runtime.guardMode; },
     detectedTestCommand,
-    modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resolve(import.meta.dirname, '..', '..', 'mod') : undefined)),
+    modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resourcePath('mod') : undefined)),
     promptsDir: join(o.projectRoot, '.andromedacli', 'state', 'prompts'),
     guard: (slug, tool, input) => {
       // Which optional helpers the shell commands use (only counters are kept): the Prerequisites tab shows whether they are used.
@@ -831,7 +836,6 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get bypass() { return runtime.bypass; },
     get language() { return shared.language(); },
     bundles,
-    uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'),
     testMode: process.env.CONSOLE_TEST === '1',
     configPath,
     repos, forgetRepos, prepareRepo,
@@ -1000,11 +1004,9 @@ const projectsFile = (configDir: string): string => join(configDir, 'projects.js
 
 /** The remembered projects; a damaged or missing file is no projects. */
 function readProjectsFile(configDir: string): { root: string; name: string }[] {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(projectsFile(configDir), 'utf8'));
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((p): p is { root: string; name: string } => typeof p?.root === 'string' && typeof p?.name === 'string');
-  } catch { return []; }
+  const parsed = readJsonFile(projectsFile(configDir));
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((p): p is { root: string; name: string } => typeof p?.root === 'string' && typeof p?.name === 'string');
 }
 
 /** The same folder, as the projects compare it: resolved, and case-insensitive on Windows. */
@@ -1040,8 +1042,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   // What the request handler needs from the console itself: it answers even when no project is open.
   const host: HostContext = {
-    getPort: () => port, token, uiDist: resolve(import.meta.dirname, '..', '..', 'dist', 'ui'), configDir: o.configDir,
-    version: o.version ?? resolveVersion(resolve(import.meta.dirname, '..', '..')),
+    getPort: () => port, token, assets: new UiAssets(resourcePath('dist', 'ui'), process.env.CONSOLE_APP_ROOT === undefined), configDir: o.configDir,
+    version: o.version ?? resolveVersion(appRoot()),
     get bundles() { return shared.bundles; },
     get projects() { return shared.projectsApi; },
     ensurePrereq: () => shared.ensurePrereq(),
@@ -1075,7 +1077,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const utilityPtys = new PtyManager();
   const installer = new InstallService({
     ...(o.installTable ? { table: o.installTable } : {}),
-    ptys: utilityPtys, cwd: resolve(import.meta.dirname, '..', '..'), logPath: join(o.configDir, 'install.log'),
+    ptys: utilityPtys, cwd: appRoot(), logPath: join(o.configDir, 'install.log'),
     prereq: () => shared.ensurePrereq(), refresh: () => shared.refreshPrereq(), changed: () => ws.broadcastState(),
     ...(o.installRunner ?? o.prereqRunner ? { run: (o.installRunner ?? o.prereqRunner)! } : {}),
   });
@@ -1118,12 +1120,10 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   // A sleep saved by an earlier run is re-armed once the projects run again (Phase 6A): a time still ahead gets its timer, a time that
   // has passed gets one probe at once. The timer is console-wide, so the host restores it, not a project.
   let savedSleep: SleepState | undefined;
-  try {
-    const saved = JSON.parse(readFileSync(sleepFile, 'utf8')) as Partial<SleepState>;
-    if (saved && (saved.phase === 'sleeping' || saved.phase === 'probing') && typeof saved.attempt === 'number') {
-      savedSleep = { until: typeof saved.until === 'string' ? saved.until : undefined, ...(saved.kind ? { kind: saved.kind } : {}), attempt: saved.attempt, phase: saved.phase };
-    }
-  } catch { /* no saved state, or unreadable: nothing to restore */ }
+  const saved = readJsonFile(sleepFile) as Partial<SleepState> | undefined; // no saved state, or unreadable: nothing to restore
+  if (saved && (saved.phase === 'sleeping' || saved.phase === 'probing') && typeof saved.attempt === 'number') {
+    savedSleep = { until: typeof saved.until === 'string' ? saved.until : undefined, ...(saved.kind ? { kind: saved.kind } : {}), attempt: saved.attempt, phase: saved.phase };
+  }
 
   /** Checks a folder and a name, opens the project (runtime, main session) and remembers it. */
   const addProject = (a: AddProjectOptions): Promise<{ name: string }> => exclusive(async () => {
@@ -1273,6 +1273,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     addProject: (root, name) => addProject({ root, ...(name !== undefined ? { name } : {}) }),
     closeProject,
     projects: () => runtimes.map((r) => r.summary()),
+    runningAgentCount: () => runtimes.reduce((n, r) => n + r.ctx.registry.list().filter((a) => a.role !== 'main' && r.ctx.ptys.status(a.slug) === 'running').length, 0),
     close: async () => {
       closing = true;
       shared.sleep.close();

@@ -1,14 +1,9 @@
 import type { QueueItem } from '../shared/protocol';
 import { api } from './api';
-import { reconcile } from './dom';
+import { keepFocus, reconcile } from './dom';
 import { bindText, k, setPlaceholder } from './i18n-client';
 import { infoIcon } from './info-icon';
 import { createBudgetEntry, createConfirmEntry, createDecisionEntry, createWeeklyEntry, type Entry } from './console-items';
-
-/** Buttons that must not take the keyboard from where it is (answering from the queue never moves the focus). */
-function keepFocus(button: HTMLElement): void {
-  button.addEventListener('mousedown', (ev) => ev.preventDefault());
-}
 
 /** The console's own decision kinds that have an entry of their own (`payload.kind`). */
 function payloadKind(item: QueueItem): unknown {

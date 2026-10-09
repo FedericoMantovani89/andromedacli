@@ -1,6 +1,6 @@
 import { api } from './api';
 import { bindText, k, setPlaceholder } from './i18n-client';
-import { renderMarkdown } from './markdown';
+import { renderInto } from './markdown-lazy';
 
 export interface ReadingEntry { n: number; at: string; text: string; truncated?: true }
 
@@ -50,7 +50,7 @@ export function createReader(root: HTMLElement) {
     if (!e) return;
     const html = document.createElement('div');
     html.className = 'markdown';
-    html.innerHTML = renderMarkdown(e.text); // sanitised: answers are untrusted text
+    renderInto(html, e.text); // sanitised when formatted: answers are untrusted text
     content.append(...(e.truncated ? [note] : []), html);
     note.hidden = !e.truncated;
     for (const b of turns.querySelectorAll<HTMLElement>('button')) b.classList.toggle('selected', Number(b.dataset.n) === n);

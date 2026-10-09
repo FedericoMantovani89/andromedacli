@@ -1,6 +1,9 @@
 export const SLUG_MIN = 3;
 export const SLUG_MAX = 40;
-const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A name made of lowercase words joined by dashes: agents, profiles, templates, tickets (it is also what keeps a name from escaping its folder). */
+export const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A profile file: a slug and `.md`. */
+export const PROFILE_FILE_RE = /^[a-z0-9]+(-[a-z0-9]+)*\.md$/;
 // Generic words, English and Italian; "-<digits>" variants are generic too (configurable in Phase 6).
 export const GENERIC_WORDS = ['agent', 'agente', 'task', 'test', 'prova', 'nuovo', 'nuova', 'fix', 'work', 'lavoro', 'temp'];
 // Windows device names cannot be file or folder names, and the slug becomes both later (ticket folder, worktree).

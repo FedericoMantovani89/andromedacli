@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { git } from './git';
+import { SLUG_RE } from '../../shared/slug';
 
 export class GitError extends Error {
   constructor(public readonly code: string, message?: string) {
@@ -9,7 +10,6 @@ export class GitError extends Error {
   }
 }
 
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const PROJECT = /^[A-Za-z0-9._-]+$/;
 const fwd = (p: string): string => p.replace(/\\/g, '/');
 
@@ -89,7 +89,7 @@ export async function checkSpawnable(o: { repo: string; project: string; slug: s
  */
 export function createReviewWorktree(o: { repo: string; slug: string; sha: string; dir?: string }): Promise<{ path: string }> {
   return withRepoLock(o.repo, async () => {
-    if (!SLUG.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
+    if (!SLUG_RE.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
     if (!/^[0-9a-f]{7,40}$/.test(o.sha)) throw new GitError('git.badName', `invalid commit ${o.sha}`);
     const path = worktreePathFor(o.repo, o.slug, o.dir);
     if (existsSync(path)) throw new GitError('git.worktreeExists', `folder ${path} already exists`);
@@ -131,7 +131,7 @@ export function createAgentWorktree(o: { repo: string; project: string; slug: st
  * branch that another worktree has checked out, so the old worktree must be gone first. A failure removes the folder, never the branch.
  */
 async function resumeBranchWorktreeUnlocked(o: { repo: string; project: string; slug: string; dir?: string; branch: string }): Promise<{ path: string; branch: string }> {
-  if (!SLUG.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
+  if (!SLUG_RE.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
   if (!/^[A-Za-z0-9._/-]+$/.test(o.branch) || o.branch.startsWith('-')) throw new GitError('git.badName', `invalid branch ${o.branch}`);
   const path = worktreePathFor(o.repo, o.slug, o.dir);
   if (existsSync(path)) throw new GitError('git.worktreeExists', `folder ${path} already exists`);
@@ -152,7 +152,7 @@ async function resumeBranchWorktreeUnlocked(o: { repo: string; project: string; 
 }
 
 async function createAgentWorktreeUnlocked(o: { repo: string; project: string; slug: string; dir?: string }): Promise<{ path: string; branch: string }> {
-  if (!SLUG.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
+  if (!SLUG_RE.test(o.slug)) throw new GitError('git.badName', `invalid slug ${o.slug}`);
   const project = await ensureProjectBranchUnlocked(o.repo, o.project);
   const branch = agentBranchFor(o.project, o.slug);
   const path = worktreePathFor(o.repo, o.slug, o.dir);

@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { resourcePath } from './paths';
 import { configDir } from './config';
+import { SLUG_RE } from '../shared/slug';
 
 export interface Profile {
   name: string;
@@ -15,8 +17,7 @@ export interface Profile {
   source: 'project' | 'user' | 'shipped';
 }
 
-const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const promptsDir = (): string => resolve(import.meta.dirname, '..', '..', 'prompts');
+const promptsDir = (): string => resourcePath('prompts');
 
 /** Frontmatter subset: top-level `key: value` lines; nested blocks (like `console:`) are skipped. */
 function parseFrontmatter(text: string): { meta: Record<string, string>; consoleKeys: Record<string, string>; body: string } {
@@ -51,7 +52,7 @@ function readProfile(file: string, name: string, source: Profile['source']): Pro
 
 /** SPEC 11.4: the project's profiles override the user's, which override the shipped ones. */
 export function loadProfile(name: string, projectRoot: string, userDir: string = join(configDir(), 'profiles')): Profile | undefined {
-  if (!NAME_RE.test(name)) return undefined; // also rules out path traversal
+  if (!SLUG_RE.test(name)) return undefined; // also rules out path traversal
   return readProfile(join(projectRoot, '.andromedacli', 'profiles', `${name}.md`), name, 'project')
     ?? readProfile(join(userDir, `${name}.md`), name, 'user')
     ?? readProfile(join(promptsDir(), 'profiles', `${name}.md`), name, 'shipped');
@@ -61,7 +62,7 @@ const shippedDir = (): string => join(promptsDir(), 'profiles');
 const SHIPPED_ORDER = ['developer', 'reviewer', 'recovery'];
 
 function namesIn(dir: string): string[] {
-  try { return readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).filter((n) => NAME_RE.test(n)); } catch { return []; }
+  try { return readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).filter((n) => SLUG_RE.test(n)); } catch { return []; }
 }
 
 /** Every profile a project can use: the shipped ones first (in their usual order), then the others by name (the user's and the project's). */
@@ -111,7 +112,7 @@ const MAX_BODY = 32 * 1024;
 export function validateProfileInput(v: unknown): { ok: true; input: ProfileInput } | { ok: false; field: string } {
   if (typeof v !== 'object' || v === null) return { ok: false, field: 'profile' };
   const o = v as Record<string, unknown>;
-  if (typeof o.name !== 'string' || !NAME_RE.test(o.name) || o.name.length > 40) return { ok: false, field: 'name' };
+  if (typeof o.name !== 'string' || !SLUG_RE.test(o.name) || o.name.length > 40) return { ok: false, field: 'name' };
   if (typeof o.description !== 'string' || o.description.length > 200 || /[\r\n]/.test(o.description)) return { ok: false, field: 'description' };
   const model = typeof o.model === 'string' ? o.model.trim() : '';
   if (model !== '' && model !== 'default' && !MODEL_RE.test(model)) return { ok: false, field: 'model' };
@@ -132,7 +133,7 @@ export function saveUserProfile(userDir: string, p: ProfileInput): void {
 
 /** Removes the user's file of one profile (a shipped name goes back to the shipped text); false when there was none. */
 export function removeUserProfile(userDir: string, name: string): boolean {
-  if (!NAME_RE.test(name)) return false;
+  if (!SLUG_RE.test(name)) return false;
   const file = join(userDir, `${name}.md`);
   if (!existsSync(file)) return false;
   unlinkSync(file);

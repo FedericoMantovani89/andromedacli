@@ -8,7 +8,7 @@ import { reconcile } from './dom';
 import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyTicket, applyWaiting } from './chips';
-import { TERM_OPTIONS } from './term-theme';
+import { SCROLLBACK, TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
 
 /** What the chip next to the state says: why the agent has not started (the launch check) or how long it has been silent. */
@@ -93,7 +93,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
   host.className = 'panel-term';
   root.append(header, host);
 
-  const term = new Terminal({ ...TERM_OPTIONS, scrollback: 20000, cursorBlink: false, convertEol: false });
+  const term = new Terminal({ ...TERM_OPTIONS, scrollback: SCROLLBACK, cursorBlink: false, convertEol: false });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);

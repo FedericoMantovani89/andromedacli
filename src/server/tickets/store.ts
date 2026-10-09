@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
 import type { Step } from './checklist';
 import { canMove, type TicketStatus } from './flow';
+import { SLUG_RE } from '../../shared/slug';
 
 export type { TicketStatus } from './flow';
 
@@ -38,7 +39,6 @@ export interface Ticket {
 }
 export interface TicketProgress { done: number; total: number; blocked: boolean; status: TicketStatus }
 
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_GOAL = 4000;
 const REOPEN_FROM: TicketStatus[] = ['changes_requested', 'conflict', 'needs_user'];
 
@@ -51,7 +51,7 @@ export class TicketStore {
   }
 
   private file(slug: string): string {
-    if (!SLUG.test(slug)) throw new Error('ticket.badSlug');
+    if (!SLUG_RE.test(slug)) throw new Error('ticket.badSlug');
     return join(this.dir, `${slug}.json`);
   }
 

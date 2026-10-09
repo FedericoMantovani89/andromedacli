@@ -2,12 +2,8 @@ import type { ApiError, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k, setPlaceholder } from './i18n-client';
 import { infoIcon } from './info-icon';
+import { el } from './dom';
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
-  const e = document.createElement(tag);
-  if (className) e.className = className;
-  return e;
-};
 
 /** A bold title with its (i): what the thing does and why is in the tooltip, not in lines under it. */
 function titled(titleKey: string, tipKey: string): HTMLElement {
