@@ -169,6 +169,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
     model: r.model ?? profile.model ?? projectFields.model ?? ctx.models.agentModel(),
     ...(r.resume ? { resumeId: r.resume.sessionId } : {}),
   });
+  if (r.resume) ctx.budget.primeTranscript(r.slug); // the resumed session appends to its old transcript: that part is already counted
   ctx.ptys.spawn({ id: r.slug, ...launch, cwd, cols: 120, rows: 30 });
   ctx.launchLog.set(r.slug, launch.args);
   ctx.registry.onSpawned(r.slug);

@@ -17,24 +17,26 @@ interface Entry { body: Buffer; type: string; etag: string; mtimeMs: number; br?
  * `watch` (development) checks the file's time on every request, so a rebuilt UI is seen without restarting the server.
  */
 export class UiAssets {
-  private readonly entries = new Map<string, Entry | null>();
+  private readonly entries = new Map<string, Entry>();
 
   constructor(private readonly dir: string, private readonly watch = false) {}
 
   get(file: string, acceptEncoding = ''): UiAsset | undefined {
     if (!/^[\w.-]+(\/[\w.-]+)*$/.test(file) || file.split('/').includes('..')) return undefined;
-    let e = this.entries.get(file);
+    let e: Entry | null | undefined = this.entries.get(file);
     if (e === undefined || (this.watch && this.changed(file, e))) {
       e = this.load(file);
-      this.entries.set(file, e);
+      // Only what exists is remembered: any name can be asked for, and a miss kept for each would grow without limit.
+      if (e) this.entries.set(file, e);
+      else this.entries.delete(file);
     }
     if (!e) return undefined;
     if (e.br && /\bbr\b/.test(acceptEncoding)) return { body: e.br.body, type: e.type, etag: e.br.etag, encoding: 'br' };
     return { body: e.body, type: e.type, etag: e.etag };
   }
 
-  private changed(file: string, e: Entry | null): boolean {
-    try { return statSync(join(this.dir, normalize(file))).mtimeMs !== (e?.mtimeMs ?? -1); } catch { return e !== null; }
+  private changed(file: string, e: Entry): boolean {
+    try { return statSync(join(this.dir, normalize(file))).mtimeMs !== e.mtimeMs; } catch { return true; }
   }
 
   private load(file: string): Entry | null {

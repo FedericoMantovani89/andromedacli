@@ -3,6 +3,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { extractToken, isAllowedHost, isAllowedOrigin, tokensEqual } from './security';
 import { buildState, type Context, type ProjectResolver } from './http';
+import { coalesce } from './coalesce';
 import type { ResizeMessage } from '../shared/protocol';
 
 function reject(socket: Duplex, status: number, reason: string): void {
@@ -21,9 +22,7 @@ export function attachWebSockets(server: Server, source: Context | ProjectResolv
 
   // Any change in any project pushes to every socket: the tab dots of the other projects need it.
   // Changes close together become one push (at most one every 25 ms) and the state is built once per project, not once per socket (SPEC 33.2).
-  let pending: ReturnType<typeof setTimeout> | undefined;
   const flushState = (): void => {
-    pending = undefined;
     const built = new Map<string, string | null>();
     for (const [ws, project] of uiSockets) {
       if (ws.readyState !== ws.OPEN) continue;
@@ -36,11 +35,8 @@ export function attachWebSockets(server: Server, source: Context | ProjectResolv
       else ws.close(); // its project was closed
     }
   };
-  const broadcastState = (): void => {
-    if (pending) return;
-    pending = setTimeout(flushState, 25);
-    pending.unref?.();
-  };
+  const push = coalesce(flushState, 25);
+  const broadcastState = (): void => push.trigger();
 
   /** A message about one project (a reading entry) only goes to the sockets of that project. */
   const broadcastJson = (payload: unknown, project?: string) => {
@@ -111,6 +107,6 @@ export function attachWebSockets(server: Server, source: Context | ProjectResolv
     broadcastState,
     broadcastJson,
     closeProject: (name) => { for (const m of [uiSockets, termSockets]) for (const [ws, project] of m) if (project === name) ws.terminate(); },
-    closeAll: () => { if (pending) clearTimeout(pending); pending = undefined; for (const ws of wss.clients) ws.terminate(); wss.close(); },
+    closeAll: () => { push.cancel(); for (const ws of wss.clients) ws.terminate(); wss.close(); },
   };
 }

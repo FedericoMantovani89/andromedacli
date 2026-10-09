@@ -60,3 +60,13 @@ it('without the desktop app there is no update and the routes answer not found; 
   const noToken = await fetch(`http://127.0.0.1:${withApp.port}/api/update/install`, { method: 'POST' });
   expect(noToken.status).toBe(401);
 });
+
+it('install answers at once even if it takes long (it stops the server itself, which waits for open requests)', async () => {
+  let release: () => void = () => undefined;
+  const updates = { ...fakeUpdates({ phase: 'ready', version: '0.0.2' }), install: () => new Promise<void>((ok) => { release = ok; }) };
+  const s = await bootServer({ updates });
+  const t0 = Date.now();
+  expect((await ui(s, '/api/update/install', 'POST')).status).toBe(204);
+  expect(Date.now() - t0).toBeLessThan(2000);
+  release();
+});

@@ -301,7 +301,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'POST' && (path === '/api/update/download' || path === '/api/update/install')) {
       if (!host.updates) return fail(res, 404, 'not_found');
       if (path === '/api/update/download') host.updates.download();
-      else await host.updates.install();
+      // Not awaited: the install asks the user, then stops this very server, which would wait for this request to end.
+      else void Promise.resolve(host.updates.install()).catch(() => undefined);
       res.writeHead(204);
       res.end();
       return;

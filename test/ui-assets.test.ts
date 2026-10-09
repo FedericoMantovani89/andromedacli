@@ -59,3 +59,13 @@ it('with watch (development) a rebuilt file is read again, and one that disappea
   rmSync(join(d, 'styles.css'));
   expect(a.get('styles.css')).toBeUndefined();
 });
+
+it('a miss is not remembered (a page cannot grow the cache with made-up names), so a file that appears later is served', () => {
+  const d = dir();
+  const a = new UiAssets(d);
+  expect(a.get('chunks/later-XYZ.js')).toBeUndefined();
+  for (let i = 0; i < 50; i += 1) expect(a.get(`chunks/made-up-${i}.js`)).toBeUndefined();
+  expect((a as unknown as { entries: Map<string, unknown> }).entries.size).toBe(0);
+  writeFileSync(join(d, 'chunks', 'later-XYZ.js'), 'export {}');
+  expect(a.get('chunks/later-XYZ.js')!.body.toString()).toBe('export {}');
+});

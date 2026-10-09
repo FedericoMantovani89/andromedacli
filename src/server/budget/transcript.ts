@@ -42,6 +42,16 @@ export class TranscriptReader {
 
   forget(file: string): void { this.state.delete(file); }
 
+  /**
+   * A session resumed with `--resume` appends to the transcript it already has, and a reader that has never seen the file (the
+   * console just started) would count the whole old content again. Priming marks everything now in the file as counted; a file the
+   * reader already follows is left alone.
+   */
+  prime(file: string): void {
+    if (this.state.has(file) || !existsSync(file)) return;
+    try { this.state.set(file, { offset: statSync(file).size, seen: new Set() }); } catch { /* unreadable: the first read decides */ }
+  }
+
   read(file: string): ReadResult {
     if (!existsSync(file)) { this.state.delete(file); return { ok: false, code: 'missing' }; }
     let fd: number | undefined;

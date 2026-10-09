@@ -47,6 +47,18 @@ function rig(limit = 1000, o: { live?: () => boolean; wipFails?: boolean; wipRej
 }
 
 describe('BudgetService', () => {
+  it('a resumed session is primed: what its transcript already holds is not counted again after a console restart', async () => {
+    const r = rig();
+    r.write(600); // an earlier run: counted in the ledger by a console that has since stopped
+    await r.svc.onTurnComplete('a', { sessionId: 's', turn: 1 });
+    expect(r.svc.usage('a')).toEqual({ used: 600, limit: 1000, step: 'ok' });
+    const restarted = new TranscriptReader(); // the new console knows nothing of the file
+    r.d.reader = restarted;
+    r.svc.primeTranscript('a'); // spawn does this just before `claude --resume`
+    r.write(100); // the resumed session adds one message
+    await r.svc.onTurnComplete('a', { sessionId: 's', turn: 2 });
+    expect(r.svc.usage('a')).toEqual({ used: 700, limit: 1000, step: 'ok' }); // 600 + 100, not 600 + 600 + 100
+  });
   it('stays quiet under 80% and reports usage', async () => {
     const r = rig();
     await r.turn(700);

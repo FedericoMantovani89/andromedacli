@@ -36,3 +36,14 @@ it('siblings are the other waiting items of the same agent, tool and key', () =>
   m.untrack('q2');
   expect(m.siblings('a', 'Bash', 'ls', 'q1')).toEqual([]);
 });
+
+it('forgetPending drops the waiting items of one agent but keeps what it was told to remember', () => {
+  const m = new PermissionMemory();
+  m.remember('a', 'Bash', 'ls', 'allow');
+  m.track('q1', 'a', 'Bash', 'pwd');
+  m.track('q2', 'b', 'Bash', 'pwd');
+  m.forgetPending('a');
+  expect(m.siblings('a', 'Bash', 'pwd', 'none')).toEqual([]);
+  expect(m.siblings('b', 'Bash', 'pwd', 'none')).toEqual(['q2']);
+  expect(m.recall('a', 'Bash', 'ls')).toBe('allow');
+});

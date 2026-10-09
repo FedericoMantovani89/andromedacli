@@ -9,6 +9,8 @@ const CHECK_EVERY_MS = 4 * 60 * 60_000;
 export interface UpdatesOptions {
   /** Asked before the restart when agents are still running: false means the user changed their mind. */
   confirmStop(): Promise<boolean>;
+  /** Stops the server cleanly (the app does not exit). The installer starts before the app quits and ends what is still running. */
+  stopServer(): Promise<void>;
 }
 
 export function createUpdates(o: UpdatesOptions): UpdateControl {
@@ -42,7 +44,8 @@ export function createUpdates(o: UpdatesOptions): UpdateControl {
     install: async () => {
       if (state?.phase !== 'ready') return;
       if (!(await o.confirmStop())) return;
-      // The installer starts and waits for this app to end; the app's own quit handler then stops the server cleanly (SPEC 19).
+      // The installer starts before the app quits and, after a few seconds, ends whatever still runs: the clean stop (SPEC 19) comes first.
+      await o.stopServer();
       autoUpdater.quitAndInstall(false, true);
     },
     onChange: (cb) => { listeners.push(cb); },

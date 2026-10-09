@@ -123,7 +123,7 @@ try {
     await until(async () => (await page.locator(`${panel('shop-api')} .xterm`).count()) > 0);
     await spawn('perm-agent');
     await event('perm-agent', 'session.start'); await event('perm-agent', 'turn.start');
-    const q = await asMod('perm-agent', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'echo hi > <b>out</b>.txt', question: 'Bash needs approval' });
+    const q = await asMod('perm-agent', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'echo hi > <b>out</b>.txt', key: JSON.stringify({ command: 'echo hi > <b>out</b>.txt' }), question: 'Bash needs approval' });
     const polling = asMod('perm-agent', `/v1/questions/${q.json.id}?wait=15`);
     await page.keyboard.press('Alt+Q');
     check('the permission shows the tool and exactly what it would do', await until(async () => (await page.locator('#drawer .queue-permission').innerText().catch(() => '')) === 'Permission for Bash'));

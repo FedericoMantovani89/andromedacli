@@ -112,3 +112,36 @@ describe('pickTranscript', () => {
     expect(pickTranscript('/proj', [undefined, undefined], 's1', none)).toBeUndefined();
   });
 });
+
+describe('TranscriptReader.prime (a session resumed with --resume)', () => {
+  const usageLine = (id: string): string => `{"type":"assistant","message":{"id":"${id}","usage":{"input_tokens":5,"output_tokens":5},"content":[]}}\n`;
+
+  it('skips what the transcript already holds and counts only what the resumed session adds', () => {
+    const f = join(tmp(), 't.jsonl');
+    copyFileSync(sample, f); // the first run, already in the ledger
+    const r = new TranscriptReader(); // a console that has just started: it knows nothing of the file
+    r.prime(f);
+    expect(r.read(f)).toEqual({ ok: true, events: [] });
+    appendFileSync(f, usageLine('msg_NEW'));
+    const after = r.read(f);
+    expect(after.ok && after.events.filter((e) => e.kind === 'usage').map((e) => (e as { messageId: string }).messageId)).toEqual(['msg_NEW']);
+  });
+  it('without it the whole old content would be counted again (what prime prevents)', () => {
+    const f = join(tmp(), 't.jsonl');
+    copyFileSync(sample, f);
+    const read = new TranscriptReader().read(f);
+    expect(read.ok && read.events.some((e) => e.kind === 'usage')).toBe(true);
+  });
+  it('leaves a file the reader already follows alone, and does nothing for a missing file', () => {
+    const f = join(tmp(), 't.jsonl');
+    writeFileSync(f, usageLine('msg_ONE'));
+    const r = new TranscriptReader();
+    r.read(f);
+    appendFileSync(f, usageLine('msg_TWO')); // not read yet
+    r.prime(f);
+    const next = r.read(f);
+    expect(next.ok && next.events.filter((e) => e.kind === 'usage')).toHaveLength(1); // msg_TWO is still counted
+    expect(() => r.prime(join(tmp(), 'nope.jsonl'))).not.toThrow();
+    expect(r.read(join(tmp(), 'nope.jsonl'))).toEqual({ ok: false, code: 'missing' });
+  });
+});

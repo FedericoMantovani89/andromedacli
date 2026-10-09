@@ -20,6 +20,7 @@ import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
 import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
 import { PermissionMemory } from './questions/permission-memory';
+import { describeKey } from './questions/describe';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
@@ -675,7 +676,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       }
       if (e.type === 'session.start') resumedAwaitingStart.delete(slug);
       // The turn ended: a question its tool call was waiting on (for example an aborted turn) has no asker any more.
-      if (e.type === 'turn.complete') questions.dropFrom(slug);
+      if (e.type === 'turn.complete') { questions.dropFrom(slug); permissions.forgetPending(slug); }
       // A sign of life ends a silence before the registry's change is broadcast, or the panel would show the old silence (SPEC 32.2).
       if (registry.get(slug) !== undefined && registry.get(slug)?.role !== 'main') loop.detector.onModEvent(slug);
       registry.onModEvent(slug, e);
@@ -727,9 +728,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const options = Array.isArray(b.options) ? b.options.filter((o): o is string => typeof o === 'string').slice(0, 8).map((o) => o.slice(0, 200)) : undefined;
         const permission = b.kind === 'permission';
         const tool = typeof b.tool === 'string' ? b.tool : '';
-        const detail = typeof b.detail === 'string' ? b.detail : '';
-        // The whole input as the mod saw it ("always" is exact; the detail shown to the user may be cut short). No key: never remembered.
+        // The whole input as the mod saw it ("always" is exact). No key (the input was too long to keep): never remembered.
         const key = typeof b.key === 'string' ? b.key : '';
+        // What the user is shown is built here from that key, so it is the call that gets remembered, not a text the client chose.
+        const detail = (key !== '' ? describeKey(key) : undefined) ?? (typeof b.detail === 'string' ? b.detail : '');
         // SPEC 32.3: an "always" answer given earlier for this exact call is answered at once, never shown (the guard still runs separately).
         const known = permission ? permissions.recall(slug, tool, key) : undefined;
         if (known) return questions.answerNow({ from: slug }, known);
@@ -737,7 +739,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const asked = questions.ask({
           from: slug, text: b.question, options: options && options.length > 0 ? options : undefined, multiSelect: b.multiSelect === true,
           kind: permission ? 'permission' : 'question',
-          tool: tool || undefined, detail: detail || undefined,
+          tool: tool || undefined, detail: detail || undefined, canRemember: key.trim() !== '',
         }, permission ? (answer) => {
           permissions.untrack(askedId);
           const verdict = answer === 'allow_always' ? 'allow' : answer === 'deny_always' ? 'deny' : undefined;

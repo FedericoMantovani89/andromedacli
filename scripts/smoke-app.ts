@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { FuseState, FuseV1Options, getCurrentFuseWire } from '@electron/fuses';
 import { _electron as electron } from 'playwright-core';
 import WebSocket from 'ws';
 
@@ -39,6 +40,10 @@ function memory(): { processes: number; workingMb: number; privateMb: number } {
   const [n, w, p] = execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { encoding: 'utf8' }).trim().split(' ').map(Number);
   return { processes: n ?? 0, workingMb: w ?? 0, privateMb: p ?? 0 };
 }
+
+const fuses = await getCurrentFuseWire(exe);
+check('the exe cannot be run as a plain Node interpreter (fuse RunAsNode is off)', fuses[FuseV1Options.RunAsNode] === FuseState.DISABLE);
+check('NODE_OPTIONS is not read (fuse is off)', fuses[FuseV1Options.EnableNodeOptionsEnvironmentVariable] === FuseState.DISABLE);
 
 const app = await electron.launch({ executablePath: exe, env: { ...process.env, CONSOLE_CONFIG_DIR: configDir, CONSOLE_PORT: '0', CONSOLE_TEST: '1' } });
 try {

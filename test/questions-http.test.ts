@@ -90,7 +90,7 @@ it('an aborted turn withdraws the question: the turn completes, the queue emptie
 
 it('a permission request from an agent is queued as a permission, shows the agent waiting, and "allow" reaches the long-poll', async () => {
   const s = await withAgent();
-  const { id } = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'echo hi > out.txt', question: 'Bash needs approval' })).body;
+  const { id } = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'echo hi > out.txt', key: JSON.stringify({ command: 'echo hi > out.txt' }), question: 'Bash needs approval' })).body;
   const st = await state(s);
   expect(st.queue).toMatchObject([{ id, from: 'fix-login', kind: 'permission', tool: 'Bash', detail: 'echo hi > out.txt', options: ['allow', 'deny', 'allow_always', 'deny_always'] }]);
   expect(st.agents[0].state).toBe('waiting_user');
@@ -112,7 +112,7 @@ it('"always allow" is remembered for that agent and the exact same call: the nex
   await perm('npm test --watch'); // another detail is asked again
   expect((await state(s)).queue).toHaveLength(1);
 });
-it('"always deny" answers a deny at once, and an empty detail is never remembered', async () => {
+it('"always deny" answers a deny at once, and a call with no key cannot be answered "always"', async () => {
   const s = await withAgent();
   const perm = (detail?: string) => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', ...(detail !== undefined ? { detail, key: detail } : {}), question: 'q' });
   const a = (await perm('rm -rf build')).body.id;
@@ -120,17 +120,18 @@ it('"always deny" answers a deny at once, and an empty detail is never remembere
   const b = (await perm('rm -rf build')).body.id;
   expect((await mod(s, 'fix-login', `/v1/questions/${b}?wait=1`)).body).toEqual({ answered: true, answer: 'deny' });
   const c = (await perm()).body.id;
-  await ui(s, `/api/queue/${c}/answer`, 'POST', { answer: 'allow_always' });
+  expect((await ui(s, `/api/queue/${c}/answer`, 'POST', { answer: 'allow_always' })).status).toBe(400); // not offered: nothing to remember
   await perm();
-  expect((await state(s)).queue).toHaveLength(1);
+  expect((await state(s)).queue).toHaveLength(2);
 });
 it('a permission without a key (the mod could not build one) is never remembered, even with the same detail', async () => {
   const s = await withAgent();
   const perm = () => mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'WebFetch', detail: '{"url":"https://a.example"}', question: 'q' });
   const a = (await perm()).body.id;
-  await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow_always' });
+  expect((await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow_always' })).status).toBe(400);
+  expect((await ui(s, `/api/queue/${a}/answer`, 'POST', { answer: 'allow' })).status).toBe(200);
   await perm();
-  expect((await state(s)).queue).toHaveLength(1);
+  expect((await state(s)).queue).toHaveLength(1); // asked again: a plain "allow" remembers nothing
 });
 it('"always" is exact on the key, not on the shown detail: the same cut-short detail with another key is asked again', async () => {
   const s = await withAgent();
@@ -174,4 +175,14 @@ it('permission details are length-limited', async () => {
   const s = await withAgent();
   await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'x'.repeat(20000), question: 'q' });
   expect((await state(s)).queue[0].detail.length).toBeLessThanOrEqual(4000);
+});
+it('the detail the user sees is built by the console from the key, not taken from the client', async () => {
+  const s = await withAgent();
+  await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'Bash', detail: 'ls', key: JSON.stringify({ command: 'rm -rf /' }), question: 'q' });
+  expect((await state(s)).queue[0].detail).toBe('rm -rf /');
+});
+it('a permission with no key (too long to keep one) offers only allow and deny', async () => {
+  const s = await withAgent();
+  await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { kind: 'permission', tool: 'WebFetch', detail: 'x', question: 'q' });
+  expect((await state(s)).queue[0].options).toEqual(['allow', 'deny']);
 });

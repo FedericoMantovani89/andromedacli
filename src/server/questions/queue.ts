@@ -47,7 +47,7 @@ export class QuestionQueue {
   onAdd(cb: (q: Question) => void): void { this.addListeners.push(cb); }
 
   ask(
-    q: { from: string; text: string; options?: string[]; multiSelect?: boolean; kind?: Question['kind']; tool?: string; detail?: string; payload?: unknown },
+    q: { from: string; text: string; options?: string[]; multiSelect?: boolean; kind?: Question['kind']; tool?: string; detail?: string; payload?: unknown; /** A permission whose call cannot be remembered (no key) offers only allow and deny. */ canRemember?: boolean },
     onAnswer?: (answer: string) => void,
   ): { id: string } {
     this.forgetOldAnswers();
@@ -57,7 +57,7 @@ export class QuestionQueue {
     const confirm = kind === 'confirm';
     this.open.set(id, {
       id, from: q.from, kind, text: q.text.slice(0, MAX_TEXT),
-      options: permission ? ['allow', 'deny', 'allow_always', 'deny_always'] : confirm ? ['approve', 'reject'] : q.options,
+      options: permission ? (q.canRemember === false ? ['allow', 'deny'] : ['allow', 'deny', 'allow_always', 'deny_always']) : confirm ? ['approve', 'reject'] : q.options,
       multiSelect: permission || confirm || kind === 'decision' ? false : q.multiSelect,
       ...(permission ? { tool: (q.tool ?? '').slice(0, 100), detail: (q.detail ?? '').slice(0, 4000) } : {}),
       ...(q.payload !== undefined ? { payload: boundedPayload(q.payload) } : {}),
@@ -134,6 +134,7 @@ export class QuestionQueue {
     for (const q of [...this.open.values()]) {
       if (q.from !== from) continue;
       this.open.delete(q.id);
+      this.handlers.delete(q.id); // nobody will answer it any more
       this.resolve(q.id, { answered: false, gone: true });
       any = true;
     }

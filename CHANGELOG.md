@@ -11,6 +11,13 @@ introduces the behaviour.
 - Desktop app: it looks for a newer version on the GitHub releases (after 30 s, then every 4 hours); the status bar offers Download, then Restart to update, and nothing happens without the user (a repository that is private, or a release without `latest.yml`, shows nothing). The version of a release is the tag that was pushed.
 - Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
 
+### Fixed
+- Desktop app: a second click on close (or a quit) while the clean stop runs no longer ends the app before the stop finishes, and "Restart to update" stops the server cleanly before the installer starts; the install request is answered at once.
+- Budget: an agent resumed after a console restart no longer has its whole earlier transcript counted a second time.
+- Queue: what the user is asked to allow is built by the console from the call that will be remembered; the "always" buttons are offered only for a call that can be remembered; a dropped question frees its handler.
+- Console: made-up file names no longer grow the page cache; an ended session keeps 256 KB of scrollback instead of 4 MB.
+- Release: the build job holds no credentials (a second job publishes), actions are pinned to a commit; the app refuses browser permissions other than clipboard copy and notifications and the exe can no longer run as a plain Node interpreter.
+
 ### Changed
 - Lighter console: the UI is minified and split (the reader's markdown libraries and the Options dialog load when first used) and served with ETag and Brotli instead of `no-store`; state pushes are merged and built once per project instead of once per socket and per change; one slug regex and one JSON reader; terminals keep 10 000 lines in the page instead of 20 000.
 - Review fixes for the above: the silence chip is pushed when it appears or goes (no longer waits for another event) and never shows for an agent that has just woken up; reviewers and recoveries get it too; "Always" is exact on the whole tool input (not the shortened line shown) and also answers identical requests already waiting; the silence threshold in Options has a tooltip.

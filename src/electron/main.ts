@@ -1,11 +1,12 @@
 // The desktop app (SPEC 33): the console's server runs inside this process and one window shows it.
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, session, shell } from 'electron';
 import { join } from 'node:path';
 import { configDir, loadConfig } from '../server/config';
 import { loadBundles } from '../server/i18n-bundles';
 import { startServer, type RunningServer } from '../server/index';
 import type { PickFolderResult } from '../server/pick-folder';
 import { createTranslator, type Translate } from '../shared/i18n';
+import { createShutdownGate } from './shutdown';
 import { createUpdates } from './updates';
 import { isInternalUrl } from './window';
 
@@ -22,7 +23,16 @@ const PORT = Number(process.env.CONSOLE_PORT ?? 7391);
 
 let server: RunningServer | undefined;
 let win: BrowserWindow | undefined;
-let quitting = false;
+let asking = false;
+
+/**
+ * The only way out of the app (SPEC 33.1): the server stops cleanly first (SPEC 19) and only then the process ends. `exit`, not `quit`:
+ * a ConPTY child can keep Node alive. A second click or quit while the stop runs waits for it instead of cutting it short.
+ */
+const gate = createShutdownGate({
+  stop: async () => { win?.hide(); await server?.close(); },
+  exit: () => app.exit(0),
+});
 
 /** The interface language of the dialogs: the configured one, or the system's when it is "auto" and a bundle exists. */
 function translator(): Translate {
@@ -31,13 +41,6 @@ function translator(): Translate {
   const wanted = configured === 'auto' ? app.getLocale().slice(0, 2) : configured;
   const lang = bundles.has(wanted) ? wanted : 'en';
   return createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') });
-}
-
-/** Stops the server (agents end as in a clean stop, SPEC 19) and leaves. `exit`, not `quit`: a ConPTY child can keep Node alive. */
-async function shutdown(): Promise<void> {
-  if (quitting) return;
-  quitting = true;
-  try { await server?.close(); } finally { app.exit(0); }
 }
 
 /** True when it is fine to stop: no agent is running, or the user agreed to stop them (the window's close and an update's restart both ask). */
@@ -53,7 +56,13 @@ async function confirmStop(): Promise<boolean> {
 }
 
 async function confirmThenShutdown(): Promise<void> {
-  if (await confirmStop()) await shutdown();
+  if (asking) return;
+  asking = true;
+  try {
+    if (await confirmStop()) await gate.stopAndExit();
+  } finally {
+    asking = false;
+  }
 }
 
 function createWindow(url: string, port: number): BrowserWindow {
@@ -74,9 +83,9 @@ function createWindow(url: string, port: number): BrowserWindow {
   });
   w.once('ready-to-show', () => w.show());
   w.on('close', (event) => {
-    if (quitting) return;
+    if (!gate.blocks()) return; // the stop is over: the window may go
     event.preventDefault();
-    void confirmThenShutdown();
+    if (!gate.stopping()) void confirmThenShutdown();
   });
   void w.loadURL(url);
   return w;
@@ -84,8 +93,12 @@ function createWindow(url: string, port: number): BrowserWindow {
 
 async function start(): Promise<void> {
   await app.whenReady();
+  // The page asks for nothing but a clean copy to the clipboard and the browser's own notifications: every other permission is refused.
+  const allowed = (permission: string): boolean => permission === 'clipboard-sanitized-write' || permission === 'notifications';
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(allowed(permission)));
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) => allowed(permission));
   // Looking for a new version only makes sense in the installed app, never in development (SPEC 33.4); CONSOLE_NO_UPDATES=1 switches it off.
-  const updates = app.isPackaged && process.env.CONSOLE_NO_UPDATES !== '1' ? createUpdates({ confirmStop }) : undefined;
+  const updates = app.isPackaged && process.env.CONSOLE_NO_UPDATES !== '1' ? createUpdates({ confirmStop, stopServer: () => gate.stop() }) : undefined;
   try {
     server = await startServer({
       port: PORT, configDir: configDir(), ...(app.isPackaged ? { version: app.getVersion() } : {}), ...(updates ? { updates } : {}),
@@ -115,11 +128,13 @@ if (!app.requestSingleInstanceLock()) {
     if (win.isMinimized()) win.restore();
     win.focus();
   });
+  // Closing the last window must not end the app by itself: only the gate does, after the stop.
+  app.on('window-all-closed', () => undefined);
   // Quitting from outside the window (the system shutting down, a taskbar close) does not ask: the stop is the clean one.
   app.on('before-quit', (event) => {
-    if (quitting) return;
+    if (!gate.blocks()) return;
     event.preventDefault();
-    void shutdown();
+    void gate.stopAndExit();
   });
   void start();
 }
