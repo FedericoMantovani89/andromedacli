@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { archiveAgent, unarchiveAgent } from '../src/server/agents/archive';
+import { archiveAgent, archiveFinished, unarchiveAgent } from '../src/server/agents/archive';
 import { AgentPersister } from '../src/server/agents/persist';
 import { AgentRegistry } from '../src/server/agents/registry';
 import { restoreAgents } from '../src/server/agents/restore';
@@ -152,10 +152,41 @@ describe('persistence', () => {
     expect(registry.get('s')).toMatchObject({ state: 'finished' });
     expect(registry.get('s')?.archived).toBeFalsy();
   });
+  it('restore leaves no closed agent in the column: reviewers and merged developers are not brought back, stopped finishes stay visible', () => {
+    tickets.setChecklist('m', []); for (const st of ['delivered', 'in_review', 'approved', 'merged'] as const) tickets.move('m', st);
+    tickets.setChecklist('b', []); tickets.move('b', 'blocked');
+    run([rec('m'), rec('rv', { role: 'reviewer', profile: 'reviewer' }), rec('b')]);
+    expect(registry.get('m')).toBeUndefined();
+    expect(registry.get('rv')).toBeUndefined();
+    expect(registry.get('b')).toMatchObject({ state: 'finished' });
+    expect(registry.get('b')?.archived).toBeFalsy();
+  });
   it('waking a restored archived agent un-archives it', () => {
     tickets.setChecklist('k', []); tickets.move('k', 'delivered');
     run([rec('k', { archived: true })]);
     registry.revive('k');
     expect(registry.get('k')?.archived).toBeFalsy();
+  });
+});
+
+describe('archiveFinished', () => {
+  it('archives every archivable agent at once, leaves the rest, and returns the slugs', () => {
+    registry.register({ slug: 'main', role: 'main', profile: 'main' });
+    for (const n of ['done', 'delivered', 'busy', 'waits']) start(n);
+    registry.markFinished('done'); registry.onProcessExit('done'); registry.setArchived('done', false);
+    registry.onModEvent('delivered', { type: 'turn.complete', sessionId: 's' });
+    tickets.setChecklist('delivered', []); tickets.move('delivered', 'delivered');
+    registry.onModEvent('busy', { type: 'turn.start', sessionId: 's' });
+    registry.markFinished('waits'); registry.onProcessExit('waits'); registry.setArchived('waits', false);
+    tickets.setChecklist('waits', []); tickets.move('waits', 'suspended_budget');
+    const out = archiveFinished({ registry, ticketStatus: (s) => { try { return tickets.get(s)?.status; } catch { return undefined; } } });
+    expect(out.slugs.sort()).toEqual(['delivered', 'done']);
+    expect(out.count).toBe(2);
+    expect(registry.get('busy')?.archived).toBeFalsy();
+    expect(registry.get('waits')?.archived).toBeFalsy();
+    expect(registry.get('main')?.archived).toBeFalsy();
+  });
+  it('does nothing and counts zero when nothing is archivable', () => {
+    expect(archiveFinished({ registry, ticketStatus: () => undefined })).toEqual({ count: 0, slugs: [] });
   });
 });

@@ -94,3 +94,35 @@ describe('archive list', () => {
     expect(document.querySelector<HTMLButtonElement>('#overlay .archive-all')!.disabled).toBe(true);
   });
 });
+
+describe('archive all finished', () => {
+  const finished = [info('r1', { state: 'finished' }), info('d1', { ticket: { status: 'delivered', round: 0, maxRounds: 2 } }), info('w', { state: 'working' }), info('s', { state: 'finished', ticket: { status: 'blocked', round: 0, maxRounds: 2 } })];
+  it('the chip shows Archived (0) when nothing is archived but something can be', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make(finished));
+    const chip = el.querySelector<HTMLButtonElement>('.statusbar-archived')!;
+    expect(chip.hidden).toBe(false);
+    expect(params(chip)).toEqual({ count: 0 });
+  });
+  it('the button is disabled when nothing can be archived', () => {
+    openArchiveDialog(() => make([info('w', { state: 'working' })]));
+    expect(document.querySelector<HTMLButtonElement>('#overlay .archive-finished')!.disabled).toBe(true);
+  });
+  it('asks for confirmation with the count, posts once on confirm, and does nothing on cancel', async () => {
+    openArchiveDialog(() => make(finished));
+    const btn = document.querySelector<HTMLButtonElement>('#overlay .archive-finished')!;
+    expect(btn.disabled).toBe(false);
+    btn.click();
+    const line = document.querySelector<HTMLElement>('#overlay .archive-confirm')!;
+    expect(line.querySelector<HTMLElement>('[data-i18n="archive.confirmFinished"]') ?? line).toBeTruthy();
+    expect(params(byKey(line, 'archive.confirmFinished')!)).toEqual({ count: 2 });
+    expect(calls).toEqual([]);
+    line.querySelector<HTMLButtonElement>('.archive-confirm-no')!.click();
+    expect(document.querySelector('#overlay .archive-confirm')).toBeNull();
+    expect(calls).toEqual([]);
+    btn.click();
+    document.querySelector<HTMLButtonElement>('#overlay .archive-confirm-yes')!.click();
+    await Promise.resolve();
+    expect(calls).toEqual([{ path: '/api/agents/archive-finished', method: 'POST' }]);
+  });
+});

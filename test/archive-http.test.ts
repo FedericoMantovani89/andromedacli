@@ -30,3 +30,15 @@ it('the state carries no archived flag for an agent at work', async () => {
   const st = (await ui(s, '/api/state')).body;
   expect(st.agents[0].archived).toBeUndefined();
 });
+
+it('POST /api/agents/archive-finished needs the token and archives what can be archived, returning count and slugs', async () => {
+  const s = await bootServer();
+  s.setLimits({ global: 9, perProject: 9 });
+  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
+  await modEvent(s, 'fix-login', 'session.start');
+  await modEvent(s, 'fix-login', 'turn.start');
+  expect((await req(s, '/api/agents/archive-finished', { method: 'POST' })).status).toBe(401);
+  const none = await ui(s, '/api/agents/archive-finished', 'POST');
+  expect(none.status).toBe(200);
+  expect(none.body).toEqual({ count: 0, slugs: [] });
+});

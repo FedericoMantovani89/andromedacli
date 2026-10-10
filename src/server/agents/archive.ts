@@ -18,3 +18,12 @@ export function unarchiveAgent(d: { registry: AgentRegistry }, slug: string): Ar
   d.registry.setArchived(slug, false);
   return { ok: true };
 }
+
+/** Archives, in one go, every agent that `canArchive` allows right now (the "Archive all finished" button). Nothing is closed or deleted. */
+export function archiveFinished(d: { registry: AgentRegistry; ticketStatus(slug: string): string | undefined }): { count: number; slugs: string[] } {
+  const slugs = d.registry.list()
+    .filter((a) => a.role !== 'main' && !a.archived && canArchive(a.state, d.ticketStatus(a.slug)))
+    .map((a) => a.slug);
+  for (const s of slugs) d.registry.setArchived(s, true);
+  return { count: slugs.length, slugs };
+}

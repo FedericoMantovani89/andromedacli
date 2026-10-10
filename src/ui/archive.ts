@@ -9,6 +9,8 @@ import { closeOverlay } from './settings';
 /** The agents the column shows: the archived ones are in the state in full, but only the archive list draws them. */
 export const visibleAgents = (agents: SessionInfo[]): SessionInfo[] => agents.filter((a) => !a.archived);
 export const archivedAgents = (agents: SessionInfo[]): SessionInfo[] => agents.filter((a) => a.archived);
+/** The agents "Archive all finished" would archive now: the same rule the server applies. */
+export const archivableAgents = (agents: SessionInfo[]): SessionInfo[] => agents.filter((a) => !a.archived && canArchive(a.state, a.ticket?.status));
 
 /** The small button of a panel or bar header: shown only while the agent is finished-like (the server checks again). */
 export function createArchiveButton(slug: string): HTMLButtonElement {
@@ -28,7 +30,7 @@ export function syncArchiveButton(root: HTMLElement, state: Activity, ticket: Se
 }
 
 /** The open dialog's list and button, kept so a state push can refresh them without rebuilding the dialog. */
-let open: { list: HTMLElement; all: HTMLButtonElement; dialog: HTMLElement } | undefined;
+let open: { list: HTMLElement; all: HTMLButtonElement; finished: HTMLButtonElement; dialog: HTMLElement } | undefined;
 
 const unarchive = (slug: string): Promise<unknown> => api(`/api/agents/${slug}/unarchive`, { method: 'POST' }).catch(() => undefined);
 
@@ -73,6 +75,9 @@ export function refreshArchiveDialog(state: StateMessage): void {
   const archived = archivedAgents(state.agents);
   paintRows(open.list, archived);
   open.all.disabled = archived.length === 0;
+  const n = archivableAgents(state.agents).length;
+  open.finished.disabled = n === 0;
+  if (n === 0) open.dialog.querySelector('.archive-confirm')?.remove();
 }
 
 /** The archive list (a dialog like the other ones): who is archived, and a button to bring each one, or all, back. */
@@ -99,11 +104,36 @@ export function openArchiveDialog(getState: () => StateMessage | undefined): voi
   close.type = 'button';
   bindText(close, 'common.close');
   close.addEventListener('click', closeOverlay);
-  actions.append(all, close);
+  const finished = document.createElement('button');
+  finished.type = 'button';
+  finished.className = 'archive-finished';
+  bindText(finished, k('archive.archiveFinished'));
+  finished.addEventListener('click', () => {
+    dialog.querySelector('.archive-confirm')?.remove();
+    const count = archivableAgents(getState()?.agents ?? []).length;
+    if (count === 0) return;
+    const line = document.createElement('div');
+    line.className = 'archive-confirm';
+    const text = document.createElement('span');
+    bindText(text, 'archive.confirmFinished', { count });
+    const yes = document.createElement('button');
+    yes.type = 'button';
+    yes.className = 'archive-confirm-yes';
+    bindText(yes, 'archive.confirmYes');
+    yes.addEventListener('click', () => { line.remove(); void api('/api/agents/archive-finished', { method: 'POST' }).catch(() => undefined); });
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'archive-confirm-no';
+    bindText(no, 'common.cancel');
+    no.addEventListener('click', () => line.remove());
+    line.append(text, yes, no);
+    actions.before(line);
+  });
+  actions.append(finished, all, close);
   dialog.append(title, list, actions);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
-  open = { list, all, dialog };
+  open = { list, all, finished, dialog };
   const s = getState();
   if (s) refreshArchiveDialog(s);
 }

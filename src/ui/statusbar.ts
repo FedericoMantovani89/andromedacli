@@ -1,7 +1,7 @@
 import type { StateMessage } from '../shared/protocol';
 import { runningAgents } from '../shared/stats';
 import { api } from './api';
-import { openArchiveDialog, refreshArchiveDialog, archivedAgents, visibleAgents } from './archive';
+import { openArchiveDialog, refreshArchiveDialog, archivedAgents, archivableAgents, visibleAgents } from './archive';
 import { bindText, k, t } from './i18n-client';
 
 interface Bar {
@@ -150,7 +150,8 @@ export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
   bindText(bar.suspended, 'statusbar.suspended', { count: visibleAgents(state.agents).filter((a) => a.state === 'suspended').length });
   bar.latest = state;
   const archived = archivedAgents(state.agents).length;
-  bar.archived.hidden = archived === 0;
-  if (archived > 0) bindText(bar.archived, 'statusbar.archived', { count: archived });
+  // Reachable also at zero while something can be archived: the list holds the "Archive all finished" button.
+  bar.archived.hidden = archived === 0 && archivableAgents(state.agents).length === 0;
+  if (!bar.archived.hidden) bindText(bar.archived, 'statusbar.archived', { count: archived });
   refreshArchiveDialog(state);
 }

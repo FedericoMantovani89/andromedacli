@@ -18,7 +18,7 @@ import type { ModelCatalog } from './catalog/models';
 import type { PluginCatalog } from './catalog/plugins';
 import { fail, readBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
-import { archiveAgent, unarchiveAgent } from './agents/archive';
+import { archiveAgent, archiveFinished, unarchiveAgent } from './agents/archive';
 import { spawnAgent } from './agents/spawn';
 import type { Scheduler } from './agents/scheduler';
 import type { ReadingStore } from './reading/store';
@@ -427,6 +427,14 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'POST' && wake) {
       const out = await ctx.wake.wake(wake[1]!, 'user');
       return out.ok ? send(res, 200, { status: out.status }) : fail(res, 409, out.code);
+    }
+
+    // Archive everything archivable right now, in one request (the "Archive all finished" button); not an /api/projects/ route.
+    if (req.method === 'POST' && path === '/api/agents/archive-finished') {
+      const ticketStatus = (s: string): string | undefined => { try { return ctx.tickets.get(s)?.status; } catch { return undefined; } };
+      const out = archiveFinished({ registry: ctx.registry, ticketStatus });
+      if (out.count > 0) ctx.broadcastState();
+      return send(res, 200, out);
     }
 
     // Archive: only a flag moves, nothing is closed or deleted (the panel's button and the archive list).

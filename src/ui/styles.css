@@ -437,6 +437,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .options-git-init, .options-git-clone { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
 .options-git-clone .options-select-row { width: 100%; justify-self: stretch; }
 .options-git-clone .options-select-row input { flex: 1 1 auto; min-width: 0; }
+.archive-confirm { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 
 /* Voice dictation: a roomy text box, a recording state, the Send button as the main action */
 .dictation-dialog { width: min(640px, 92vw); }
