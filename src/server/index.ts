@@ -325,7 +325,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const finishAgent = async (slug: string, o: { stopped?: boolean } = {}): Promise<void> => {
     if (o.stopped) requests.agentStopped(slug);
     else requests.agentGone(slug);
-    registry.markFinished(slug);
+    registry.markFinished(slug, { stopped: o.stopped === true });
     await ptys.killTree(slug);
   };
   /** The handover note an agent wrote in its worktree (`.andromedacli/handover.md`), at most 4000 characters; undefined when none. */

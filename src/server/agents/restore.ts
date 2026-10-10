@@ -84,7 +84,7 @@ export function restoreAgents(d: RestoreDeps): RestoreResult {
       d.registry.registerRestored({ ...base, state: 'interrupted' });
       out.interrupted.push({ ...entry, reason });
     } else {
-      d.registry.registerDormant(base);
+      d.registry.registerDormant({ ...base, ...(r.archived ? { archived: true, ...(r.archivedAt !== undefined ? { archivedAt: r.archivedAt } : {}) } : {}) });
       out.dormant.push(entry);
     }
   }

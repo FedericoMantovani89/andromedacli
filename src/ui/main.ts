@@ -4,6 +4,7 @@ import { openNewProjectDialog } from './new-project';
 import { neighbourProject, openCloseProjectDialog, renderProjectTabs, titleWithWaiting } from './project-tabs';
 import { bindText, initI18n, k, initI18nAnonymous, resolveLanguage } from './i18n-client';
 import { setIconButton, setQueueBadge } from './icons';
+import { visibleAgents } from './archive';
 import { createNewAgentControl } from './new-agent';
 import { createQueueDrawer, queueIdFromHash } from './queue';
 import { createRequestsDrawer } from './requests';
@@ -162,7 +163,7 @@ function apply(s: StateMessage): void {
   }
   for (const [name, e] of workspaces) e.el.hidden = name !== s.project.name;
   workspace = entry.ws;
-  workspace.update(s.main, s.agents);
+  workspace.update(s.main, visibleAgents(s.agents)); // archived agents are in the state in full, only the archive list shows them
   queueDrawer.update(s.queue);
   requestsDrawer.update(s.requests ?? []);
   // A tab chosen by the user takes the keyboard once its workspace is on screen.

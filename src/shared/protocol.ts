@@ -14,7 +14,7 @@ export const USER_ERROR_CODES = [
   'git.notRepo', 'git.alreadyRepo', 'git.noCommits', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
   'folder.pickBusy', 'project.duplicate', 'project.badRoot', 'project.badName', 'project.notFound',
   'install.busy', 'install.unavailable',
-  'agent.notDormant', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
+  'agent.notDormant', 'agent.notArchivable', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
   'project.fieldInvalid', 'project.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
   'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'config.invalid', 'config.outOfRange', 'project.testsDisabledInvalid', 'git.cloneUrlInvalid', 'git.cloneFolderNotEmpty', 'git.cloneFailed', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
 ] as const;
@@ -48,6 +48,9 @@ export interface SessionInfo {
   budget?: { used: number; limit: number; step: 'ok' | 'alert' | 'limit' | 'stopped' };
   /** Phase 6A: the agent's worktree has not been touched for longer than `git.staleWorktreeDays`. */
   stale?: true;
+  /** Out of the agents column, listed in the archive (the session ended for good, or the user archived it); `archivedAt` is when. */
+  archived?: true;
+  archivedAt?: string;
   /** Requests between agents (SPEC 10): steps waiting for an answer and requests this agent still owes; absent when none. */
   requests?: RequestsInfo;
 }

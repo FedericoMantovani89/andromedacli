@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- Archive of finished agents: an agent whose session ended for good (a merged ticket, a finished review or recovery) leaves the agents column by itself and is listed under "Archived (N)" in the status bar, with Unarchive and Unarchive all; nothing is deleted. A stopped agent (budget, loop, usage limit) stays, new work un-archives an agent, the flag survives a restart, and a small Archive button archives an idle agent with a delivered or merged ticket by hand (`POST /api/agents/<slug>/archive` and `/unarchive`). The agents counters and Alt+n ignore archived agents.
 - A project can set a different test command for each moment (`testCommands` in `project.json`, three fields in Options, This project): `ticket` (validation step, review re-run, recovery), `merge` (after a merge) and `release`; each falls back to the single test command, so nothing changes unless they are set. New npm scripts `test:ticket` (check + tests changed against the project branch) and `test:smoke` (check + 7 core files); neither writes the commit-gate stamp.
 - The header Queue and Options buttons and the agent bar's Read button are icon buttons (bell with a count badge, gear, clipboard); the tooltip and accessible name keep the translated text.
 - Requests between agents: `send_message` (question, answer, info, unknown, escalate) routed by the console; a question returns an id `TODO-xxxxxx` at once and the asker keeps working.

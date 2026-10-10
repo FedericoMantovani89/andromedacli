@@ -1,6 +1,7 @@
 import type { StateMessage } from '../shared/protocol';
 import { runningAgents } from '../shared/stats';
 import { api } from './api';
+import { openArchiveDialog, refreshArchiveDialog, archivedAgents, visibleAgents } from './archive';
 import { bindText, k, t } from './i18n-client';
 
 interface Bar {
@@ -13,6 +14,9 @@ interface Bar {
   sleep: HTMLElement;
   resume: HTMLButtonElement;
   agents: HTMLElement;
+  /** "Archived (N)": hidden at zero, opens the list. */
+  archived: HTMLButtonElement;
+  latest?: StateMessage;
   suspended: HTMLElement;
   /** The countdown refreshes by itself between state pushes; only while the console sleeps. */
   timer?: ReturnType<typeof setInterval>;
@@ -50,11 +54,17 @@ function build(el: HTMLElement): Bar {
   resume.addEventListener('click', () => { void api('/api/sleep/resume', { method: 'POST' }).catch(() => undefined); });
   const agents = span();
   const suspended = span();
-  const bar: Bar = { budget, quota, update, updateBtn, sleep, resume, agents, suspended };
+  const archived = document.createElement('button');
+  archived.type = 'button';
+  archived.className = 'statusbar-archived';
+  archived.hidden = true;
+  archived.addEventListener('mousedown', (ev) => ev.preventDefault());
+  const bar: Bar = { budget, quota, update, updateBtn, sleep, resume, agents, archived, suspended };
+  archived.addEventListener('click', () => openArchiveDialog(() => bar.latest));
   updateBtn.addEventListener('click', () => {
     if (bar.updateAction) void api(`/api/update/${bar.updateAction}`, { method: 'POST' }).catch(() => undefined);
   });
-  el.replaceChildren(budget, quota, sleep, resume, update, updateBtn, agents, suspended);
+  el.replaceChildren(budget, quota, sleep, resume, update, updateBtn, agents, archived, suspended);
   return bar;
 }
 
@@ -137,5 +147,10 @@ export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
   // The counter uses the limit in force now (the quota may have cut it); without it the plain count is shown.
   if (state.limits) bindText(bar.agents, 'statusbar.agentsOf', { active: state.limits.active, max: state.limits.max });
   else bindText(bar.agents, 'statusbar.agents', { count: runningAgents(state.main, state.agents) });
-  bindText(bar.suspended, 'statusbar.suspended', { count: state.agents.filter((a) => a.state === 'suspended').length });
+  bindText(bar.suspended, 'statusbar.suspended', { count: visibleAgents(state.agents).filter((a) => a.state === 'suspended').length });
+  bar.latest = state;
+  const archived = archivedAgents(state.agents).length;
+  bar.archived.hidden = archived === 0;
+  if (archived > 0) bindText(bar.archived, 'statusbar.archived', { count: archived });
+  refreshArchiveDialog(state);
 }

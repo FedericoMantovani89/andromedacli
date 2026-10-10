@@ -50,6 +50,10 @@ export interface AgentRecord {
   lastActiveAt?: string;
   /** The worktree has not been touched for longer than `git.staleWorktreeDays`. */
   stale?: boolean;
+  /** Out of the agents column (it ended for good, or the user archived it); nothing else changes. Cleared by new work. */
+  archived?: boolean;
+  /** When it was archived (ISO). */
+  archivedAt?: string;
 }
 /** A patch for `updateAgent`: a key set to `undefined` is removed from the record. */
 export type AgentPatch = { [K in keyof Omit<AgentRecord, 'slug' | 'createdAt'>]?: AgentRecord[K] | undefined };

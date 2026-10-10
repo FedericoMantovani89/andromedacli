@@ -8,6 +8,7 @@ import { reconcile } from './dom';
 import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
 import { setIconButton } from './icons';
+import { createArchiveButton, syncArchiveButton } from './archive';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyRequests, applyTicket, applyWaiting } from './chips';
 import { SCROLLBACK, TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
@@ -94,7 +95,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
   setIconButton(readBtn, 'clipboard', k('reader.open'));
   readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
   readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
-  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, requestsWaitingEl, requestsOwedEl, progressEl, readBtn);
+  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, requestsWaitingEl, requestsOwedEl, progressEl, readBtn, createArchiveButton(info.slug));
 
   const host = document.createElement('div');
   host.className = 'panel-term';
@@ -154,6 +155,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
       stateEl.className = `panel-state ${state}`;
       applyProgress(progressEl, progress);
       applyBudget(budgetEl, { state, ticket, budget });
+      syncArchiveButton(root, state, ticket);
     },
     dispose: () => {
       closed = true;
@@ -290,6 +292,7 @@ export class Workspace {
       applyLoop(cached.loop, info.loop);
       applyWaiting(cached.waiting, info.waiting);
       applyRequests(cached.requestsWaiting, cached.requestsOwed, info.requests);
+      syncArchiveButton(cached.el, info.state, info.ticket);
       return cached.el;
     }
     const el = document.createElement('div');
@@ -323,7 +326,8 @@ export class Workspace {
     applyRequests(requestsWaiting, requestsOwed, info.requests);
     const stale = document.createElement('span');
     applyStale(stale, info.stale);
-    el.append(title, meta, state, stalled, ticket, budget, loop, waiting, requestsWaiting, requestsOwed, stale, progress);
+    el.append(title, meta, state, stalled, ticket, budget, loop, waiting, requestsWaiting, requestsOwed, stale, progress, createArchiveButton(info.slug));
+    syncArchiveButton(el, info.state, info.ticket);
     if (dormant) this.dormantControls(el, info.slug);
     if (!pending) { // a queued agent has no terminal to expand yet
       const expand = document.createElement('button');

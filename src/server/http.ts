@@ -18,6 +18,7 @@ import type { ModelCatalog } from './catalog/models';
 import type { PluginCatalog } from './catalog/plugins';
 import { fail, readBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
+import { archiveAgent, unarchiveAgent } from './agents/archive';
 import { spawnAgent } from './agents/spawn';
 import type { Scheduler } from './agents/scheduler';
 import type { ReadingStore } from './reading/store';
@@ -210,11 +211,15 @@ export function buildState(ctx: Context): StateMessage {
     const info = ctx.requests.infoFor(slug, waiting);
     return info ? { requests: info } : {};
   };
+  const archiveOf = (slug: string): Pick<SessionInfo, 'archived' | 'archivedAt'> => {
+    const rt = ctx.registry.get(slug);
+    return rt?.archived ? { archived: true, ...(rt.archivedAt !== undefined ? { archivedAt: rt.archivedAt } : {}) } : {};
+  };
   const main: SessionInfo = { slug: ctx.projectName, profile: 'main', role: 'main', status: status(ctx.projectName), state: stateOf(ctx.projectName) };
   // Only sessions of this run: agents saved by an earlier run are history (resume is Phase 6) and keep their slug reserved.
   const agents: SessionInfo[] = ctx.store.listAgents()
     .filter((a) => ctx.ptys.status(a.slug) !== 'unknown' || ctx.registry.get(a.slug) !== undefined)
-    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...launchOf(a.slug), ...silenceOf(a.slug), ...waitingOf(a.slug), ...requestsOf(a.slug), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
+    .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...launchOf(a.slug), ...silenceOf(a.slug), ...waitingOf(a.slug), ...requestsOf(a.slug), ...(a.stale ? { stale: true as const } : {}), ...archiveOf(a.slug), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let testsDisabled: boolean | undefined;
   let testCommands: ProjectInfo['testCommands'];
@@ -399,6 +404,17 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'POST' && wake) {
       const out = await ctx.wake.wake(wake[1]!, 'user');
       return out.ok ? send(res, 200, { status: out.status }) : fail(res, 409, out.code);
+    }
+
+    // Archive: only a flag moves, nothing is closed or deleted (the panel's button and the archive list).
+    const archive = /^\/api\/agents\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(archive|unarchive)$/.exec(path);
+    if (req.method === 'POST' && archive) {
+      const slug = archive[1]!;
+      const ticketStatus = (s: string): string | undefined => { try { return ctx.tickets.get(s)?.status; } catch { return undefined; } };
+      const out = archive[2] === 'archive' ? archiveAgent({ registry: ctx.registry, ticketStatus }, slug) : unarchiveAgent({ registry: ctx.registry }, slug);
+      if (!out.ok) return out.code === 'not_found' ? fail(res, 404, 'not_found') : fail(res, 409, out.code);
+      ctx.broadcastState();
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === 'POST' && path === '/api/prereq/recheck') return send(res, 200, await ctx.refreshPrereq());

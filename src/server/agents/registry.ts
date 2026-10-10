@@ -17,6 +17,12 @@ export interface AgentRuntime {
   lastEventAt?: string;
   /** The console ended this session on purpose: when its process exits the state is `finished`, not `interrupted`. */
   finishing?: boolean;
+  /** The end is a stop that goes on later (a budget or loop stop, a limit suspension, a replacement): such an agent is not archived. */
+  stopping?: boolean;
+  /** Archived: out of the agents column, nothing deleted. Set when the session ended for good or by hand; any new work clears it. */
+  archived?: boolean;
+  /** When it was archived (ISO), shown as "when it ended" in the archive list. */
+  archivedAt?: string;
   /** The profile is read-only (a reviewer): the guard refuses anything that writes. */
   readOnly?: boolean;
   /** The agent's own worktree and branch (Phase 3); absent for the main and when `git.worktrees` is off. */
@@ -51,9 +57,11 @@ export class AgentRegistry {
    * An agent restored after a console restart (Phase 6A): no process, no quota spent. `dormant` wakes on demand, `interrupted` lost its
    * turn (or its worktree), `finished` waits for its own flow (a suspended or blocked ticket). It never counts as active.
    */
-  registerRestored(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: AgentGit; cwd?: string; state: 'dormant' | 'interrupted' | 'finished' }): void {
+  registerRestored(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: AgentGit; cwd?: string; state: 'dormant' | 'interrupted' | 'finished'; archivedAt?: string; archived?: boolean }): void {
     this.agents.set(a.slug, {
       slug: a.slug, role: a.role, profile: a.profile, goal: a.goal, state: a.state, pendingGoal: false,
+      // Only a record that was archived and is at rest comes back archived; an interrupted agent needs the user's eye.
+      ...(a.archived && a.state !== 'interrupted' ? { archived: true, ...(a.archivedAt !== undefined ? { archivedAt: a.archivedAt } : {}) } : {}),
       ...(a.sessionId !== undefined ? { sessionId: a.sessionId } : {}),
       ...(a.git ? { git: a.git } : {}),
       ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
@@ -62,7 +70,7 @@ export class AgentRegistry {
   }
 
   /** Shorthand for the common case of `registerRestored`. */
-  registerDormant(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: AgentGit; cwd?: string }): void {
+  registerDormant(a: { slug: string; role: Role; profile: string; goal?: string; sessionId?: string; git?: AgentGit; cwd?: string; archived?: boolean; archivedAt?: string }): void {
     this.registerRestored({ ...a, state: 'dormant' });
   }
 
@@ -91,7 +99,9 @@ export class AgentRegistry {
     const a = this.agents.get(slug);
     if (!a) return;
     a.finishing = false;
+    a.stopping = false;
     a.pendingGoal = false;
+    this.clearArchive(a);
     this.set(a, 'queued');
   }
 
@@ -105,10 +115,22 @@ export class AgentRegistry {
     if (a) a.cwd = cwd;
   }
 
-  /** The session is about to be ended on purpose (a merged ticket, a finished review). */
-  markFinished(slug: string): void {
+  /** The session is about to be ended on purpose (a merged ticket, a finished review); `stopped`: it goes on later, so it is not archived. */
+  markFinished(slug: string, o: { stopped?: boolean } = {}): void {
     const a = this.agents.get(slug);
-    if (a) a.finishing = true;
+    if (!a) return;
+    a.finishing = true;
+    a.stopping = o.stopped === true;
+  }
+
+  /** Archives or un-archives by hand. False for an unknown name. */
+  setArchived(slug: string, archived: boolean): boolean {
+    const a = this.agents.get(slug);
+    if (!a) return false;
+    if (archived === Boolean(a.archived)) return true;
+    if (archived) { a.archived = true; a.archivedAt = new Date().toISOString(); } else this.clearArchive(a);
+    this.notify(slug);
+    return true;
   }
 
   goalDelivered(slug: string): void {
@@ -147,7 +169,11 @@ export class AgentRegistry {
 
   onProcessExit(slug: string): void {
     const a = this.agents.get(slug);
-    if (a) { a.pendingGoal = false; this.set(a, a.finishing ? 'finished' : 'interrupted'); }
+    if (!a) return;
+    a.pendingGoal = false;
+    this.set(a, a.finishing ? 'finished' : 'interrupted');
+    // Ended for good: it leaves the column by itself. A stopped one waits for its own flow and stays.
+    if (a.state === 'finished' && !a.stopping && a.role !== 'main') this.setArchived(slug, true);
   }
 
   /** SPEC 16.7: active = starting, working, or idle with the first goal still pending. Main and everything else: no. */
@@ -157,9 +183,16 @@ export class AgentRegistry {
     return a.state === 'starting' || a.state === 'working' || (a.state === 'idle' && a.pendingGoal);
   }
 
+  private clearArchive(a: AgentRuntime): void {
+    delete a.archived;
+    delete a.archivedAt;
+  }
+
   private set(a: AgentRuntime, state: Activity): void {
     if (a.state === state) return;
     a.state = state;
+    // New work (or a new problem) brings an archived agent back; only the states of rest keep it away.
+    if (state !== 'finished' && state !== 'dormant') this.clearArchive(a);
     this.notify(a.slug);
   }
 

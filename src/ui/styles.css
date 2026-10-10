@@ -154,6 +154,16 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .statusbar-resume { font: inherit; padding: 0 9px; line-height: 18px; }
 .statusbar-update { font: inherit; padding: 0 9px; line-height: 18px; color: var(--accent); border-color: var(--accent); }
 .statusbar-update[hidden] { display: none; }
+.statusbar-archived { font: inherit; padding: 0 9px; line-height: 18px; }
+
+/* Archive: the small header button and the list of archived agents. */
+.panel-archive { font: inherit; font-size: 11px; padding: 0 7px; line-height: 16px; }
+.panel-archive[hidden] { display: none; }
+.archive-dialog { display: grid; gap: 12px; }
+.archive-list { display: grid; gap: 4px; max-height: 50vh; overflow: auto; }
+.archive-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 13px; }
+.archive-name { overflow: hidden; text-overflow: ellipsis; }
+.archive-profile, .archive-ticket, .archive-when, .archive-empty { color: var(--muted); font-size: 12px; }
 
 /* Side drawers: the queue and the read panel. */
 #drawer, #reader, #requests { position: fixed; top: 40px; bottom: 26px; right: 0; background: var(--surface); border-left: 1px solid var(--seam-strong);

@@ -73,6 +73,9 @@ export class AgentPersister {
         ...(a.git ? { worktree: a.git.worktree, branch: a.git.branch, ...(a.git.repo !== undefined ? { repo: a.git.repo } : {}) } : {}),
         ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
         lastState: a.state,
+        // Archived by the end of the session or by hand; any new work clears it (`undefined` removes the key).
+        archived: a.archived ? true : undefined,
+        archivedAt: a.archived ? a.archivedAt : undefined,
         // Only a state that shows the agent at work counts as activity (an exit or a queue slot does not).
         ...(active || a.state === 'idle' || a.state === 'waiting_user' ? { lastActiveAt: new Date((this.d.now ?? Date.now)()).toISOString() } : {}),
         // Any sign of work clears the stale mark.
