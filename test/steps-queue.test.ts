@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { makeRepo, type TestRepo } from './git-helpers';
+import { makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { createAgentWorktree } from '../src/server/git/worktree';
 import { installPushHook } from '../src/server/git/hooks';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
@@ -32,7 +32,7 @@ beforeEach(async () => {
     queuePosition: () => place,
   });
 });
-afterEach(() => rmSync(t.base, { recursive: true, force: true }));
+afterEach(() => removeDir(t.base));
 
 it('the validation step goes through the test runner as the agent\'s own run, and step_done says where it waits in the queue', async () => {
   await svc.checklistSet('a', ITEMS);

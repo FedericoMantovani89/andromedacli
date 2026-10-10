@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { makeRepo, type TestRepo } from './git-helpers';
+import { makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { createAgentWorktree } from '../src/server/git/worktree';
 import { installPushHook } from '../src/server/git/hooks';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
@@ -37,7 +37,7 @@ beforeEach(async () => {
     debts: () => debts, requestIds: () => requestIds,
   });
 });
-afterEach(() => rmSync(t.base, { recursive: true, force: true }));
+afterEach(() => removeDir(t.base));
 
 const done = (n: number, extra: { note?: string } = {}): Promise<StepResult> => svc.stepDone('a', { n, ...extra });
 const code = (r: StepResult): string => (r.status === 'refused' ? r.code : 'closed');

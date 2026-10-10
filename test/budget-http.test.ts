@@ -1,5 +1,5 @@
 // The token budget wired into the real server: fake agents, a real temporary git repo, transcripts written by the test.
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -15,7 +15,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const repos: TestRepo[] = [];
 const scratch: string[] = [];
 afterEach(() => {
-  while (scratch.length) rmSync(scratch.pop()!, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 });
+  while (scratch.length) removeDir(scratch.pop()!);
   while (repos.length) removeDir(repos.pop()!.base);
 });
 autoClose();

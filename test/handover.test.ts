@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readHandoverNote } from '../src/server/tickets/handover';
+import { removeDir } from './git-helpers';
 
 let root: string;
 let wt: string;
@@ -15,7 +16,7 @@ beforeEach(() => {
   mkdirSync(join(wt, '.andromedacli'), { recursive: true });
   mkdirSync(outside);
 });
-afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { removeDir(root); });
 
 const note = (text: string): void => writeFileSync(join(wt, '.andromedacli', 'handover.md'), text);
 

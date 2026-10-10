@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { branchesOf, gitSync, makeRepo, type TestRepo } from './git-helpers';
+import { branchesOf, gitSync, makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { createAgentWorktree } from '../src/server/git/worktree';
 import { installPushHook } from '../src/server/git/hooks';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
@@ -46,7 +46,7 @@ async function setup(remote = true): Promise<void> {
   });
 }
 beforeEach(() => setup());
-afterEach(() => rmSync(t.base, { recursive: true, force: true }));
+afterEach(() => removeDir(t.base));
 
 const commits = (): string[] => gitSync(wt, 'log', '--format=%s', 'project/p..HEAD').split('\n').filter(Boolean).reverse();
 const done = async (n: number, extra: { note?: string; skip?: boolean } = {}): Promise<StepResult> => svc.stepDone('a', { n, ...extra });

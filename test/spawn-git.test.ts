@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -17,7 +17,7 @@ const repos: TestRepo[] = [];
 const scratch: string[] = [];
 // Registered before autoClose: hooks run in reverse order, so the servers (and their processes) stop first.
 afterEach(() => {
-  while (scratch.length) rmSync(scratch.pop()!, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 });
+  while (scratch.length) removeDir(scratch.pop()!);
   while (repos.length) removeDir(repos.pop()!.base);
 });
 autoClose();

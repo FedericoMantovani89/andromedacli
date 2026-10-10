@@ -1,6 +1,6 @@
 // Recovery wired into the real server: a budget stop, a read-only recovery session on the WIP commit, its report, and the new agent
 // that takes the ticket over on the same branch. Fake agents, a real temporary git repo, transcripts written by the test.
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -14,7 +14,7 @@ process.env.CONSOLE_TEST = '1';
 const repos: TestRepo[] = [];
 const scratch: string[] = [];
 afterEach(() => {
-  while (scratch.length) rmSync(scratch.pop()!, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 });
+  while (scratch.length) removeDir(scratch.pop()!);
   while (repos.length) removeDir(repos.pop()!.base);
 });
 autoClose();

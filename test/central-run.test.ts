@@ -1,13 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CentralRun, type CentralDeps, type CentralGit, type CentralTicket } from '../src/server/tickets/central';
 import type { TestRun } from '../src/server/tickets/test-queue';
+import { removeDir } from './git-helpers';
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'central-')); });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => removeDir(dir));
 
 const ok: TestRun = { ok: true, code: 0, tail: '' };
 const red = (tail: string): TestRun => ({ ok: false, code: 1, tail });

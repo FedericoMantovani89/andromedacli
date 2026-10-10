@@ -1,16 +1,17 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { validateChecklist, type Step } from '../src/server/tickets/checklist';
 import { TicketStore } from '../src/server/tickets/store';
+import { removeDir } from './git-helpers';
 
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
 const W = { requestId: 'TODO-7f3a15', to: 'be-orders' };
 let dir: string;
 let store: TicketStore;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'wait-')); store = new TicketStore(dir); });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => removeDir(dir));
 
 function steps(items = ITEMS, previous?: Step[]): Step[] {
   const r = validateChecklist(items, previous);

@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { renderIndex, resolveVersion } from '../src/server/version';
+import { removeDir } from './git-helpers';
 
 const dirs: string[] = [];
-afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true, maxRetries: 30, retryDelay: 300 }); });
+afterEach(() => { while (dirs.length) removeDir(dirs.pop()!); });
 
 const g = (cwd: string, ...a: string[]): string => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@e.x', ...a], { cwd, encoding: 'utf8' }).trim();
 function repo(pkgVersion = '0.0.1'): string {

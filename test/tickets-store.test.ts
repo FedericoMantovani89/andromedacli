@@ -1,13 +1,14 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { validateChecklist, type Step } from '../src/server/tickets/checklist';
 import { TicketStore } from '../src/server/tickets/store';
+import { removeDir } from './git-helpers';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'tickets-')); });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => removeDir(root));
 
 const steps = (): Step[] => {
   const r = validateChecklist(['Study', 'Tests first', 'Implement a', 'Implement b', 'Validation', 'Update docs']);

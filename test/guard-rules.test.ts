@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, type GuardContext } from '../src/server/guard/rules';
 import { isInside } from '../src/server/guard/paths';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
+import { removeDir } from './git-helpers';
 
 let root: string;
 let W: string; // worktree (path with a space, as in real use)
@@ -25,7 +26,7 @@ beforeAll(() => {
   symlinkSync(OUT, J, 'junction');
   ctx = { worktree: W, repo: R, branch: 'agent/p/a', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
 });
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => removeDir(root));
 
 type Call = { tool: string; input: Record<string, unknown> };
 const sh = (command: string): Call => ({ tool: 'Bash', input: { command } });

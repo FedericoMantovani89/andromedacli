@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, type GuardContext } from '../src/server/guard/rules';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
+import { removeDir } from './git-helpers';
 
 let root: string;
 let W: string;
@@ -14,7 +15,7 @@ beforeAll(() => {
   mkdirSync(W, { recursive: true });
   ctx = { worktree: W, repo: join(root, 'repo'), branch: 'review/review-a-job', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS, readOnly: true };
 });
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => removeDir(root));
 
 type Call = { tool: string; input: Record<string, unknown> };
 const sh = (command: string): Call => ({ tool: 'Bash', input: { command } });

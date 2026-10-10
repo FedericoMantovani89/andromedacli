@@ -1,7 +1,7 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { makeRepo, type TestRepo } from './git-helpers';
+import { makeRepo, type TestRepo, removeDir } from './git-helpers';
 import { createAgentWorktree } from '../src/server/git/worktree';
 import { installPushHook } from '../src/server/git/hooks';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
@@ -37,7 +37,7 @@ beforeEach(async () => {
   await svc.checklistSet('a', ITEMS);
   for (let n = 1; n <= 3; n++) await svc.stepDone('a', { n, note: 'a decent note for this step' });
 });
-afterEach(() => rmSync(t.base, { recursive: true, force: true }));
+afterEach(() => removeDir(t.base));
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 async function untilClosed(count: number): Promise<void> {

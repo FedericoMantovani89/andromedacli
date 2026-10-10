@@ -1,10 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadBundles } from '../src/server/i18n-bundles';
 import { createTranslator } from '../src/shared/i18n';
 import { buildReport, isDocFile, reportPath, squashMessage, writeReport, type ReportInput } from '../src/server/tickets/report';
+import { removeDir } from './git-helpers';
 
 const bundles = loadBundles();
 const translator = (lang: string) => createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') });
@@ -147,7 +148,7 @@ describe('isDocFile', () => {
 });
 
 let dir: string;
-afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => { if (dir) removeDir(dir); });
 describe('writeReport', () => {
   it('writes .andromedacli/tickets/<slug>/report.md and replaces an older one', () => {
     dir = mkdtempSync(join(tmpdir(), 'rep-'));

@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { canMove, nextStatuses, TICKET_STATUSES, type TicketStatus } from '../src/server/tickets/flow';
 import { validateChecklist, type Step } from '../src/server/tickets/checklist';
 import { TicketStore } from '../src/server/tickets/store';
+import { removeDir } from './git-helpers';
 
 const LEGAL: Record<TicketStatus, TicketStatus[]> = {
   in_progress: ['delivered', 'needs_user', 'suspended_budget', 'blocked', 'suspended_limit'],
@@ -55,7 +56,7 @@ describe('ticket flow', () => {
 let root: string;
 let store: TicketStore;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'flow-')); store = new TicketStore(root); });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => removeDir(root));
 
 const steps = (): Step[] => {
   const r = validateChecklist(['Study', 'Tests first', 'Implement a', 'Implement b', 'Validation', 'Update docs']);

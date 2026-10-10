@@ -1,10 +1,11 @@
 // Final-review findings of Phase 4 (guard side). Each case failed before the fix.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { evaluate, type GuardContext } from '../src/server/guard/rules';
 import { DEFAULT_SECRET_PATTERNS } from '../src/server/git/secrets';
+import { removeDir } from './git-helpers';
 
 let root: string;
 let R: string;
@@ -20,7 +21,7 @@ beforeAll(() => {
   mkdirSync(W, { recursive: true });
   ctx = { worktree: W, repo: R, branch: 'agent/p/a', projectBranch: 'project/p', secretPatterns: DEFAULT_SECRET_PATTERNS };
 });
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => removeDir(root));
 
 type Call = { tool: string; input: Record<string, unknown> };
 const sh = (command: string): Call => ({ tool: 'Bash', input: { command } });

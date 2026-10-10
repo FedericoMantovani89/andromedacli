@@ -1,10 +1,11 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { missingChangelog } from '../scripts/check-changelog';
 import { BEGIN_FILE, STAMP_FILE, countsAsCode, isCommit, isWip, stamp, verdict } from '../scripts/commit-gate';
+import { removeDir } from './git-helpers';
 
 vi.setConfig({ testTimeout: 60_000 }); // real git and a real node process
 
@@ -53,7 +54,7 @@ describe('commit gate: the verdict', () => {
 
 describe('commit gate: the hook process, in a real repository', () => {
   const dirs: string[] = [];
-  afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
+  afterEach(() => { while (dirs.length) removeDir(dirs.pop()!); });
   const gate = resolve('scripts', 'commit-gate.ts');
   const run = (cwd: string, command: string) => spawnSync(process.execPath, [gate], { input: JSON.stringify({ tool_input: { command }, cwd }), env: { ...process.env, CLAUDE_PROJECT_DIR: cwd }, encoding: 'utf8' });
 
