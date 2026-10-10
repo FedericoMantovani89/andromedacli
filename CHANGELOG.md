@@ -19,6 +19,7 @@ introduces the behaviour.
 - Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
 
 ### Fixed
+- A long validation no longer ends in "The console did not answer.": `step_done` runs the tests as a job of its own, each request waits at most 15 s and answers `running`, the mod asks again until the real result, and the step is recorded when the run ends.
 - Desktop app: a second click on close (or a quit) while the clean stop runs no longer ends the app before the stop finishes, and "Restart to update" stops the server cleanly before the installer starts; the install request is answered at once.
 - Budget: an agent resumed after a console restart no longer has its whole earlier transcript counted a second time.
 - Queue: what the user is asked to allow is built by the console from the call that will be remembered; the "always" buttons are offered only for a call that can be remembered; a dropped question frees its handler.

@@ -112,7 +112,7 @@ const TOOL_SPECS = {
   },
   step_done: {
     description: 'Close the next open step of your checklist. The console commits it (you never run git commit) and, at the validation step, '
-      + 'runs the tests itself. Returns { status: "closed" | "refused", code?, detail?, tail?, files? }.',
+      + 'runs the tests itself (it can take many minutes: the call waits for the result). Returns { status: "closed" | "refused", code?, detail?, tail?, files? }.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -304,6 +304,24 @@ function toolBody(name, e) {
   return {};
 }
 
+/**
+ * The validation can take tens of minutes and the host drops a request that stays open that long. The console runs it on its own and
+ * answers each request within seconds with "running"; asking again joins the same run. A lost answer is asked again too.
+ */
+async function stepDoneUntilEnd($, e) {
+  let failures = 0;
+  for (;;) {
+    const r = await call($, 'POST', '/v1/tools/step_done', toolBody('step_done', e));
+    if (r.json && r.json.status !== 'running') return { result: JSON.stringify(r.json) };
+    if (r.json) failures = 0;
+    else {
+      failures += 1;
+      if (failures >= MAX_CONSOLE_FAILURES) return { result: 'The console did not answer. The validation may still be running: call step_done again with the same n.' };
+      await $.clock.sleep(1000);
+    }
+  }
+}
+
 async function onConsoleTool($, name, e) {
   try {
     if (!ctx) return { deny: 'This session is not connected to the console.' };
@@ -311,6 +329,7 @@ async function onConsoleTool($, name, e) {
       const a = await askConsole($, String(e.question), Array.isArray(e.options) ? e.options.map(String) : undefined, false);
       return { result: a.ok ? 'The user answered: ' + a.answer : 'No answer: ' + a.reason };
     }
+    if (name === 'step_done') return await stepDoneUntilEnd($, e);
     const r = await call($, 'POST', '/v1/tools/' + name, toolBody(name, e));
     if (!r.json) return { result: 'The console did not answer.' };
     return { result: JSON.stringify(r.json) };

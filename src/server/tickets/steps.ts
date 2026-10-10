@@ -17,6 +17,10 @@ export type StepResult =
   | { status: 'closed'; n: number; total: number; sha?: string; delivered?: boolean; pushed?: boolean; pushNote?: string }
   | { status: 'refused'; code: StepRefusal; detail?: string; tail?: string; files?: string[]; timedOut?: boolean };
 
+/** The bounded wait ended before the step did: the work goes on, ask again with the same step number. */
+export type StepRunning = { status: 'running'; n: number };
+interface StepJob { n: number; waiters: number; promise: Promise<StepResult> }
+
 export type ChecklistSetResult =
   | { status: 'ok'; steps: Step[] }
   | { status: 'refused'; code: ChecklistError | 'no_worktree' | 'already_delivered'; detail: string };
@@ -56,6 +60,8 @@ const refuse = (code: StepRefusal, extra: Omit<Extract<StepResult, { status: 're
  */
 export class StepService {
   private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly jobs = new Map<string, StepJob>();
+  private readonly unclaimed = new Map<string, { n: number; result: StepResult }>();
 
   constructor(private readonly d: StepDeps) {}
 
@@ -80,8 +86,49 @@ export class StepService {
     });
   }
 
-  stepDone(slug: string, o: { n: number; note?: string; skip?: boolean }): Promise<StepResult> {
-    return this.serial(slug, () => this.close(slug, o));
+  /**
+   * Closes a step. With `waitMs` the call is bounded: the work (the validation can last tens of minutes) runs as a job that does not
+   * depend on this call, and when the wait ends first the answer is `running`; asking again joins the job, and a result nobody was
+   * waiting for is kept for the next call. Without `waitMs` it waits for the end, as before.
+   */
+  stepDone(slug: string, o: { n: number; note?: string; skip?: boolean }): Promise<StepResult>;
+  stepDone(slug: string, o: { n: number; note?: string; skip?: boolean }, opts: { waitMs?: number }): Promise<StepResult | StepRunning>;
+  async stepDone(slug: string, o: { n: number; note?: string; skip?: boolean }, opts: { waitMs?: number } = {}): Promise<StepResult | StepRunning> {
+    const kept = this.unclaimed.get(slug);
+    if (kept) {
+      this.unclaimed.delete(slug);
+      if (kept.n === o.n) return kept.result;
+    }
+    let job = this.jobs.get(slug);
+    if (!job || job.n !== o.n || opts.waitMs === undefined) { // only a bounded call joins: the unbounded one keeps the serial semantics
+      const started: StepJob = { n: o.n, waiters: 0, promise: undefined as unknown as Promise<StepResult> };
+      started.promise = this.serial(slug, () => this.close(slug, o)).then(
+        (r) => this.finishJob(slug, started, r),
+        () => this.finishJob(slug, started, refuse('commit_failed', { detail: 'the step failed unexpectedly: try again' })),
+      );
+      this.jobs.set(slug, started);
+      job = started;
+    }
+    job.waiters += 1;
+    if (opts.waitMs === undefined) {
+      try { return await job.promise; } finally { job.waiters -= 1; }
+    }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        job.promise,
+        new Promise<StepRunning>((resolve) => { timer = setTimeout(() => resolve({ status: 'running', n: o.n }), opts.waitMs); }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      job.waiters -= 1;
+    }
+  }
+
+  private finishJob(slug: string, job: StepJob, result: StepResult): StepResult {
+    if (this.jobs.get(slug) === job) this.jobs.delete(slug);
+    if (job.waiters === 0) this.unclaimed.set(slug, { n: job.n, result });
+    return result;
   }
 
   reportBlocked(slug: string, reason: string): void {

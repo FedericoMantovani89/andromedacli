@@ -246,12 +246,46 @@ it('step_done, checklist_set and report_blocked send only their own fields and r
   await find('tool.call', 'mcp__console-mod__report_blocked')(f.$, { reason: 'stuck', extra: 1 });
   expect(bodies.report_blocked).toEqual({ reason: 'stuck' });
 });
+it('step_done keeps asking while the console says "running" and returns the final answer', async () => {
+  const { find } = await loadMod();
+  let n = 0;
+  const f = fake$({
+    env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' },
+    fetch: (url) => {
+      if (!url.includes('/v1/tools/step_done')) return { ok: true, text: '{}' };
+      n += 1;
+      return { ok: true, text: JSON.stringify(n < 4 ? { status: 'running', n: 5 } : { status: 'closed', n: 5 }) };
+    },
+  });
+  await find('session.start')(f.$, {}, next);
+  const out = await find('tool.call', 'mcp__console-mod__step_done')(f.$, { n: 5 });
+  expect(out).toEqual({ result: JSON.stringify({ status: 'closed', n: 5 }) });
+  expect(n).toBe(4);
+});
+it('step_done survives a dropped connection while the validation runs and asks again', async () => {
+  const { find } = await loadMod();
+  let n = 0;
+  const f = fake$({
+    env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' },
+    fetch: (url) => {
+      if (!url.includes('/v1/tools/step_done')) return { ok: true, text: '{}' };
+      n += 1;
+      if (n === 2) return new Error('fetch timeout');
+      return { ok: true, text: JSON.stringify(n < 3 ? { status: 'running', n: 5 } : { status: 'closed', n: 5 }) };
+    },
+  });
+  await find('session.start')(f.$, {}, next);
+  const out = await find('tool.call', 'mcp__console-mod__step_done')(f.$, { n: 5 });
+  expect(out).toEqual({ result: JSON.stringify({ status: 'closed', n: 5 }) });
+});
 it('a ticket tool called while the console is unreachable says so instead of throwing', async () => {
   const { find } = await loadMod();
   const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: (url) => (url.includes('/v1/tools/') ? new Error('ECONNREFUSED') : { ok: true, text: '{}' }) });
   await find('session.start')(f.$, {}, next);
-  const out = await find('tool.call', 'mcp__console-mod__step_done')(f.$, { n: 1 });
+  const out = await find('tool.call', 'mcp__console-mod__checklist_set')(f.$, { items: ['a'] });
   expect(out).toEqual({ result: 'The console did not answer.' });
+  const done = await find('tool.call', 'mcp__console-mod__step_done')(f.$, { n: 1 });
+  expect(done.result).toContain('call step_done again with the same n');
 });
 
 // ---- the guard hook (Phase 3, Task 5) ----
