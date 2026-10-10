@@ -360,6 +360,38 @@ describe('options dialog', () => {
     expect(puts).toContainEqual({ testsDisabled: true });
     expect(document.querySelectorAll('.settings-test > .settings-note')).toHaveLength(0); // no lines under the command field
   });
+  it('three optional commands per moment sit beside the test command, each staged for Save with a tooltip', async () => {
+    await openOptions(() => state, 'projects');
+    await flush();
+    for (const key of ['ticket', 'merge', 'release']) {
+      const input = document.querySelector<HTMLInputElement>(`input[name="testCommands.${key}"]`)!;
+      expect(input, key).not.toBeNull();
+      expect(input.value).toBe('');
+      expect(input.closest('label')!.querySelector('.info-icon')!.getAttribute('data-i18n-title')).toBe(`settings.testCommands.${key}.tip`);
+    }
+    const merge = document.querySelector<HTMLInputElement>('input[name="testCommands.merge"]')!;
+    merge.value = 'npm run test:smoke';
+    merge.dispatchEvent(new Event('change'));
+    expect(puts).toEqual([]); // one Save
+    await clickSave();
+    expect(puts).toContainEqual({ testCommands: { merge: 'npm run test:smoke' } });
+  });
+  it('with the tests inhibited the per-moment fields are disabled too', async () => {
+    await openOptions(() => state, 'projects');
+    await flush();
+    const off = document.querySelector<HTMLInputElement>('input[name="testsDisabled"]')!;
+    off.checked = true;
+    off.dispatchEvent(new Event('change'));
+    for (const key of ['ticket', 'merge', 'release']) expect(document.querySelector<HTMLInputElement>(`input[name="testCommands.${key}"]`)!.disabled).toBe(true);
+  });
+  it('the saved per-moment commands are shown in their fields', async () => {
+    const withCommands = { ...state, project: { name: 'p', testCommands: { ticket: 'fast', release: 'full' } } } as unknown as StateMessage;
+    await openOptions(() => withCommands, 'projects');
+    await flush();
+    expect(document.querySelector<HTMLInputElement>('input[name="testCommands.ticket"]')!.value).toBe('fast');
+    expect(document.querySelector<HTMLInputElement>('input[name="testCommands.merge"]')!.value).toBe('');
+    expect(document.querySelector<HTMLInputElement>('input[name="testCommands.release"]')!.value).toBe('full');
+  });
   it('the note on when settings apply is said once, next to Save, on every tab and not inside any of them', async () => {
     await openOptions(() => state);
     for (const tab of ['models', 'profiles', 'budget', 'guard', 'notifications', 'git', 'projects']) {

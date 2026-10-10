@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- A project can set a different test command for each moment (`testCommands` in `project.json`, three fields in Options, This project): `ticket` (validation step, review re-run, recovery), `merge` (after a merge) and `release`; each falls back to the single test command, so nothing changes unless they are set. New npm scripts `test:ticket` (check + tests changed against the project branch) and `test:smoke` (check + 7 core files); neither writes the commit-gate stamp.
 - The header Queue and Options buttons and the agent bar's Read button are icon buttons (bell with a count badge, gear, clipboard); the tooltip and accessible name keep the translated text.
 - Requests between agents: `send_message` (question, answer, info, unknown, escalate) routed by the console; a question returns an id `TODO-xxxxxx` at once and the asker keeps working.
 - A checklist step can wait for an answer (`Step.waitingOn`): `step_done` goes past it, the validation and documentation steps refuse (`pending_requests`) while one waits, and a step cannot close while its `TODO-<id>` comment is still in the code (`todo_left`); the ticket is not delivered with any such comment left.

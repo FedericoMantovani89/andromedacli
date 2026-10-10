@@ -105,6 +105,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
     });
     const test = pick(o.test, detected.test, data.commands.test);
     if (test !== undefined) store.setTestCommand(test);
+    store.setTestCommands({ ticket: data.commands.testTicket ?? '', merge: data.commands.testMerge ?? '', release: data.commands.testRelease ?? '' });
     if (data.git.squash !== undefined) store.setSquash(data.git.squash);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

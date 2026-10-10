@@ -30,7 +30,7 @@ import type { LaunchWatch } from './agents/launch-watch';
 import { renderIndex } from './version';
 import type { UiAssets } from './ui-assets';
 import type { UpdateControl, UpdateState } from '../shared/update';
-import { isValidProjectField, isValidTestCommand, PROJECT_FIELDS, PROJECT_RANGES } from './project-store';
+import { isValidProjectField, isValidTestCommand, isValidTestCommands, type ProjectInfo, PROJECT_FIELDS, PROJECT_RANGES } from './project-store';
 import { loadTemplates } from './templates/load';
 import { detectProject } from './templates/detect';
 import { saveTemplate } from './templates/save';
@@ -217,11 +217,12 @@ export function buildState(ctx: Context): StateMessage {
     .map((a) => ({ slug: a.slug, profile: a.profile, role: 'agent', status: status(a.slug), ...derived(a.slug), ...launchOf(a.slug), ...silenceOf(a.slug), ...waitingOf(a.slug), ...requestsOf(a.slug), ...(a.stale ? { stale: true as const } : {}), ...(ctx.loop.level(a.slug) > 0 ? { loop: ctx.loop.level(a.slug) as 1 | 2 | 3 } : {}) }));
   let testCommand: string | undefined;
   let testsDisabled: boolean | undefined;
+  let testCommands: ProjectInfo['testCommands'];
   let squash: boolean | undefined;
   let model: string | undefined;
   let maxActive: number | undefined;
   let offeredProfiles: string[] | undefined;
-  try { ({ testCommand, testsDisabled, squash, model, maxActive, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
+  try { ({ testCommand, testCommands, testsDisabled, squash, model, maxActive, profiles: offeredProfiles } = ctx.store.project); } catch { /* a damaged project.json: shown as not set */ }
   const repos = ctx.repos();
   const worst = ctx.quotaState.worst();
   const slept = ctx.sleep.state();
@@ -234,7 +235,7 @@ export function buildState(ctx: Context): StateMessage {
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.
     limits: { active: ctx.scheduler.activeCount(), max: (({ global, perProject }) => Math.min(global, perProject))(ctx.scheduler.effectiveLimits()) },
-    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(testsDisabled ? { testsDisabled } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, profileNamesOf(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
+    type: 'state', project: { name: ctx.projectName, ...(testCommand ? { testCommand } : {}), ...(testCommands ? { testCommands } : {}), ...(ctx.detectedTestCommand() ? { detectedTestCommand: ctx.detectedTestCommand() } : {}), ...(squash !== undefined ? { squash } : {}), ...(testsDisabled ? { testsDisabled } : {}), ...(model ? { model } : {}), ...(maxActive !== undefined ? { maxActive } : {}) }, settings: { bypassPermissions: ctx.bypass, guardMode: ctx.guardMode, worktrees: ctx.git.worktrees }, main, agents, language: ctx.language, languages: [...ctx.bundles.keys()].sort(), profiles: pickableProfiles(offeredProfiles, profileNamesOf(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'))),
     prereq: ctx.getPrereq(), helperUse: ctx.getHelperUse(), needsSetup: ctx.needsSetup(), projectIsRepo: repos.length > 0, repos, projectRoot: ctx.projectRoot,
     ...(() => { const rows = ctx.requests.rows(); return rows.length > 0 ? { requests: rows } : {}; })(),
     queue: ctx.questions.pending(),
@@ -511,13 +512,15 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const hasCommand = 'testCommand' in b;
       const hasSquash = 'squash' in b;
       const hasTests = 'testsDisabled' in b;
+      const hasMoments = 'testCommands' in b;
       const knownProfiles = listProfileNames(ctx.projectRoot, join(dirname(ctx.configPath), 'profiles'));
       const projectFields = PROJECT_FIELDS.filter((f) => f in b); // Phase 6D: build/lint commands, profiles, model, budget, limit, docs, secrets
-      if (!hasCommand && !hasSquash && !hasTests && projectFields.length === 0) return fail(res, 400, 'bad_request');
+      if (!hasCommand && !hasSquash && !hasTests && !hasMoments && projectFields.length === 0) return fail(res, 400, 'bad_request');
       // Everything is checked before anything is written: a bad entry changes nothing.
       if (hasSquash && typeof b.squash !== 'boolean') return fail(res, 422, 'project.squashInvalid');
       if (hasTests && typeof b.testsDisabled !== 'boolean') return fail(res, 422, 'project.testsDisabledInvalid');
       if (hasCommand && !isValidTestCommand(b.testCommand)) return fail(res, 422, 'project.testCommandInvalid');
+      if (hasMoments && !isValidTestCommands(b.testCommands)) return fail(res, 422, 'project.testCommandInvalid');
       for (const f of projectFields) {
         const v = typeof b[f] === 'string' ? (b[f] as string).trim() : b[f];
         const clears = v === null || v === '' || (Array.isArray(v) && v.length === 0);
@@ -529,12 +532,13 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       }
       if (new URL(req.url ?? '/', 'http://x').searchParams.get('dryRun') === '1') return send(res, 200, {}); // checked, nothing written
       if (hasCommand) ctx.store.setTestCommand(b.testCommand as string);
+      if (hasMoments) ctx.store.setTestCommands(b.testCommands);
       if (hasSquash) ctx.store.setSquash(b.squash as boolean);
       if (hasTests) ctx.store.setTestsDisabled(b.testsDisabled as boolean);
       if (projectFields.length > 0) ctx.store.setFields(Object.fromEntries(projectFields.map((f) => [f, b[f]])), knownProfiles);
       ctx.broadcastState();
       const saved = ctx.store.project;
-      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...(hasTests ? { testsDisabled: b.testsDisabled } : {}), ...Object.fromEntries(projectFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
+      return send(res, 200, { ...(hasCommand && saved.testCommand ? { testCommand: saved.testCommand } : {}), ...(hasMoments && saved.testCommands ? { testCommands: saved.testCommands } : {}), ...(hasSquash ? { squash: b.squash } : {}), ...(hasTests ? { testsDisabled: b.testsDisabled } : {}), ...Object.fromEntries(projectFields.filter((f) => saved[f] !== undefined).map((f) => [f, saved[f]])) });
     }
 
     if (req.method === 'POST' && path === '/api/projects/save-template') {

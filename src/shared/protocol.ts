@@ -78,7 +78,7 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
-  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** What the project's files suggest (used while `testCommand` is empty). */ detectedTestCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean; /** The tests are switched off for this project: no test run, and the reports say so. */ testsDisabled?: boolean; /** The model this project's agents get (empty: the one of Options, Models). */ model?: string; /** The most agents running at once in this project. */ maxActive?: number };
+  project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** Commands for single moments (`ticket`, `merge`, `release`); a missing one uses `testCommand`. */ testCommands?: { ticket?: string; merge?: string; release?: string }; /** What the project's files suggest (used while `testCommand` is empty). */ detectedTestCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean; /** The tests are switched off for this project: no test run, and the reports say so. */ testsDisabled?: boolean; /** The model this project's agents get (empty: the one of Options, Models). */ model?: string; /** The most agents running at once in this project. */ maxActive?: number };
   /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
   settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };
   main: SessionInfo;

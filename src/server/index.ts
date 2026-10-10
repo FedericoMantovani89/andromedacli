@@ -10,7 +10,8 @@ import { PROJECT_NAME_RE, ProjectError, type AddProjectOptions, type ProjectsApi
 import { projectNameFromDir } from './cli-args';
 import { ModelCatalog } from './catalog/models';
 import { PluginCatalog } from './catalog/plugins';
-import { ProjectStore } from './project-store';
+import { ProjectStore, type TestMoment } from './project-store';
+import { testCommandFor } from './test-commands';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
 import { detectProject } from './templates/detect';
@@ -247,7 +248,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   };
   // With the tests inhibited there is no command at all: the merge, the release and the recovery then run nothing (they already skip an empty one).
   const testsDisabled = (): boolean => { try { return store.project.testsDisabled === true; } catch { return false; } };
-  const effectiveTestCommand = (): string | undefined => (testsDisabled() ? undefined : store.project.testCommand?.trim() || detectedTestCommand());
+  // One command per moment: the project's own for `ticket` (validation step, review re-run, recovery), `merge` or `release`, else its single command.
+  const testCommandAt = (moment: TestMoment) => (): string | undefined => testCommandFor(moment, { project: () => store.project, detected: detectedTestCommand });
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
   const tickets = new TicketStore(o.projectRoot);
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
@@ -276,7 +278,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const review = new ReviewService({
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: effectiveTestCommand,
+    testCommand: testCommandAt('ticket'),
     testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
@@ -295,7 +297,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const merge = new MergeService({
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: effectiveTestCommand,
+    testCommand: testCommandAt('merge'),
     testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     squash: () => store.project.squash !== false,
@@ -308,7 +310,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   });
   const release = new ReleaseService({
     tickets, root: o.projectRoot, project: projectName,
-    testCommand: effectiveTestCommand,
+    testCommand: testCommandAt('release'),
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     language: reportLanguage,
     notifyMain: (text) => { inbox.push(projectName, text); },
@@ -375,7 +377,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const recovery: RecoveryService = new RecoveryService({
     tickets, ledger, root: resolve(o.projectRoot), project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: effectiveTestCommand,
+    testCommand: testCommandAt('ticket'),
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     spawnRecovery: async (r) => {
       const out = await spawnAgent(ctx, { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
@@ -587,7 +589,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const steps: StepService = new StepService({
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: effectiveTestCommand,
+    testCommand: testCommandAt('ticket'),
     testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     secretPatterns,

@@ -29,6 +29,7 @@ export function copyProjectSettings(fromRoot: string, toRoot: string, toName: st
     }
     to.setFields(Object.fromEntries(PROJECT_FIELDS.map((f) => [f, (source as unknown as Record<string, unknown>)[f]])));
     to.setTestCommand(source.testCommand ?? '');
+    to.setTestCommands({ ticket: source.testCommands?.ticket ?? '', merge: source.testCommands?.merge ?? '', release: source.testCommands?.release ?? '' });
     if (source.squash !== undefined) to.setSquash(source.squash);
     to.setTestsDisabled(source.testsDisabled === true);
     return { ok: true };

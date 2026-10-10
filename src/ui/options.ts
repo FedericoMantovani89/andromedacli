@@ -404,8 +404,27 @@ function projectsTab(env: Env): HTMLElement {
   if (detected) test.placeholder = detected;
   testText.append(testName, detected ? infoIcon(k('settings.testCommand.tip.detected'), { command: detected }) : infoIcon(k('settings.testCommand.tip.none')));
   testForm.append(testLabel);
+  // The same command can be narrower at one moment (a fast, pointed run for a ticket, a smoke set after a merge); empty uses the one above.
+  const momentInputs = (['ticket', 'merge', 'release'] as const).map((moment) => {
+    const label = el('label');
+    const head = el('span', 'options-field-head');
+    const name = el('span');
+    bindText(name, `settings.testCommands.${moment}`);
+    head.append(name, infoIcon(k(`settings.testCommands.${moment}.tip`)));
+    const input = el('input');
+    input.name = `testCommands.${moment}`;
+    input.autocomplete = 'off';
+    input.value = state?.project.testCommands?.[moment] ?? '';
+    input.addEventListener('change', () => {
+      const wanted = input.value;
+      env.stage(`project:testCommands.${moment}`, (dry) => api<ApiError>(dry ? '/api/project?dryRun=1' : '/api/project', { method: 'PUT', body: { testCommands: { [moment]: wanted } } }));
+    });
+    label.append(head, input);
+    testForm.append(label);
+    return input;
+  });
   // With the tests inhibited the command is not used: the field is disabled (and dimmed), its text is kept for when they come back.
-  const syncTests = (): void => { test.disabled = off.checked; testForm.classList.toggle('is-off', off.checked); };
+  const syncTests = (): void => { for (const i of [test, ...momentInputs]) i.disabled = off.checked; testForm.classList.toggle('is-off', off.checked); };
   off.addEventListener('change', () => {
     const wanted = off.checked;
     env.stage('project:testsDisabled', (dry) => api<ApiError>(dry ? '/api/project?dryRun=1' : '/api/project', { method: 'PUT', body: { testsDisabled: wanted } }));

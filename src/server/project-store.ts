@@ -3,11 +3,17 @@ import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 import { readJsonFile } from './json-file';
 
+export const TEST_MOMENTS = ['ticket', 'merge', 'release'] as const;
+export type TestMoment = (typeof TEST_MOMENTS)[number];
+export type TestCommands = { [M in TestMoment]?: string };
+
 /** `testCommand` is what the console runs for the validation step of every ticket (SPEC 8.3); the user writes it. */
 export interface ProjectInfo {
   name: string;
   createdAt: string;
   testCommand?: string;
+  /** Optional command for one moment (`ticket`: validation step and review re-run; `merge`: after a merge; `release`: release); each falls back to `testCommand`. */
+  testCommands?: TestCommands;
   /** One commit per ticket when merged (default); false keeps the step commits behind a merge commit (SPEC 9.7). */
   squash?: boolean;
   /** The user switched the tests off for this project: nothing runs them and the reports say so (never "passed"). */
@@ -50,6 +56,10 @@ export type AgentPatch = { [K in keyof Omit<AgentRecord, 'slug' | 'createdAt'>]?
 
 /** One line, at most 500 characters (the console runs it through the platform shell: the user wrote it). */
 export const isValidTestCommand = (v: unknown): v is string => typeof v === 'string' && v.length <= 500 && !/[\r\n]/.test(v);
+
+/** A `testCommands` patch: an object whose keys are moments and whose values are test commands (an empty string clears one). */
+export const isValidTestCommands = (v: unknown): v is Record<string, string> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v) && Object.entries(v).every(([k, c]) => (TEST_MOMENTS as readonly string[]).includes(k) && isValidTestCommand(c));
 
 /** A model alias or id: plain characters only, because it becomes a command-line argument (same rule as `MODEL_RE` in spawn.ts). */
 const PROJECT_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;
@@ -104,6 +114,17 @@ export class ProjectStore {
     const { testCommand: _old, ...rest } = this.project;
     const trimmed = command.trim();
     writeJsonAtomic(this.projectFile, trimmed === '' ? rest : { ...rest, testCommand: trimmed });
+  }
+
+  /** Sets (or, with an empty string, clears) the commands of single moments; keys not mentioned keep their value. Checked before anything is written. */
+  setTestCommands(patch: unknown): void {
+    if (!isValidTestCommands(patch)) throw new Error('project.testCommandInvalid');
+    const { testCommands: old, ...rest } = this.project;
+    const next: TestCommands = { ...old };
+    for (const [moment, command] of Object.entries(patch) as [TestMoment, string][]) {
+      if (command.trim() === '') delete next[moment]; else next[moment] = command.trim();
+    }
+    writeJsonAtomic(this.projectFile, Object.keys(next).length === 0 ? rest : { ...rest, testCommands: next });
   }
 
   /** `true`: the project's tests are inhibited (no test run anywhere); `false` takes the field away, so the project is as any other. */

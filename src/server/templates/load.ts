@@ -14,7 +14,7 @@ export interface TemplateData {
   description: Record<string, string>;
   /** Profiles offered to the new-agent picker; absent means all. */
   profiles?: string[];
-  commands: { build?: string; test?: string; lint?: string };
+  commands: { build?: string; test?: string; lint?: string; testTicket?: string; testMerge?: string; testRelease?: string };
   git: { squash?: boolean; secretPatterns?: string[] };
   /** Files the last checklist step must update. */
   docs: string[];
@@ -68,7 +68,7 @@ export function validateTemplate(raw: unknown, folderId: string): { ok: true; da
   const commands: TemplateData['commands'] = {};
   if (raw.commands !== undefined) {
     if (!isObj(raw.commands)) return { ok: false, reason: 'commands must be an object' };
-    for (const key of ['build', 'test', 'lint'] as const) {
+    for (const key of ['build', 'test', 'lint', 'testTicket', 'testMerge', 'testRelease'] as const) {
       const v = raw.commands[key];
       if (v === undefined) continue;
       if (!isValidTestCommand(v)) return { ok: false, reason: `commands.${key} must be one line of at most 500 characters` };
