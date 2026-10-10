@@ -101,7 +101,7 @@ try {
     const q = await asMod('ask-agent', '/v1/tools/ask_user', 'POST', { question: 'Existing table or a new one?', options: ['Existing', 'New'] });
     const polling = asMod('ask-agent', `/v1/questions/${q.json.id}?wait=15`);
     check('the project tab shows a dot and the button counts the question',
-      await until(async () => (await page.locator('#tabs .tab.attention').count()) === 1 && (await page.locator('#queue-btn').innerText()) === 'Queue (1)'));
+      await until(async () => (await page.locator('#tabs .tab.attention').count()) === 1 && (await page.locator('#queue-btn').getAttribute('aria-label')) === 'Queue (1)'));
     check('the agent shows Waiting for you', await until(async () => (await page.locator(`${panel('ask-agent')} .panel-state`).innerText()) === 'Waiting for you'));
     await page.keyboard.press('Alt+Q');
     check('Alt+Q opens the queue with the question', await until(async () => (await page.locator('#drawer .queue-item').count()) === 1));

@@ -7,6 +7,7 @@ import { api, wsUrl } from './api';
 import { reconcile } from './dom';
 import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
+import { setIconButton } from './icons';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyRequests, applyTicket, applyWaiting } from './chips';
 import { SCROLLBACK, TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
@@ -90,7 +91,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
   requestsOwedEl.className = 'panel-requests owed';
   requestsOwedEl.hidden = true;
   readBtn.className = 'panel-read';
-  bindText(readBtn, 'reader.open');
+  setIconButton(readBtn, 'clipboard', k('reader.open'));
   readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
   readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
   header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, requestsWaitingEl, requestsOwedEl, progressEl, readBtn);

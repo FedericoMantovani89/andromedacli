@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Added
+- The header Queue and Options buttons and the agent bar's Read button are icon buttons (bell with a count badge, gear, clipboard); the tooltip and accessible name keep the translated text.
 - Requests between agents: `send_message` (question, answer, info, unknown, escalate) routed by the console; a question returns an id `TODO-xxxxxx` at once and the asker keeps working.
 - A checklist step can wait for an answer (`Step.waitingOn`): `step_done` goes past it, the validation and documentation steps refuse (`pending_requests`) while one waits, and a step cannot close while its `TODO-<id>` comment is still in the code (`todo_left`); the ticket is not delivered with any such comment left.
 - An agent cannot close its validation or documentation step while a request addressed to it is open (`unanswered_requests`), nor close the step named after an open request ("Answer TODO-x") before answering it (`request_unanswered`).

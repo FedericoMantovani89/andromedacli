@@ -168,7 +168,7 @@ try {
     await page.keyboard.type('yyy');
     await page.keyboard.press('Enter');
     check('after the wizard closes the keyboard is back in main', await until(async () => (await snapshot('shop-api')).includes('ECHO:yyy')));
-    check('queue shows the real count (nothing is waiting)', (await page.locator('#queue-btn').innerText()) === 'Queue (0)', await page.locator('#queue-btn').innerText());
+    check('queue shows the real count (nothing is waiting)', (await page.locator('#queue-btn').getAttribute('aria-label')) === 'Queue (0)', String(await page.locator('#queue-btn').getAttribute('aria-label')));
     for (const slug of ['one-job', 'two-job']) await post('/api/agents', { slug, profile: 'developer' });
     // "Agents active/max" since Phase 5 (SPEC 16.7): two agents are active, the main session is not counted
     check('status bar counts agents without the main session', await until(async () => /\bAgents 2\/\d+\b/.test(await page.locator('#statusbar').innerText())), await page.locator('#statusbar').innerText());

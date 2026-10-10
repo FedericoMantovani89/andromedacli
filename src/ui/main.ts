@@ -2,7 +2,8 @@ import type { HostInfo, StateMessage } from '../shared/protocol';
 import { api, getSelectedProject, setSelectedProject, wsUrl } from './api';
 import { openNewProjectDialog } from './new-project';
 import { neighbourProject, openCloseProjectDialog, renderProjectTabs, titleWithWaiting } from './project-tabs';
-import { bindText, initI18n, initI18nAnonymous, resolveLanguage } from './i18n-client';
+import { bindText, initI18n, k, initI18nAnonymous, resolveLanguage } from './i18n-client';
+import { setIconButton, setQueueBadge } from './icons';
 import { createNewAgentControl } from './new-agent';
 import { createQueueDrawer, queueIdFromHash } from './queue';
 import { createRequestsDrawer } from './requests';
@@ -51,11 +52,12 @@ function renderChrome(s: StateMessage): void {
     add: () => openNewProjectDialog(() => state),
   });
   document.title = titleWithWaiting(baseTitle, projects);
-  bindText($('queue-btn'), 'header.queue', { count: s.queue.length });
+  setIconButton($('queue-btn'), 'bell', k('header.queue'), { count: s.queue.length });
+  setQueueBadge($('queue-btn'), s.queue.length);
   const live = (s.requests ?? []).filter((r) => r.state === 'open' || r.state === 'escalated').length;
   $('requests-btn').hidden = (s.requests ?? []).length === 0 && !requestsDrawer.isOpen();
   bindText($('requests-btn'), 'header.requests', { count: live });
-  bindText($('settings-btn'), 'header.settings');
+  setIconButton($('settings-btn'), 'gear', k('header.settings'));
   renderStatusBar($('statusbar'), s);
   document.title = titleWithCount(document.title, s.queue.length); // the number of things waiting (6C replaces it with the all-projects total)
 }
