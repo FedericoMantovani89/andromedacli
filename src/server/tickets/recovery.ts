@@ -299,12 +299,24 @@ export class RecoveryService {
     if (!entry) return { ok: false, code: 'not_recovery' };
     const report = parseReport(body);
     if (!report) return { ok: false, code: 'bad_request' };
-    return this.serial(entry.ticket, async (): Promise<RecoveryReportResult> => {
-      const t = this.d.tickets.get(entry.ticket);
-      if (this.active.get(slug) !== entry || !t || t.status !== 'recovering') return { ok: false, code: 'not_recovery' };
-      this.active.delete(slug);
-      this.d.endRecovery(slug);
-      const ticket = entry.ticket;
+    let accepted = false;
+    try {
+      return await this.serial(entry.ticket, async (): Promise<RecoveryReportResult> => {
+        const t = this.d.tickets.get(entry.ticket);
+        if (this.active.get(slug) !== entry || !t || t.status !== 'recovering') return { ok: false, code: 'not_recovery' };
+        this.active.delete(slug);
+        accepted = true;
+        return this.accept(slug, entry.ticket, t, report);
+      });
+    } finally {
+      // The session ends a few seconds AFTER the work is done, never while it runs: a slow restart under load would otherwise
+      // revoke the session before its report is even answered (the next call would be unauthorized, not refused).
+      if (accepted) this.d.endRecovery(slug);
+    }
+  }
+
+  private async accept(slug: string, ticket: string, t: { budget?: { limit: number }; recoveries: number }, report: RecoveryReport): Promise<RecoveryReportResult> {
+    {
       const summary = `Recovery of ticket "${ticket}" by ${slug}: diagnosis "${report.diagnosis.replace(/\s+/g, ' ').slice(0, 300)}", remedy ${report.remedy}.`;
       if (report.remedy === 'raise_budget') {
         const u = this.d.budget.usage(ticket);
@@ -347,7 +359,7 @@ export class RecoveryService {
         ? `${summary} The console restarted the ticket with a new agent "${out.agent}" on the same branch (attempt ${t.recoveries} of ${MAX_RECOVERIES}).`
         : `${summary} The new agent could not be started (${out.code}${out.detail ? `: ${out.detail}` : ''}), so the ticket now needs the user (needs_user). Tell the user.`);
       return { ok: true, ticket, outcome: out.ok ? 'restarted' : 'needs_user' };
-    });
+    }
   }
 
   /**

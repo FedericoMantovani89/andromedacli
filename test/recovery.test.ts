@@ -88,7 +88,7 @@ beforeEach(async () => {
     changed: () => {},
   };
   svc = new RecoveryService(deps);
-});
+}, 60_000); // a real git repo and worktree: plain slowness on a loaded machine, the default 10 s is not enough
 afterEach(() => removeDir(t.base));
 
 const started = async (): Promise<string> => {
@@ -219,6 +219,18 @@ describe('report', () => {
     expect(tickets.get('a-job')!.status).toBe('recovering');
     expect(ended).toEqual([]);
     expect(replacements).toEqual([]);
+  });
+  it('the recovery session is ended only after the report work is done: a slow replacement must not outlast the session grace', async () => {
+    const rec = await started();
+    let release!: () => void;
+    deps.spawnReplacement = async (rq) => { replacements.push(rq); await new Promise<void>((res) => { release = res; }); return replacementResult; };
+    const pending = svc.report(rec, { ...REPORT, remedy: 'split' });
+    await vi.waitFor(() => expect(replacements).toHaveLength(1));
+    expect(ended).toEqual([]); // the 3 s grace to end the session must not be running while the replacement starts
+    release();
+    expect(await pending).toEqual({ ok: true, ticket: 'a-job', outcome: 'restarted' });
+    expect(ended).toEqual([rec]);
+    expect(await svc.report(rec, { ...REPORT, remedy: 'split' })).toEqual({ ok: false, code: 'not_recovery' });
   });
   it('remedy split: a new agent takes the ticket over on the same branch; steps, recoveries and goal are kept', async () => {
     const rec = await started();
