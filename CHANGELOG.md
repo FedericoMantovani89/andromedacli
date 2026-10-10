@@ -27,6 +27,7 @@ introduces the behaviour.
 - Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
 
 ### Fixed
+- The release workflow's "Smoke test of the unpacked app" (`npm run smoke:app`) failed on tag v0.0.3 with `401 unauthorized` and a 503 on the terminal socket. The app was fine: the script read the page's token as soon as the static `#topbar` existed, before the page's script had stored it in `sessionStorage`. It now waits for the token first; no check was removed or weakened.
 - A recovery session is no longer ended while its report is still being handled: the 3 s grace before the session is closed now starts after the new agent has been started, so a slow restart on a loaded machine cannot revoke the session before the report is answered (a second report was answered "unauthorized" instead of "not_recovery").
 - A long validation no longer ends in "The console did not answer.": `step_done` runs the tests as a job of its own, each request waits at most 15 s and answers `running`, the mod asks again until the real result, and the step is recorded when the run ends.
 - Desktop app: a second click on close (or a quit) while the clean stop runs no longer ends the app before the stop finishes, and "Restart to update" stops the server cleanly before the installer starts; the install request is answered at once.

@@ -49,6 +49,8 @@ const app = await electron.launch({ executablePath: exe, env: { ...process.env, 
 try {
   const page = await app.firstWindow();
   await page.waitForSelector('#topbar', { state: 'attached', timeout: 30_000 }); // hidden until a project is open
+  // #topbar is in the static HTML: it is there before the page's script (a deferred module) has run, so wait until the script has taken the token.
+  await page.waitForFunction(() => { try { return !!sessionStorage.getItem('console.token'); } catch { return false; } }, undefined, { timeout: 30_000 });
   const url = new URL(page.url());
   // The page keeps the token for itself and takes it out of the address bar (src/ui/api.ts).
   const token = (await page.evaluate(() => sessionStorage.getItem('console.token'))) ?? '';
