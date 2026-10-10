@@ -43,7 +43,7 @@ function clear(el: HTMLElement): void {
 }
 
 export function applyTicket(el: HTMLElement, ticket: SessionInfo['ticket']): void {
-  const key = !ticket ? undefined : ticket.status === 'in_progress' ? (ticket.round > 0 ? k('ticket.rework') : undefined) : TICKET_KEYS[ticket.status];
+  const key = !ticket ? undefined : ticket.testQueue !== undefined ? k('ticket.waitingTests') : ticket.status === 'in_progress' ? (ticket.round > 0 ? k('ticket.rework') : undefined) : TICKET_KEYS[ticket.status];
   if (!ticket || !key) {
     clear(el);
     el.className = 'panel-ticket';
@@ -51,7 +51,7 @@ export function applyTicket(el: HTMLElement, ticket: SessionInfo['ticket']): voi
   }
   el.hidden = false;
   el.className = `panel-ticket ${ticket.status}`;
-  bindText(el, key, { round: ticket.round, max: ticket.maxRounds });
+  bindText(el, key, { round: ticket.round, max: ticket.maxRounds, n: ticket.testQueue ?? 0 });
 }
 
 /** The checklist progress chip ("3/7"): empty and hidden until the agent has a checklist. */

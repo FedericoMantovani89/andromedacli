@@ -36,6 +36,9 @@ import { ReviewService } from './tickets/review';
 import { RecoveryService, replacementCheckout } from './tickets/recovery';
 import { MergeService } from './tickets/merge';
 import { ReleaseService } from './tickets/release';
+import { TestQueue, type TestRunner } from './tickets/test-queue';
+import { CentralRun } from './tickets/central';
+import { createCentralGit } from './tickets/central-git';
 import { installReleaseHook } from './git/release-hook';
 import { commonDir, removeWorktree } from './git/worktree';
 import { createTranslator } from '../shared/i18n';
@@ -152,6 +155,8 @@ export const WAKE_MESSAGE = 'The subscription limit was reset. Check the suspend
 const WAKE_WAIT_MS = 60_000;
 /** How long one step_done request waits for the step (the validation can take tens of minutes): the host cuts a request that stays open for about a minute. */
 const STEP_DONE_WAIT_MS = 15_000;
+/** How long after the last merge the central full run waits for another one: merges that follow each other share one run. */
+const CENTRAL_SETTLE_MS = 120_000;
 
 /** What is one per console, shared by reference by every project's runtime (Phase 6C). */
 interface Shared {
@@ -164,6 +169,8 @@ interface Shared {
   ledger: Ledger;
   /** The account's limits: one reading for every project. */
   quotaState: QuotaState;
+  /** The machine's one queue of long test runs: two full suites at once slow each other down and fail timing-sensitive tests. */
+  testQueue: TestQueue;
   /** One sleep timer; at the reset it wakes the main of every project. */
   sleep: SleepTimer;
   sleepClock: SleepClock;
@@ -250,6 +257,18 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const testsDisabled = (): boolean => { try { return store.project.testsDisabled === true; } catch { return false; } };
   // One command per moment: the project's own for `ticket` (validation step, review re-run, recovery), `merge` or `release`, else its single command.
   const testCommandAt = (moment: TestMoment) => (): string | undefined => testCommandFor(moment, { project: () => store.project, detected: detectedTestCommand });
+  /**
+   * The test runs go through the machine's queue. A run is heavy (it takes the queue's one slot) unless it is a `ticket` run with its own
+   * command: a project that defines `testCommands.ticket` says that command is the fast, pointed one. `merge`, `release` and the central
+   * run are always heavy; a ticket that falls back to the full `testCommand` is heavy too.
+   */
+  const testRunnerAt = (moment: TestMoment): TestRunner => (r) => shared.testQueue.run({
+    cwd: r.cwd, command: r.command, timeoutMs: r.timeoutMs,
+    heavy: moment !== 'ticket' || !store.project.testCommands?.ticket?.trim(),
+    label: `${moment}:${r.owner ?? projectName}`,
+    ...(r.owner !== undefined ? { owner: r.owner } : {}),
+    ...(r.watchOwner && r.owner !== undefined ? { ownerAlive: () => registry.get(r.owner!)?.state !== 'finished' && ptys.status(r.owner!) === 'running' } : {}),
+  });
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
   const tickets = new TicketStore(o.projectRoot);
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
@@ -279,6 +298,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('ticket'),
+    runTests: testRunnerAt('ticket'),
     testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
@@ -294,10 +314,27 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
     endReviewer: (slug) => endReadOnlySession(slug),
   });
+  // The full run on the merged project branch: after the merges settle, one run for the whole batch, through the queue.
+  const central: CentralRun = new CentralRun({
+    root: o.projectRoot, project: projectName, tickets,
+    command: testCommandAt('release'),
+    mergeCommand: testCommandAt('merge'),
+    timeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
+    settleMs: CENTRAL_SETTLE_MS,
+    merging: () => merge.inFlight(),
+    git: createCentralGit({ root: o.projectRoot, project: projectName, runTests: (job) => shared.testQueue.run(job), timeoutMs: () => runtime.git.testTimeoutMinutes * 60_000 }),
+    runTests: (job) => shared.testQueue.run({ ...job, onWait: () => broadcast() }),
+    authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && registry.get(slug)?.state !== 'finished' && ptys.status(slug) === 'running',
+    notifyAuthor: (slug, text) => { inbox.push(slug, text); },
+    notifyMain: (text) => { inbox.push(projectName, text); },
+    askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
+    changed: () => broadcast(),
+  });
   const merge = new MergeService({
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('merge'),
+    runTests: testRunnerAt('merge'),
     testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     squash: () => store.project.squash !== false,
@@ -306,11 +343,14 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     notifyMain: (text) => { inbox.push(projectName, text); },
     notifyAuthor: (slug, text) => { inbox.push(slug, text); },
     needsUser: (slug, reason) => { review.askUserAboutTicket(slug, reason); },
+    merged: () => central.merged(),
     finishAgent: async (slug) => { await finishAgent(slug); registry.setGit(slug, undefined); },
   });
   const release = new ReleaseService({
     tickets, root: o.projectRoot, project: projectName,
     testCommand: testCommandAt('release'),
+    runTests: testRunnerAt('release'),
+    greenFor: (repo, tip, command) => central.greenFor(repo, tip, command),
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     language: reportLanguage,
     notifyMain: (text) => { inbox.push(projectName, text); },
@@ -378,6 +418,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tickets, ledger, root: resolve(o.projectRoot), project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('ticket'),
+    runTests: testRunnerAt('ticket'),
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
     spawnRecovery: async (r) => {
       const out = await spawnAgent(ctx, { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
@@ -590,8 +631,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('ticket'),
+    runTests: testRunnerAt('ticket'),
     testsDisabled,
     testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
+    queuePosition: (slug) => shared.testQueue.position(slug),
     secretPatterns,
     notifyMain: (_slug, text) => { inbox.push(projectName, text); },
     changed: () => broadcast(),
@@ -672,6 +715,8 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get notificationsConfig() { return config.notifications; },
     applyNotifications: (n) => { config.notifications = n; },
     version: o.version ?? resolveVersion(appRoot()),
+    testPosition: (slug) => shared.testQueue.position(slug),
+    testQueue: () => shared.testQueue.snapshot(),
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, requests, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep, wake: waker,
     afterWorktreeCreated: o.afterWorktreeCreated,
@@ -1017,6 +1062,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     staleTimer = setInterval(() => { void staleChecker.check(); }, 24 * 60 * 60_000);
     staleTimer.unref?.();
     void staleChecker.check();
+    central.start(); // merges no full run has covered yet (done before this start) get one
   };
 
   return {
@@ -1041,6 +1087,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       wakeTimers.clear();
       quotaWaiters.clear();
       launchWatch.close();
+      central.cancel();
       for (const timer of endTimers) clearTimeout(timer);
       endTimers.clear();
       scheduler.close(); // before killing: exiting processes would otherwise free slots and start queued agents
@@ -1140,6 +1187,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     o, configPath, config, token, bundles: loadBundles(o.i18nDir),
     ledger: new Ledger(join(o.configDir, 'ledger')),
     quotaState: new QuotaState(),
+    // Heavy runs go one at a time; `ANDROMEDACLI_TEST_CONCURRENCY` raises the limit on a machine with cores to spare.
+    testQueue: new TestQueue({ limit: () => Number(process.env.ANDROMEDACLI_TEST_CONCURRENCY) || 1, changed: () => ws.broadcastState() }),
     // The sleep timer and the account's limits are one per console; at a reset every project's main wakes.
     sleep: new SleepTimer({
       clock: sleepClock,

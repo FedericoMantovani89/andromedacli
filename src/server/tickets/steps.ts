@@ -6,7 +6,7 @@ import { pushBranch } from '../git/push';
 import { findMarkers } from '../requests/markers';
 import { validateChecklist, type ChecklistError, type Step } from './checklist';
 import type { TicketStore } from './store';
-import { runValidation } from './validate';
+import { runDirect, type TestRunner } from './test-queue';
 
 export type StepRefusal =
   | 'out_of_order' | 'no_checklist' | 'no_worktree' | 'note_required' | 'secrets' | 'index_locked' | 'commit_failed'
@@ -18,7 +18,7 @@ export type StepResult =
   | { status: 'refused'; code: StepRefusal; detail?: string; tail?: string; files?: string[]; timedOut?: boolean };
 
 /** The bounded wait ended before the step did: the work goes on, ask again with the same step number. */
-export type StepRunning = { status: 'running'; n: number };
+export type StepRunning = { status: 'running'; n: number; /** The step waits for the machine's test queue: the place of its run (1 = next). */ queue?: number };
 interface StepJob { n: number; waiters: number; promise: Promise<StepResult> }
 
 export type ChecklistSetResult =
@@ -33,6 +33,10 @@ export interface StepDeps {
   /** The user switched the tests off for this project: the validation step closes without running anything. */
   testsDisabled?(): boolean;
   testTimeoutMs(): number;
+  /** Runs a test command through the machine's test queue (default: straight away). */
+  runTests?: TestRunner;
+  /** The place (1 = next) of this agent's validation in the test queue, when it waits. */
+  queuePosition?(slug: string): number | undefined;
   secretPatterns(): string[];
   /** Tells the main session (inbox). */
   notifyMain(slug: string, text: string): void;
@@ -117,7 +121,7 @@ export class StepService {
     try {
       return await Promise.race([
         job.promise,
-        new Promise<StepRunning>((resolve) => { timer = setTimeout(() => resolve({ status: 'running', n: o.n }), opts.waitMs); }),
+        new Promise<StepRunning>((resolve) => { timer = setTimeout(() => { const queue = this.d.queuePosition?.(slug); resolve({ status: 'running', n: o.n, ...(queue !== undefined ? { queue } : {}) }); }, opts.waitMs); }),
       ]);
     } finally {
       clearTimeout(timer);
@@ -216,8 +220,8 @@ export class StepService {
     if (isValidation && this.d.testsDisabled?.() !== true) {
       const command = this.d.testCommand()?.trim();
       if (!command) return refuse('no_test_command', { detail: 'the project has no test command: ask the main to set it in the console options' });
-      const v = await runValidation({ cwd: wt.worktree, command, timeoutMs: this.d.testTimeoutMs() });
-      if (!v.ok) return refuse('validation_failed', { tail: v.tail, ...(v.timedOut ? { timedOut: true, detail: 'the test command timed out and was stopped' } : { detail: `the test command exited with code ${v.code}` }) });
+      const v = await (this.d.runTests ?? runDirect)({ cwd: wt.worktree, command, timeoutMs: this.d.testTimeoutMs(), owner: slug, watchOwner: true });
+      if (!v.ok) return refuse('validation_failed', { tail: v.tail, ...(v.timedOut ? { timedOut: true, detail: 'the test command timed out and was stopped' } : v.cancelled ? { detail: 'the test run was cancelled' } : { detail: `the test command exited with code ${v.code}` }) });
     }
 
     if (isDocs && !o.skip && note.length < MIN_DOCS_NOTE) {

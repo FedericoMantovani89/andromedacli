@@ -8,7 +8,7 @@ import { changedFiles, ensureProjectWorktree, mergeIntoProject, resetTo, startMe
 import { commonDir, removeWorktree } from '../git/worktree';
 import { squashMessage } from './report';
 import type { TicketStore } from './store';
-import { runValidation } from './validate';
+import { runDirect, type TestRunner } from './test-queue';
 
 export interface MergeDeps {
   tickets: TicketStore;
@@ -20,6 +20,10 @@ export interface MergeDeps {
   /** The user switched the tests off for this project (the commit message then says so instead of "n/a"). */
   testsDisabled?(): boolean;
   testTimeoutMs(): number;
+  /** Runs a test command through the machine's test queue (default: straight away). */
+  runTests?: TestRunner;
+  /** A ticket was merged into the project branch (the central full run batches after the merges). */
+  merged?(slug: string): void;
   /** Project option: one commit per ticket (default) or the step commits behind a merge commit. */
   squash(): boolean;
   language(): { lang: string; t: Translate };
@@ -47,15 +51,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export class MergeService {
   private chain: Promise<unknown> = Promise.resolve();
+  private active = 0;
 
   constructor(private readonly d: MergeDeps) {}
 
   mergeTicket(slug: string): Promise<MergeResult> {
     const locked = () => withProjectLock(this.repoOf(this.d.worktreeOf(slug)), () => this.merge(slug));
+    this.active += 1;
     const run = this.chain.then(locked, locked);
     this.chain = run.catch(() => undefined);
-    return run;
+    return run.finally(() => { this.active -= 1; });
   }
+
+  /** Merges asked for and not finished yet (running or waiting for their turn). */
+  inFlight(): number { return this.active; }
 
   /** The repository of an agent: its own when it has one, else the project folder. */
   private repoOf(a: { repo?: string } | undefined): string { return a?.repo ?? this.d.root; }
@@ -80,7 +89,7 @@ export class MergeService {
       // The tests of the merge may never have run (that is what a crash there looks like): run them before accepting it.
       const adoptedCommand = this.d.testCommand()?.trim();
       if (adoptedCommand) {
-        const run = await runValidation({ cwd: project.path, command: adoptedCommand, timeoutMs: this.d.testTimeoutMs() });
+        const run = await (this.d.runTests ?? runDirect)({ cwd: project.path, command: adoptedCommand, timeoutMs: this.d.testTimeoutMs(), owner: slug });
         if (!run.ok) {
           if ((await git(project.path, ['rev-parse', 'HEAD'])).stdout.trim() === adopted) await resetTo(project.path, `${adopted}^`);
           return this.testsFailed(slug, run.tail);
@@ -103,7 +112,7 @@ export class MergeService {
 
     const command = this.d.testCommand()?.trim();
     if (command) {
-      const run = await runValidation({ cwd: project.path, command, timeoutMs: this.d.testTimeoutMs() });
+      const run = await (this.d.runTests ?? runDirect)({ cwd: project.path, command, timeoutMs: this.d.testTimeoutMs(), owner: slug });
       if (!run.ok) {
         await resetTo(project.path, before); // the merge turned the tests red: it never happened
         return this.testsFailed(slug, run.tail);
@@ -114,6 +123,7 @@ export class MergeService {
 
   private async completeMerge(slug: string, author: AgentGit, sha: string): Promise<MergeResult> {
     this.d.tickets.move(slug, 'merged', { mergedSha: sha });
+    try { this.d.merged?.(slug); } catch { /* the central run is a courtesy: the merge is done */ }
     const cleanup = await this.cleanUp(slug, author);
     this.d.notifyMain(`Ticket "${slug}" was merged into project/${this.d.project} (${sha.slice(0, 7)}).${cleanup ? ' Its session or folder could not be cleaned up completely; the work is safe on the project branch.' : ''} Next: merge the other approved tickets, then propose_release.`);
     return { status: 'merged', sha, ...(cleanup ? { cleanup: 'incomplete' as const } : {}) };

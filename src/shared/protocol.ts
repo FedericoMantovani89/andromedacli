@@ -33,7 +33,7 @@ export interface SessionInfo {
   /** Closed steps of the agent's checklist; absent until it has one. */
   progress?: { done: number; total: number };
   /** Where the ticket is in the review/merge pipeline; absent while the author is still writing it for the first time. */
-  ticket?: { status: string; round: number; maxRounds: number };
+  ticket?: { status: string; round: number; maxRounds: number; /** Waiting for the machine's test queue: the place of its run (1 = next). */ testQueue?: number };
   /** The launch check found the agent not started or not working on its goal; clears when it starts working. */
   launchStalled?: true;
   /** Why `launchStalled` is set: Claude Code never reported in (often a trust dialog), or it runs but has not taken its goal. */
@@ -81,6 +81,8 @@ export interface QueueItem {
 
 export interface StateMessage {
   type: 'state';
+  /** The machine's queue of long test runs (shared by every project); absent while it is empty. */
+  testQueue?: { running: { label: string; owner?: string }[]; waiting: { label: string; owner?: string; position: number }[] };
   project: { name: string; /** What the console runs for the validation step of every ticket. */ testCommand?: string; /** Commands for single moments (`ticket`, `merge`, `release`); a missing one uses `testCommand`. */ testCommands?: { ticket?: string; merge?: string; release?: string }; /** What the project's files suggest (used while `testCommand` is empty). */ detectedTestCommand?: string; /** One commit per merged ticket (default true). */ squash?: boolean; /** The tests are switched off for this project: no test run, and the reports say so. */ testsDisabled?: boolean; /** The model this project's agents get (empty: the one of Options, Models). */ model?: string; /** The most agents running at once in this project. */ maxActive?: number };
   /** What the Settings dialog shows; a change applies to sessions launched afterwards. */
   settings: { bypassPermissions: boolean; guardMode: 'enforce' | 'shadow'; worktrees: boolean };

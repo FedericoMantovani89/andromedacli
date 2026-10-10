@@ -8,7 +8,7 @@ import { withReleaseToken } from '../git/release-hook';
 import { repoPathOf } from '../git/repos';
 import { reportPath, type ChangedFile } from './report';
 import type { Ticket, TicketStore } from './store';
-import { runValidation } from './validate';
+import { runDirect, type TestRunner } from './test-queue';
 
 export interface ReleaseDeps {
   tickets: TicketStore;
@@ -17,6 +17,10 @@ export interface ReleaseDeps {
   project: string;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
+  /** Runs a test command through the machine's test queue (default: straight away). */
+  runTests?: TestRunner;
+  /** The central full run already passed with this command on exactly this tip of this repository (`''` = the project folder). */
+  greenFor?(repo: string, tip: string, command: string): boolean;
   language(): { lang: string; t: Translate };
   notifyMain(text: string): void;
   /** Puts the confirmation in the user's queue (kind `confirm`) and returns its id; `onAnswer` runs with "approve" or "reject". */
@@ -114,7 +118,8 @@ export class ReleaseService {
     const command = this.d.testCommand()?.trim();
     let tests: { ok: boolean; command: string; tail: string } | undefined;
     if (command) {
-      const run = await runValidation({ cwd: project.path, command, timeoutMs: this.d.testTimeoutMs() });
+      const reused = this.d.greenFor?.(rel, tip, command) === true;
+      const run = reused ? { ok: true, tail: 'already green on this exact tip (central full run)' } : await (this.d.runTests ?? runDirect)({ cwd: project.path, command, timeoutMs: this.d.testTimeoutMs(), owner: `release:${this.d.project}` });
       tests = { ok: run.ok, command, tail: run.tail };
       if (!run.ok) return { refusal: { status: 'tests_failed', tail: run.tail } };
     }
@@ -244,7 +249,7 @@ export class ReleaseService {
       }
       const command = this.d.testCommand()?.trim();
       if (command) {
-        const run = await runValidation({ cwd: root, command, timeoutMs: this.d.testTimeoutMs() });
+        const run = await (this.d.runTests ?? runDirect)({ cwd: root, command, timeoutMs: this.d.testTimeoutMs(), owner: `release:${this.d.project}` });
         if (!run.ok) {
           const undone = await this.undo(root, before);
           return { code: 'release.testsFailed', text: `the tests fail on ${target} after merging the project branch. Output:\n${run.tail.trim().slice(-800)}\n${undone ? `The merge was undone: ${target} is back where it was. Nothing was pushed.` : `The merge could NOT be undone because tracked files were edited while the tests ran (your edits were kept): ${target} contains the merge, but nothing was pushed.`}` };

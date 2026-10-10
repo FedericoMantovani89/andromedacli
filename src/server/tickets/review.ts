@@ -3,7 +3,7 @@ import { git } from '../git/git';
 import { changedFiles } from '../git/merge';
 import { buildReport, isDocFile, writeReport, type ChangedFile } from './report';
 import type { ReviewNote, Ticket, TicketStore, Verdict } from './store';
-import { runValidation } from './validate';
+import { runDirect, type TestRunner } from './test-queue';
 
 export const MAX_REWORK_ROUNDS = 2;
 
@@ -17,6 +17,8 @@ export interface ReviewDeps {
   /** The user switched the tests off for this project: nothing is run and the facts say so. */
   testsDisabled?(): boolean;
   testTimeoutMs(): number;
+  /** Runs a test command through the machine's test queue (default: straight away). */
+  runTests?: TestRunner;
   /** The interface language right now and its translator (report headings follow it). */
   language(): { lang: string; t: Translate };
   /** Starts the reviewer session through the normal spawn flow (limits, worktree, token). */
@@ -164,7 +166,7 @@ export class ReviewService {
       // Tracked files only: artefacts of an earlier test run (untracked) must not block the next one.
       const status = await git(wt.worktree, ['status', '--porcelain', '--untracked-files=no']);
       if (status.stdout.trim() !== '') return { ok: false, code: 'dirty', detail: status.stdout.trim().split(/\r?\n/).slice(0, 5).join('; ') };
-      const run = await runValidation({ cwd: wt.worktree, command, timeoutMs: this.d.testTimeoutMs() });
+      const run = await (this.d.runTests ?? runDirect)({ cwd: wt.worktree, command, timeoutMs: this.d.testTimeoutMs(), owner: slug });
       tests = { ok: run.ok, command, tail: run.tail, sha, at: new Date().toISOString() };
       this.d.tickets.setTests(slug, tests);
     }

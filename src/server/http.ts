@@ -65,6 +65,10 @@ export interface Context extends V1Context {
   /** Mod folder passed to launched sessions (--plugin-dir), when enabled. */
   modDir?: string;
   scheduler: Scheduler;
+  /** The place (1 = next) of this agent's run in the machine's test queue, when it waits for it. */
+  testPosition?(slug: string): number | undefined;
+  /** Who runs and who waits in the machine's test queue. */
+  testQueue?(): { running: { label: string; owner?: string }[]; waiting: { label: string; owner?: string; position: number }[] };
   reading: ReadingStore;
   /** Last launch arguments per session (a test seam; contains no secrets). */
   launchLog: Map<string, string[]>;
@@ -179,8 +183,8 @@ export function buildState(ctx: Context): StateMessage {
     const suspended = (ticket?.status === 'suspended_budget' || ticket?.status === 'suspended_limit') && ctx.ptys.status(slug) !== 'running';
     const base = suspended ? 'suspended' : stateOf(slug);
     // Where the ticket is in the review pipeline: kept after the worktree is gone (a merged ticket still says "Merged").
-    const pipeline = ticket && rt?.role === 'agent' && (ticket.status !== 'in_progress' || ticket.round > 0)
-      ? { ticket: { status: ticket.status, round: ticket.round, maxRounds: MAX_REWORK_ROUNDS } }
+    const pipeline = ticket && rt?.role === 'agent' && (ticket.status !== 'in_progress' || ticket.round > 0 || ctx.testPosition?.(slug) !== undefined)
+      ? { ticket: { status: ticket.status, round: ticket.round, maxRounds: MAX_REWORK_ROUNDS, ...(ctx.testPosition?.(slug) !== undefined ? { testQueue: ctx.testPosition(slug) } : {}) } }
       : {};
     // No budget (a reviewer, an agent without a worktree) is left out, so the UI shows n/a rather than zero.
     const usage = rt?.role === 'agent' ? ctx.budget.usage(slug, ticket) : undefined;
@@ -236,6 +240,7 @@ export function buildState(ctx: Context): StateMessage {
   return {
     ...(installed ? { install: installed } : {}),
     ...(update ? { update } : {}),
+    ...(() => { const q = ctx.testQueue?.(); return q && (q.running.length > 0 || q.waiting.length > 0) ? { testQueue: q } : {}; })(),
     ...(worst ? { quota: { percent: worst.percent, kind: worst.kind } } : {}),
     ...(slept.phase !== 'awake' ? { sleep: { ...(slept.until !== undefined ? { until: slept.until } : {}), phase: slept.phase, attempt: slept.attempt, weekly: slept.kind === 'seven_day' } } : {}),
     // One project per console today: the stricter of the global and the per-project limit is the one that holds.

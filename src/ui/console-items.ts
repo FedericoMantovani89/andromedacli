@@ -127,6 +127,8 @@ const REASON_KEYS: Record<string, string> = {
   rounds_exhausted: k('queue.decision.reason.rounds_exhausted'),
   conflict_author_gone: k('queue.decision.reason.conflict_author_gone'),
   merge_tests_failed_author_gone: k('queue.decision.reason.merge_tests_failed_author_gone'),
+  central_red_author_gone: k('queue.decision.reason.central_red_author_gone'),
+  central_red_undecided: k('queue.decision.reason.central_red_undecided'),
   recovery_raise: k('queue.decision.reason.recovery_raise'),
   recovery_change_model: k('queue.decision.reason.recovery_change_model'),
 };
@@ -134,6 +136,7 @@ const OPTION_KEYS: Record<string, string> = {
   send_back: k('queue.decision.send_back'),
   approve: k('queue.decision.approve'),
   leave: k('queue.decision.leave'),
+  follow_up: k('queue.decision.followUp'),
   restart: k('queue.decision.restart'),
 };
 /** A recovery's raise_budget remedy: the user approves or declines the spend. */
@@ -151,12 +154,20 @@ export function createDecisionEntry(item: QueueItem, send: (answer: string) => v
 
   const title = document.createElement('div');
   title.className = 'queue-text';
-  bindText(title, 'queue.decision.title', { ticket: str(p.ticket) });
+  if (str(p.reason).startsWith('central_red')) bindText(title, k('queue.decision.centralTitle'), { tip: str(p.tip).slice(0, 7) });
+  else bindText(title, 'queue.decision.title', { ticket: str(p.ticket) });
   const why = document.createElement('div');
   why.className = 'queue-why';
   bindText(why, REASON_KEYS[str(p.reason)] ?? k('queue.decision.reason.unknown'));
   el.append(title, why);
 
+  const failing = arr(p.failing);
+  if (failing.length > 0) {
+    const list = document.createElement('pre');
+    list.className = 'queue-detail';
+    list.textContent = failing.map(str).join('\n'); // file names from the test output are data
+    el.append(details(k('queue.decision.failing'), {}, list));
+  }
   const notes = arr(p.notes);
   if (notes.length > 0) el.append(details(k('queue.decision.notes'), {}, noteList(notes)));
   const tests = isObj(p.tests) ? p.tests : undefined;

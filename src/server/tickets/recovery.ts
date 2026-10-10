@@ -3,7 +3,7 @@ import { budgetTokens, type Ledger } from '../budget/ledger';
 import { git } from '../git/git';
 import { canMove } from './flow';
 import type { Ticket, TicketStore } from './store';
-import { runValidation } from './validate';
+import { runDirect, type TestRunner } from './test-queue';
 
 export const MAX_RECOVERIES = 2;
 export const REMEDIES = ['split', 'exclude_paths', 'change_model', 'remove_obstacle', 'raise_budget'] as const;
@@ -37,6 +37,8 @@ export interface RecoveryDeps {
   worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
   testCommand(): string | undefined;
   testTimeoutMs(): number;
+  /** Runs a test command through the machine's test queue (default: straight away). */
+  runTests?: TestRunner;
   /** Starts the read-only recovery session through the normal spawn flow, on a detached checkout of `sha`. */
   spawnRecovery(r: { slug: string; ticket: string; sha: string; goal: string; model?: string }): Promise<SpawnResult>;
   /** Starts the new agent that takes the ticket over: `from`'s worktree goes, the new one checks out `from`'s branch. */
@@ -112,7 +114,7 @@ const causeOf = (t: Ticket): 'budget' | 'loop' =>
   t.stopCause === 'loop' ? 'loop' : t.stopCause === 'budget' ? 'budget' : t.status === 'blocked' ? 'loop' : 'budget';
 
 /** What the console knows about a stopped ticket: git, its own test run on the WIP and the ledger. Nothing comes from a model. */
-export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' | 'root' | 'project' | 'worktreeOf' | 'testCommand' | 'testTimeoutMs'>, slug: string): Promise<RecoveryFacts> {
+export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' | 'root' | 'project' | 'worktreeOf' | 'testCommand' | 'testTimeoutMs' | 'runTests'>, slug: string): Promise<RecoveryFacts> {
   const t = d.tickets.get(slug);
   if (!t) throw new Error('ticket.missing');
   const wt = d.worktreeOf(slug);
@@ -120,7 +122,7 @@ export async function recoveryFacts(d: Pick<RecoveryDeps, 'tickets' | 'ledger' |
   const log = await git(wt.worktree, ['log', '-n', '50', '--format=%h %s', `project/${d.project}..HEAD`]);
   const stat = await git(wt.worktree, ['diff', '--stat', `project/${d.project}...HEAD`]);
   const command = d.testCommand()?.trim();
-  const run = command ? await runValidation({ cwd: wt.worktree, command, timeoutMs: d.testTimeoutMs() }) : undefined;
+  const run = command ? await (d.runTests ?? runDirect)({ cwd: wt.worktree, command, timeoutMs: d.testTimeoutMs(), owner: slug }) : undefined;
 
   const entries = d.ledger.entries({ agent: slug, scope: { project: d.project, root: d.root } });
   const heaviestTurns = entries

@@ -36,7 +36,10 @@ export interface Ticket {
   handover?: string;
   /** The repository the agent works in, relative to the project folder; absent means the project folder itself. */
   repo?: string;
+  /** The central full run on the merged project branch (`CentralRun`): the tip it passed on, or where it turned red and blamed this ticket. */
+  central?: CentralMark;
 }
+export interface CentralMark { checkedTip?: string; red?: { tip: string; tests: string[]; at: string } }
 export interface TicketProgress { done: number; total: number; blocked: boolean; status: TicketStatus }
 
 const MAX_GOAL = 4000;
@@ -104,6 +107,11 @@ export class TicketStore {
 
   setRepo(slug: string, repo: string): Ticket {
     return this.save({ ...this.ensure(slug), repo });
+  }
+
+  setCentral(slug: string, central: CentralMark): Ticket {
+    const t = this.existing(slug);
+    return this.save({ ...t, central: { ...t.central, ...central } });
   }
 
   setTests(slug: string, tests: TestResult): Ticket {
