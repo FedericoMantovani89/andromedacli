@@ -43,6 +43,8 @@ import type { LoopService } from './budget/loop-service';
 import type { Ledger } from './budget/ledger';
 import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
+import { handleDictationRoute } from './dictation-api';
+import { typeIntoSession } from './dictation';
 import { handleProjectsRoute, ProjectError, type ProjectsApi } from './projects-api';
 
 /** Finds the project a request or socket asked for with `?project=<name>`; no name means the first project; undefined when it is not open. */
@@ -271,6 +273,8 @@ export interface HostContext {
   pickFolder(): Promise<PickFolderResult>;
   /** The desktop app's update control; absent when the console runs from a terminal. */
   updates?: UpdateControl;
+  /** A test seam: replaces the network call of the voice dictation. */
+  groqFetch?: typeof fetch;
 }
 
 export function createRequestHandler(source: Context | ProjectResolver, host: HostContext) {
@@ -344,6 +348,10 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const picked = await host.pickFolder();
       return picked.status === 'busy' ? fail(res, 409, 'folder.pickBusy') : send(res, 200, picked);
     }
+    // Voice dictation: the console-wide secrets (the Groq key) and the transcription, which the server does so the key never reaches the browser.
+    if (path === '/api/secrets' || path === '/api/dictation/transcribe') {
+      if (await handleDictationRoute(host, req, res, path, url)) return;
+    }
     // Project templates and project detection are project-independent (the welcome screen needs them with no project open); saving a template is not.
     if (req.method === 'GET' && path === '/api/templates') {
       return send(res, 200, loadTemplates({ configDir: host.configDir }).map((t) => ({
@@ -370,6 +378,16 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       if (snap) return send(res, 200, { text: ctx.ptys.snapshot(snap[1]!).toString('utf8') });
       const size = /^\/api\/debug\/size\/([a-z0-9-]+)$/.exec(path);
       if (size) return send(res, 200, ctx.ptys.size(size[1]!) ?? {});
+    }
+
+    // Types text into the main's input without pressing Enter (the voice dictation's "Send to main"): the user confirms in the terminal.
+    if (req.method === 'POST' && path === '/api/main/input') {
+      let body: unknown;
+      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const text = typeof body === 'object' && body !== null ? (body as { text?: unknown }).text : undefined;
+      if (typeof text !== 'string') return fail(res, 400, 'bad_request');
+      const typed = typeIntoSession(ctx.ptys, ctx.projectName, text);
+      return typed.status === 'ok' ? send(res, 200, typed) : fail(res, typed.code === 'dictation.textEmpty' ? 422 : 409, typed.code);
     }
 
     if (req.method === 'POST' && path === '/api/agents') {

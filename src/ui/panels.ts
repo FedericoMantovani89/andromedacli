@@ -95,7 +95,18 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
   setIconButton(readBtn, 'clipboard', k('reader.open'));
   readBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
   readBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-reader', { detail: info.slug })));
-  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, requestsWaitingEl, requestsOwedEl, progressEl, readBtn, createArchiveButton(info.slug));
+  header.append(title, meta, badge, stateEl, stalledEl, ticketEl, budgetEl, loopEl, waitingEl, requestsWaitingEl, requestsOwedEl, progressEl);
+  // Voice dictation goes to the main, so only the main's panel has the button (built once with the header, never re-parented).
+  if (info.role === 'main') {
+    const micBtn = document.createElement('button');
+    micBtn.type = 'button';
+    micBtn.className = 'panel-read panel-dictate';
+    setIconButton(micBtn, 'mic', k('header.dictation'));
+    micBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
+    micBtn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('console-open-dictation')));
+    header.append(micBtn);
+  }
+  header.append(readBtn, createArchiveButton(info.slug));
 
   const host = document.createElement('div');
   host.className = 'panel-term';

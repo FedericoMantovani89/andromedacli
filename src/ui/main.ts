@@ -13,7 +13,7 @@ import { startPresence } from './presence';
 import type { NotifyMessage } from '../shared/notify';
 import { createReader, type ReadingEntry } from './reader';
 import { Workspace } from './panels';
-import { closeOverlay, openSettings } from './settings';
+import { closeOverlay, openSettings, showLoadFailed } from './settings';
 import { renderStatusBar } from './statusbar';
 import { openWizard } from './wizard';
 import { runSplash } from './splash';
@@ -257,6 +257,8 @@ window.addEventListener('keydown', (ev) => {
 window.addEventListener('console-select-project', (ev) => { selectProject((ev as CustomEvent<string>).detail); });
 
 $('settings-btn').addEventListener('click', () => openSettings(() => state));
+// The main panel's microphone button asks for the dialog; its code loads when it is first opened.
+window.addEventListener('console-open-dictation', () => { void import('./dictation-dialog').then((m) => m.openDictationDialog(() => state)).catch(showLoadFailed); });
 $('queue-btn').addEventListener('click', () => toggleQueue());
 $('requests-btn').addEventListener('click', () => toggleRequests());
 

@@ -88,6 +88,8 @@ export interface StartOptions {
   pickFolder?: () => Promise<PickFolderResult>;
   /** The desktop app's update control (SPEC 33.4); absent when the console runs from a terminal. */
   updates?: UpdateControl;
+  /** A test seam: replaces the network call to Groq of the voice dictation. */
+  groqFetch?: typeof fetch;
   /** Folder with messages_<lang>.properties (default: the shipped ones; tests). */
   i18nDir?: string;
   claudeCommand?: string[];
@@ -1147,6 +1149,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     ensurePrereq: () => shared.ensurePrereq(),
     // The window's title follows the interface language ("auto" is resolved by the browser, so the server uses English for it).
     ...(o.updates ? { updates: o.updates } : {}),
+    ...(o.groqFetch ? { groqFetch: o.groqFetch } : {}),
     pickFolder: o.pickFolder ?? createFolderPicker({
       title: () => {
         const lang = shared.language() !== 'auto' && shared.bundles.has(shared.language()) ? shared.language() : 'en';

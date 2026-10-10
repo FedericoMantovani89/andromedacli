@@ -10,6 +10,7 @@ import { renderProfilesTab } from './options-profiles';
 import { fillModelSelect, loadModelSelect } from './model-select';
 import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
+import { renderSecretsTab } from './options-secrets';
 import { openSaveTemplateDialog } from './new-project';
 import { el } from './dom';
 
@@ -42,7 +43,7 @@ type InstalledMap = Record<string, PluginStatus> | null;
 /** Every tab of the dialog, in order. Only options that exist today are here (no providers, snapshots, Rizzo Flow...). */
 /** The left column: what holds for the whole console first, then what belongs to the open project (each group has a small heading). */
 export const OPTION_GROUPS = [
-  { id: 'global', tabs: ['models', 'profiles', 'budget', 'guard', 'notifications', 'language', 'prerequisites', 'plugins'] },
+  { id: 'global', tabs: ['models', 'profiles', 'budget', 'guard', 'notifications', 'language', 'prerequisites', 'plugins', 'secrets'] },
   { id: 'project', tabs: ['projects', 'git'] },
 ] as const;
 export const OPTION_TABS = OPTION_GROUPS.flatMap((g) => g.tabs);
@@ -731,6 +732,11 @@ const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
     return box;
   },
   language: languageTab, prerequisites: prereqTab, plugins: pluginsTab,
+  secrets: (env) => {
+    const box = el('div');
+    renderSecretsTab(box, env.stage);
+    return box;
+  },
 };
 
 /** Where a restart-relevant setting is when the options payload has no value for it (the guard tab reads the state, not the config). */

@@ -26,8 +26,8 @@ describe('icon buttons', () => {
     expect(b.title).toBe('Settings');
   });
   it('draws a different icon for each name', () => {
-    const html = (n: 'bell' | 'gear' | 'clipboard') => { const b = document.createElement('button'); setIconButton(b, n, 'reader.open'); return b.innerHTML; };
-    expect(new Set([html('bell'), html('gear'), html('clipboard')]).size).toBe(3);
+    const html = (n: 'bell' | 'gear' | 'clipboard' | 'mic') => { const b = document.createElement('button'); setIconButton(b, n, 'reader.open'); return b.innerHTML; };
+    expect(new Set([html('bell'), html('gear'), html('clipboard'), html('mic')]).size).toBe(4);
   });
   it('keeps one svg when called again', () => {
     const b = document.createElement('button');

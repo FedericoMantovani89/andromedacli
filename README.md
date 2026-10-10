@@ -58,6 +58,8 @@ Useful options:
 4. **Answer the queue.** Open the drawer with the *Queue* (bell) button (`Alt+Q`). It collects questions to you, tool permissions, merge conflicts, budget decisions and the release confirmation.
 5. **Review and merge.** When an agent delivers a ticket the console reruns your tests on exactly that commit (long test runs share one queue per machine, one at a time; after the merges settle it also runs the full `release` command once on `project/<name>` and, if that turns red, works out which merged ticket broke it and tells its author or asks you), a read-only reviewer reads the diff, and the main merges approved tickets one at a time into `project/<name>`. Reaching your real `main` takes one confirmation from you; the console then merges and pushes with a one-time token that the repository's pre-push hook checks.
 
+**Voice dictation.** The microphone button in the main's panel header records from your browser microphone, transcribes with Groq Whisper (the audio is sent to Groq; add your key in *Options → Secrets*, it stays on this computer and is never shown again) and, with *Send to main*, types the text into the main's input without pressing Enter: you confirm in the terminal. The text is typed as plain text, so a transcript starting with `/` or `!` is seen by the main as typed.
+
 Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read panel (a readable view of an agent's turns), `Alt+←/→` switch projects. Focus never moves on its own: only your clicks and these shortcuts move it. `Esc` closes the Options, new-project and close-project dialogs.
 
 ## How it works
@@ -90,7 +92,7 @@ Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read pane
 
 ## Configuration
 
-Settings live in `%APPDATA%\andromedacli\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog, which has two groups. *Global*: models, profiles, budget and limits, guard, notifications, language, prerequisites and plugins (the values here are the defaults for new projects). *This project*: the project's own settings (test command, optional test commands per moment — ticket, merge, release —, model, limits, template, copy from another open project) and git (initialise or clone). One **Save** applies every change, after checking all of them: if one is refused, nothing is saved and every refusal is listed with the limits. An invalid entry in the file never blocks the console: the default is used and the problem is shown.
+Settings live in `%APPDATA%\andromedacli\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog, which has two groups. *Global*: models, profiles, budget and limits, guard, notifications, language, prerequisites, plugins and secrets (the values here are the defaults for new projects). *This project*: the project's own settings (test command, optional test commands per moment — ticket, merge, release —, model, limits, template, copy from another open project) and git (initialise or clone). One **Save** applies every change, after checking all of them: if one is refused, nothing is saved and every refusal is listed with the limits. An invalid entry in the file never blocks the console: the default is used and the problem is shown.
 
 The interface is translated through `src/i18n/messages_<lang>.properties` (English and Italian today; a new language is just a new file).
 

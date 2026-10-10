@@ -437,3 +437,15 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .options-git-init, .options-git-clone { display: grid; gap: 8px; justify-items: start; margin-top: 10px; }
 .options-git-clone .options-select-row { width: 100%; justify-self: stretch; }
 .options-git-clone .options-select-row input { flex: 1 1 auto; min-width: 0; }
+
+/* Voice dictation: a roomy text box, a recording state, the Send button as the main action */
+.dictation-dialog { width: min(640px, 92vw); }
+.dictation-body { display: grid; gap: 10px; }
+.dictation-dialog textarea { resize: vertical; min-height: 9rem; font: inherit; line-height: 1.45; }
+.dictation-dialog .dictation-status { min-height: 1.2em; }
+.dictation-dialog button[name="dictationSend"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.dictation-dialog button[disabled] { opacity: .5; cursor: default; }
+.dictation-dialog button[name="dictationRecord"][data-i18n="dictation.stop"] { border-color: var(--bad); color: var(--bad); }
+.options-secret-status { display: flex; align-items: center; gap: 8px; }
+.options-secret-status .secret-state { font-weight: 600; }
+.options-secret-status .secret-state.willclear { color: var(--warn); }

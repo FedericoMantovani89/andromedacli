@@ -1,6 +1,6 @@
 import { setTitle } from './i18n-client';
 
-export type IconName = 'bell' | 'gear' | 'clipboard';
+export type IconName = 'bell' | 'gear' | 'clipboard' | 'mic';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -11,6 +11,7 @@ const PATHS: Record<IconName, string[]> = {
     'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z',
     'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1',
   ],
+  mic: ['M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z', 'M5.5 11a6.5 6.5 0 0 0 13 0', 'M12 17.5V21'],
   clipboard: ['M9 4h6v3H9z', 'M15 5.5h2.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V7a1.5 1.5 0 0 1 1.5-1.5H9', 'M8.5 11h7M8.5 14.5h7M8.5 18h4'],
 };
 

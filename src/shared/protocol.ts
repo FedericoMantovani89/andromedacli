@@ -17,6 +17,7 @@ export const USER_ERROR_CODES = [
   'agent.notDormant', 'agent.notArchivable', 'agent.noSession', 'agent.noWorktree', 'agent.quotaHigh', 'agent.wakeFailed',
   'project.fieldInvalid', 'project.badRoot', 'template.notFound', 'template.invalid', 'template.exists', 'template.idInvalid',
   'git.notRepo', 'git.noCommits', 'git.repoRequired', 'git.unknownRepo', 'git.worktreeExists', 'project.testCommandInvalid', 'config.unreadable', 'config.invalid', 'config.outOfRange', 'project.testsDisabledInvalid', 'git.cloneUrlInvalid', 'git.cloneFolderNotEmpty', 'git.cloneFailed', 'review.useRequestReview', 'project.squashInvalid', 'recovery.useRecoveryTool',
+  'dictation.noKey', 'dictation.tooLarge', 'dictation.emptyAudio', 'dictation.badType', 'dictation.groqRejected', 'dictation.timeout', 'dictation.noSpeech', 'dictation.network', 'dictation.keyInvalid', 'dictation.mainNotRunning', 'dictation.textEmpty',
 ] as const;
 
 /** `pending`: no process yet (the agent waits in the queue for a free slot). */
