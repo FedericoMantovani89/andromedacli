@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resourcePath } from '../paths';
 import { writeJsonAtomic } from '../fs-atomic';
 
@@ -67,6 +67,15 @@ export interface RemoteCatalogOptions<T> {
   updatedOf?(data: T): string | undefined;
   fetch?: TextFetcher;
   now?(): number;
+}
+
+/** The options of a catalog that come from the user's settings and the console: where it is downloaded from and cached, and the test hooks. */
+export function catalogSettings(o: { name: string; configDir: string; config(): { catalogUrl: string; cacheHours: number }; fetch?: TextFetcher; now?: () => number }):
+  Pick<RemoteCatalogOptions<unknown>, 'name' | 'url' | 'cacheFile' | 'cacheHours' | 'fetch' | 'now'> {
+  return {
+    name: o.name, url: () => o.config().catalogUrl, cacheFile: join(o.configDir, `${o.name}.cache.json`), cacheHours: () => o.config().cacheHours,
+    ...(o.fetch ? { fetch: o.fetch } : {}), ...(o.now ? { now: o.now } : {}),
+  };
 }
 
 interface CacheFile { fetchedAt: string; url: string; raw: unknown }

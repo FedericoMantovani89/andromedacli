@@ -2,6 +2,7 @@ import type { ApiError } from '../shared/protocol';
 import { api } from './api';
 import { bindText, t } from './i18n-client';
 import { focusElementFromUser } from './focus';
+import { el } from './dom';
 
 /** Translates a server error code (SPEC 5.9: the server sends codes and parameters, never sentences). */
 export function errorText(err: ApiError): string {
@@ -14,32 +15,30 @@ export function errorText(err: ApiError): string {
  * creating an agent never moves the keyboard anywhere (the new panel appears dimmed, P2).
  */
 export function createNewAgentControl(getProfiles: () => readonly string[], afterCreate: () => void, getRepos: () => readonly string[] = () => []): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'new-agent-wrap';
-  const button = document.createElement('button');
+  const wrap = el('div', 'new-agent-wrap');
+  const button = el('button');
   button.id = 'new-agent-btn';
   bindText(button, 'panel.newAgent');
   wrap.append(button);
 
   button.addEventListener('click', () => {
-    const form = document.createElement('form');
-    form.className = 'new-agent-form';
+    const form = el('form', 'new-agent-form');
 
-    const slugLabel = document.createElement('label');
-    const slugText = document.createElement('span');
+    const slugLabel = el('label');
+    const slugText = el('span');
     bindText(slugText, 'panel.slugLabel');
-    const slug = document.createElement('input');
+    const slug = el('input');
     slug.name = 'slug';
     slug.autocomplete = 'off';
     slugLabel.append(slugText, slug);
 
-    const profileLabel = document.createElement('label');
-    const profileText = document.createElement('span');
+    const profileLabel = el('label');
+    const profileText = el('span');
     bindText(profileText, 'panel.profileLabel');
-    const profile = document.createElement('select');
+    const profile = el('select');
     profile.name = 'profile';
     for (const p of getProfiles()) {
-      const o = document.createElement('option');
+      const o = el('option');
       o.value = p;
       o.textContent = p; // profile names are data
       profile.append(o);
@@ -48,14 +47,14 @@ export function createNewAgentControl(getProfiles: () => readonly string[], afte
 
     // A project folder that holds several repositories: the agent works in exactly one of them.
     const repoNames = getRepos().filter((r) => r !== '');
-    const repoLabel = document.createElement('label');
-    const repo = document.createElement('select');
+    const repoLabel = el('label');
+    const repo = el('select');
     repo.name = 'repo';
     if (repoNames.length > 1) {
-      const repoText = document.createElement('span');
+      const repoText = el('span');
       bindText(repoText, 'panel.repoLabel');
       for (const r of repoNames) {
-        const o = document.createElement('option');
+        const o = el('option');
         o.value = r;
         o.textContent = r; // repo names are data
         repo.append(o);
@@ -63,14 +62,12 @@ export function createNewAgentControl(getProfiles: () => readonly string[], afte
       repoLabel.append(repoText, repo);
     }
 
-    const error = document.createElement('div');
-    error.className = 'form-error';
-    const actions = document.createElement('div');
-    actions.className = 'form-actions';
-    const create = document.createElement('button');
+    const error = el('div', 'form-error');
+    const actions = el('div', 'form-actions');
+    const create = el('button');
     create.type = 'submit';
     bindText(create, 'common.create');
-    const cancel = document.createElement('button');
+    const cancel = el('button');
     cancel.type = 'button';
     bindText(cancel, 'common.cancel');
     actions.append(create, cancel);

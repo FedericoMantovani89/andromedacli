@@ -5,6 +5,7 @@ export type HelperUse = NonNullable<StateMessage['helperUse']>;
 import { api } from './api';
 import { openInstallDialog } from './install-dialog';
 import { bindText, k, language, languageName, resolveLanguage, setLanguage } from './i18n-client';
+import { el } from './dom';
 
 /** The helpers the console counts (the ids of the optional tools whose use is measured). */
 const HELPER_COUNT_IDS: Record<string, true> = { python: true, rg: true, ctags: true, jq: true, fd: true, shellcheck: true, uv: true };
@@ -15,9 +16,9 @@ const HELPER_COUNT_IDS: Record<string, true> = { python: true, rg: true, ctags: 
  * Applies at runtime without a reload and saves the choice (SPEC 5.9, 22.2).
  */
 export function createLanguageSelect(current: string, languages: readonly string[], onChange?: (value: string) => void): HTMLSelectElement {
-  const select = document.createElement('select');
+  const select = el('select');
   for (const code of languages) {
-    const o = document.createElement('option');
+    const o = el('option');
     o.value = code;
     o.textContent = languageName(code); // language names are shown in their own language
     select.append(o);
@@ -42,13 +43,11 @@ export function renderPrereqTable(container: HTMLElement, results: PrereqResult[
     : [{ key: k('prereq.section.required'), rows: (results ?? []).filter((x) => x.required) }, { key: k('prereq.section.optional'), rows: (results ?? []).filter((x) => !x.required) }];
   for (const section of sections.filter((s) => s.rows.length > 0)) {
     if (section.key) {
-      const h = document.createElement('h3');
-      h.className = 'options-heading prereq-heading';
+      const h = el('h3', 'options-heading prereq-heading');
       bindText(h, section.key);
       container.append(h);
       if (usage && section.key === k('prereq.section.optional')) {
-        const help = document.createElement('p');
-        help.className = 'settings-note';
+        const help = el('p', 'settings-note');
         bindText(help, 'prereq.uses.help', { since: new Date(usage.since).toLocaleDateString(language()) });
         container.append(help);
       }
@@ -59,20 +58,18 @@ export function renderPrereqTable(container: HTMLElement, results: PrereqResult[
 }
 
 function appendPrereqRow(container: HTMLElement, r: PrereqResult, recheckHost: HTMLElement | undefined, requiredOnly: boolean, usage: HelperUse | undefined, withUses: boolean): void {
-  const row = document.createElement('div');
-  row.className = 'prereq-row';
-  const name = document.createElement('span');
+  const row = el('div', 'prereq-row');
+  const name = el('span');
   bindText(name, `prereq.${r.id}`);
-  const status = document.createElement('span');
+  const status = el('span');
   status.className = `prereq-${r.status}`;
   bindText(status, `prereq.status.${r.status}`);
-  const detail = document.createElement('span');
+  const detail = el('span');
   detail.textContent = r.version ?? '';
   row.append(name, status, detail);
   if (withUses) {
     // Only a helper that is installed has a count; a tool nobody measures (Node, Git, the GitHub CLI...) leaves the cell empty, never a 0.
-    const uses = document.createElement('span');
-    uses.className = 'prereq-uses';
+    const uses = el('span', 'prereq-uses');
     const n = r.status === 'ok' ? (usage?.counts as Record<string, number | undefined> | undefined)?.[r.id] : undefined;
     const measured = r.status === 'ok' && usage !== undefined && r.id in HELPER_COUNT_IDS;
     if (measured) bindText(uses, 'prereq.uses', { count: n ?? 0 });
@@ -80,7 +77,7 @@ function appendPrereqRow(container: HTMLElement, r: PrereqResult, recheckHost: H
   }
   // A missing, outdated or unreadable tool can be installed from here, after the user has seen and approved the command (Phase 6F).
   const fixable = r.status === 'missing' || r.status === 'outdated' || r.status === 'error';
-  const action = document.createElement(fixable ? 'button' : 'span');
+  const action = el(fixable ? 'button' : 'span');
   if (fixable) {
     bindText(action, r.status === 'missing' ? k('prereq.install') : k('prereq.update'));
     action.addEventListener('click', () => { openInstallDialog(r.id, () => recheck(container, recheckHost, requiredOnly, usage)); });
@@ -97,7 +94,7 @@ function recheck(container: HTMLElement, recheckHost: HTMLElement | undefined, r
 }
 
 function appendRecheck(container: HTMLElement, recheckHost: HTMLElement | undefined, requiredOnly: boolean, usage?: HelperUse): void {
-  const again = document.createElement('button');
+  const again = el('button');
   if (requiredOnly) {
     // The first-start wizard: check again, so the user can go on once a required tool is there.
     bindText(again, 'prereq.recheck');
@@ -106,15 +103,13 @@ function appendRecheck(container: HTMLElement, recheckHost: HTMLElement | undefi
     // Options: a program installed after the console started is not on the PATH this process was given, and the console never reads the
     // PATH from the system. Checking again or restarting the sessions would show nothing new: the console has to be started again from
     // a new terminal. The line below the table says so (the button is not offered: it could not do anything).
-    const hint = document.createElement('p');
-    hint.className = 'settings-note prereq-hint';
+    const hint = el('p', 'settings-note prereq-hint');
     bindText(hint, 'prereq.afterInstall');
     container.append(hint);
     return;
   }
   if (recheckHost) { recheckHost.replaceChildren(again); return; }
-  const centre = document.createElement('div');
-  centre.className = 'prereq-recheck';
+  const centre = el('div', 'prereq-recheck');
   centre.append(again);
   container.append(centre);
 }
@@ -135,8 +130,7 @@ export function openSettings(getState: () => StateMessage | undefined): void {
 
 /** A part of the page could not be loaded (the console stopped?): one line at the bottom, gone after a few seconds. */
 export function showLoadFailed(): void {
-  const note = document.createElement('div');
-  note.className = 'load-failed';
+  const note = el('div', 'load-failed');
   bindText(note, k('common.loadFailed'));
   document.body.append(note);
   setTimeout(() => note.remove(), 4000);

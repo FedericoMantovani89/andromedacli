@@ -2,7 +2,7 @@ import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES, type NotificationsConfig, type Not
 import type { ApiError, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k } from './i18n-client';
-import { checkbox } from './dom';
+import { el, checkbox } from './dom';
 import { errorText } from './new-agent';
 import { FIELD_LABELS } from './options';
 import { attachClock } from './time-picker';
@@ -14,10 +14,8 @@ import { attachClock } from './time-picker';
 export function renderNotificationsTab(container: HTMLElement, state: StateMessage, stage: (key: string, run: (dry: boolean) => Promise<{ status: number; body: unknown }>) => void): void {
   const config: NotificationsConfig = structuredClone(state.notifications?.config ?? DEFAULT_NOTIFICATIONS);
   container.replaceChildren();
-  const box = document.createElement('div');
-  box.className = 'settings-agents settings-notifications';
-  const error = document.createElement('div');
-  error.className = 'form-error';
+  const box = el('div', 'settings-agents settings-notifications');
+  const error = el('div', 'form-error');
 
   /** Stages one part of the settings for the dialog's Save; a later change of the same setting replaces it. */
   const save = (patch: Record<string, unknown>): void => {
@@ -32,8 +30,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   };
 
   // One switch per event type.
-  const typesTitle = document.createElement('p');
-  typesTitle.className = 'settings-note';
+  const typesTitle = el('p', 'settings-note');
   bindText(typesTitle, 'settings.notifications.types');
   box.append(typesTitle);
   for (const type of NOTIFY_TYPES) {
@@ -48,13 +45,12 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   }
 
   // Quiet hours: a switch and two local times (the window may cross midnight).
-  const quietRow = document.createElement('label');
-  quietRow.className = 'settings-switch';
-  const quiet = document.createElement('input');
+  const quietRow = el('label', 'settings-switch');
+  const quiet = el('input');
   quiet.type = 'checkbox';
   quiet.name = 'quietEnabled';
   quiet.checked = config.quietHours.enabled;
-  const quietText = document.createElement('span');
+  const quietText = el('span');
   bindText(quietText, 'settings.notifications.quiet');
   quietRow.append(quiet, quietText);
   quiet.addEventListener('change', () => {
@@ -62,14 +58,13 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
     save({ quietHours: { enabled: wanted } });
     syncTimes();
   });
-  const times = document.createElement('div');
-  times.className = 'settings-switch';
+  const times = el('div', 'settings-switch');
   const timeInput = (name: 'from' | 'to', key: string): HTMLElement => {
-    const label = document.createElement('div'); // not a <label>: a click on the text would press the clock button a second time
+    const label = el('div'); // not a <label>: a click on the text would press the clock button a second time
     label.className = 'settings-switch';
-    const text = document.createElement('span');
+    const text = el('span');
     bindText(text, key);
-    const input = document.createElement('input');
+    const input = el('input');
     input.name = `quiet-${name}`;
     input.value = config.quietHours[name];
     let saved = input.value;
@@ -90,13 +85,12 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   }
   syncTimes();
 
-  const soundRow = document.createElement('label');
-  soundRow.className = 'settings-switch';
-  const soundInput = document.createElement('input');
+  const soundRow = el('label', 'settings-switch');
+  const soundInput = el('input');
   soundInput.type = 'checkbox';
   soundInput.name = 'sound';
   soundInput.checked = config.sound;
-  const soundText = document.createElement('span');
+  const soundText = el('span');
   bindText(soundText, 'settings.notifications.sound');
   soundRow.append(soundInput, soundText);
   soundInput.addEventListener('change', () => {
@@ -104,11 +98,10 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
     save({ sound: wanted });
   });
 
-  const groupLabel = document.createElement('label');
-  groupLabel.className = 'settings-switch';
-  const groupText = document.createElement('span');
+  const groupLabel = el('label', 'settings-switch');
+  const groupText = el('span');
   bindText(groupText, 'settings.notifications.group');
-  const group = document.createElement('input');
+  const group = el('input');
   group.type = 'number';
   group.name = 'groupSeconds';
   group.min = '1';
@@ -120,13 +113,12 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   groupLabel.append(groupText, group);
 
   // The browser fallback: the permission is asked on this click only.
-  const browserRow = document.createElement('label');
-  browserRow.className = 'settings-switch';
-  const browser = document.createElement('input');
+  const browserRow = el('label', 'settings-switch');
+  const browser = el('input');
   browser.type = 'checkbox';
   browser.name = 'browserFallback';
   browser.checked = config.browserFallback;
-  const browserText = document.createElement('span');
+  const browserText = el('span');
   bindText(browserText, 'settings.notifications.browser');
   browserRow.append(browser, browserText);
   browser.addEventListener('change', () => {
@@ -140,24 +132,21 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
       save({ browserFallback: wanted });
     })();
   });
-  const browserHelp = document.createElement('p');
-  browserHelp.className = 'settings-note';
+  const browserHelp = el('p', 'settings-note');
   bindText(browserHelp, 'settings.notifications.browser.help');
 
   // The test toast and what is known about toasts on this machine.
-  const status = document.createElement('div');
-  status.className = 'settings-note settings-toast-status';
+  const status = el('div', 'settings-note settings-toast-status');
   const showToast = (toast: 'ok' | 'unavailable' | 'unknown'): void => {
     // Unknown is shown as n/a, never as "ok" (P7).
     bindText(status, toast === 'ok' ? k('settings.notifications.toast.ok') : toast === 'unavailable' ? k('settings.notifications.toast.unavailable') : k('settings.notifications.toast.unknown'));
   };
   showToast(state.notifications?.toast ?? 'unknown');
-  const test = document.createElement('button');
+  const test = el('button');
   test.type = 'button';
   test.name = 'testToast';
   bindText(test, 'settings.notifications.test');
-  const result = document.createElement('span');
-  result.className = 'settings-note';
+  const result = el('span', 'settings-note');
   test.addEventListener('click', () => {
     void api<{ ok: boolean }>('/api/notifications/test', { method: 'POST' }).then((res) => {
       const ok = res.status === 200 && res.body.ok === true;
@@ -165,8 +154,7 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
       showToast(ok ? 'ok' : 'unavailable');
     });
   });
-  const testRow = document.createElement('div');
-  testRow.className = 'settings-switch';
+  const testRow = el('div', 'settings-switch');
   testRow.append(test, result);
 
   box.append(quietRow, times, soundRow, groupLabel, browserRow, browserHelp, status, testRow, error);

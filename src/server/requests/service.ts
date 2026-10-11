@@ -190,23 +190,28 @@ export class RequestService {
   /** At start: the time the console was off does not count, so every open request with a deadline gets a fresh one. */
   restartClocks(): void {
     const now = this.d.now();
-    let any = false;
-    for (const r of this.d.store.list()) {
-      if (r.state !== 'open' || r.deadline === undefined) continue;
+    this.sweep((r) => {
+      if (r.state !== 'open' || r.deadline === undefined) return false;
       this.d.store.update(r.id, { deadline: now + (r.deliveredAt !== undefined ? 1 : UNDELIVERED_FACTOR) * this.d.timeoutMs() });
-      any = true;
-    }
+      return true;
+    });
+  }
+
+  /** Visits every request; `visit` answers whether it changed one, and the console is told once if any changed. */
+  private sweep(visit: (r: RequestRecord) => boolean): void {
+    let any = false;
+    for (const r of this.d.store.list()) if (visit(r)) any = true;
     if (any) this.d.changed();
   }
 
   /** Sends the requests whose time is up to the main. Called from the console's timer. */
   tick(): void {
     const now = this.d.now();
-    let any = false;
-    for (const r of this.d.store.list()) {
-      if (r.state === 'open' && r.deadline !== undefined && now >= r.deadline) { this.escalate(r.id, 'timeout'); any = true; }
-    }
-    if (any) this.d.changed();
+    this.sweep((r) => {
+      if (r.state !== 'open' || r.deadline === undefined || now < r.deadline) return false;
+      this.escalate(r.id, 'timeout');
+      return true;
+    });
   }
 
   /**
@@ -214,18 +219,17 @@ export class RequestService {
    * cancelled, its waiting steps are released, and whoever holds the request is told it need not answer.
    */
   agentGone(slug: string): void {
-    let any = false;
-    for (const r of this.d.store.list()) {
-      if (r.state === 'open' && r.to === slug) { this.escalate(r.id, 'recipient_gone'); any = true; }
-      else if ((r.state === 'open' || r.state === 'escalated') && r.from === slug) {
+    this.sweep((r) => {
+      if (r.state === 'open' && r.to === slug) { this.escalate(r.id, 'recipient_gone'); return true; }
+      if ((r.state === 'open' || r.state === 'escalated') && r.from === slug) {
         const holder = r.state === 'escalated' ? this.d.mainSlug : r.to;
         this.d.store.update(r.id, { state: 'cancelled', deadline: undefined });
         void this.d.clearWaiting(slug, r.id).catch(() => undefined);
         if (this.running(holder)) this.d.push(holder, cancelledText({ id: r.id, from: slug }));
-        any = true;
+        return true;
       }
-    }
-    if (any) this.d.changed();
+      return false;
+    });
   }
 
   /**
@@ -233,11 +237,11 @@ export class RequestService {
    * to the main, what it asked stays as it is, with its waiting steps, so the answer still unlocks them after the resume.
    */
   agentStopped(slug: string): void {
-    let any = false;
-    for (const r of this.d.store.list()) {
-      if (r.state === 'open' && r.to === slug) { this.escalate(r.id, 'recipient_gone'); any = true; }
-    }
-    if (any) this.d.changed();
+    this.sweep((r) => {
+      if (r.state !== 'open' || r.to !== slug) return false;
+      this.escalate(r.id, 'recipient_gone');
+      return true;
+    });
   }
 
   /** A replacement took the ticket of `from` under the name `to`: the live requests follow it, both ways. */

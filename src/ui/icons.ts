@@ -1,4 +1,5 @@
 import { setTitle } from './i18n-client';
+import { el } from './dom';
 
 export type IconName = 'bell' | 'gear' | 'clipboard' | 'mic' | 'record' | 'stop' | 'eye' | 'eyeOff';
 
@@ -57,7 +58,7 @@ export function setIconButton(btn: HTMLElement, name: IconName, titleKey: string
 export function setQueueBadge(btn: HTMLElement, count: number): void {
   let badge = btn.querySelector<HTMLElement>(':scope > .icon-badge');
   if (!badge) {
-    badge = document.createElement('span');
+    badge = el('span');
     badge.className = 'icon-badge';
     btn.append(badge);
   }

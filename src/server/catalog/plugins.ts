@@ -1,5 +1,4 @@
-import { join } from 'node:path';
-import { mergeById, readShipped, RemoteCatalog, type CatalogSource, type TextFetcher } from './remote';
+import { catalogSettings, mergeById, readShipped, RemoteCatalog, type CatalogSource, type TextFetcher } from './remote';
 import type { Config } from '../config';
 import { isObj } from '../../shared/guards';
 
@@ -94,10 +93,9 @@ export class PluginCatalog {
   constructor(o: { configDir: string; config: () => Config['plugins']; fetch?: TextFetcher; now?: () => number }) {
     const shipped = validatePlugins(readShipped('plugins-catalog.json')) ?? { schema: 1 as const, marketplaces: [], plugins: [] };
     this.catalog = new RemoteCatalog<PluginsDoc>({
-      name: 'plugins', shipped, url: () => o.config().catalogUrl, cacheFile: join(o.configDir, 'plugins.cache.json'),
-      cacheHours: () => o.config().cacheHours, validate: validatePlugins,
+      ...catalogSettings({ ...o, name: 'plugins' }), shipped, validate: validatePlugins,
       merge: (a, b) => ({ schema: 1, updated: b.updated ?? a.updated, marketplaces: mergeById(a.marketplaces, b.marketplaces), plugins: mergeById(a.plugins, b.plugins) }),
-      updatedOf: (d) => d.updated, ...(o.fetch ? { fetch: o.fetch } : {}), ...(o.now ? { now: o.now } : {}),
+      updatedOf: (d) => d.updated,
     });
   }
 

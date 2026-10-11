@@ -1,6 +1,6 @@
 import type { ApiError, StateMessage } from '../shared/protocol';
 import { api } from './api';
-import { checkbox, showDialog } from './dom';
+import { el, checkbox, showDialog } from './dom';
 import { focusElementFromUser } from './focus';
 import { bindText, k } from './i18n-client';
 import { errorText } from './new-agent';
@@ -16,27 +16,26 @@ function nameFromFolder(folder: string): string {
 }
 
 function field(labelKey: string, input: HTMLElement): HTMLLabelElement {
-  const label = document.createElement('label');
-  const text = document.createElement('span');
+  const label = el('label');
+  const text = el('span');
   bindText(text, labelKey);
   label.append(text, input);
   return label;
 }
 
 function textInput(name: string): HTMLInputElement {
-  const input = document.createElement('input');
+  const input = el('input');
   input.name = name;
   input.autocomplete = 'off';
   return input;
 }
 
 function actions(submitKey: string, onCancel: () => void): { box: HTMLElement; submit: HTMLButtonElement } {
-  const box = document.createElement('div');
-  box.className = 'form-actions';
-  const submit = document.createElement('button');
+  const box = el('div', 'form-actions');
+  const submit = el('button');
   submit.type = 'submit';
   bindText(submit, submitKey);
-  const cancel = document.createElement('button');
+  const cancel = el('button');
   cancel.type = 'button';
   bindText(cancel, 'common.cancel');
   cancel.addEventListener('click', onCancel);
@@ -50,9 +49,8 @@ function actions(submitKey: string, onCancel: () => void): { box: HTMLElement; s
  * proposed from the folder when it is chosen or typed, and can be changed. Create makes the project through `POST /api/projects`.
  */
 export function openNewProjectDialog(getState: () => StateMessage | undefined, onCreated?: (name: string) => void): void {
-  const form = document.createElement('form');
-  form.className = 'new-project-form';
-  const title = document.createElement('h2');
+  const form = el('form', 'new-project-form');
+  const title = el('h2');
   bindText(title, 'projects.new.title');
 
   const folder = textInput('folder');
@@ -60,10 +58,8 @@ export function openNewProjectDialog(getState: () => StateMessage | undefined, o
   let nameEdited = false; // a name the user typed is never replaced by the one proposed from the folder
   name.addEventListener('input', () => { nameEdited = true; });
   const nameRow = field(k('projects.new.name'), name);
-  const note = document.createElement('p');
-  note.className = 'settings-note create-note';
-  const error = document.createElement('div');
-  error.className = 'form-error';
+  const note = el('p', 'settings-note create-note');
+  const error = el('div', 'form-error');
 
   /** Whether the folder is a full path that is not there yet (it will be created); anything else is the server's to judge. */
   const missing = async (): Promise<boolean> => {
@@ -78,12 +74,11 @@ export function openNewProjectDialog(getState: () => StateMessage | undefined, o
   };
   folder.addEventListener('blur', () => { void check(); });
   // The native folder window (the console runs on the user's own machine, so it can open one: a page cannot learn a full path).
-  const browse = document.createElement('button');
+  const browse = el('button');
   browse.type = 'button';
   browse.className = 'browse-folder';
   bindText(browse, 'projects.new.browse');
-  const browseNote = document.createElement('p');
-  browseNote.className = 'settings-note browse-note';
+  const browseNote = el('p', 'settings-note browse-note');
   browse.addEventListener('click', () => {
     browseNote.textContent = '';
     error.textContent = '';
@@ -102,14 +97,14 @@ export function openNewProjectDialog(getState: () => StateMessage | undefined, o
   let copy: HTMLSelectElement | undefined;
   let copyRow: HTMLLabelElement | undefined;
   if (others.length > 0) {
-    copy = document.createElement('select');
+    copy = el('select');
     copy.name = 'copyFrom';
-    const none = document.createElement('option');
+    const none = el('option');
     none.value = '';
     bindText(none, 'projects.new.copyFrom.none');
     copy.append(none);
     for (const p of others) {
-      const o = document.createElement('option');
+      const o = el('option');
       o.value = p.name;
       o.textContent = p.name;
       copy.append(o);
@@ -137,8 +132,7 @@ export function openNewProjectDialog(getState: () => StateMessage | undefined, o
     }).finally(() => { submit.disabled = false; });
   });
 
-  const folderRow = document.createElement('div');
-  folderRow.className = 'folder-row';
+  const folderRow = el('div', 'folder-row');
   folderRow.append(field(k('projects.new.folder'), folder), browse);
   form.append(title, folderRow, browseNote, nameRow, ...(copyRow ? [copyRow] : []), note, error, box);
   showDialog([form]);
@@ -147,16 +141,14 @@ export function openNewProjectDialog(getState: () => StateMessage | undefined, o
 
 /** "Save project as template": a copy of the current project's profiles, rules and settings, kept in the user's templates (SPEC 21). */
 export function openSaveTemplateDialog(_getState: () => StateMessage | undefined): void {
-  const form = document.createElement('form');
-  const title = document.createElement('h2');
+  const form = el('form');
+  const title = el('h2');
   bindText(title, 'templates.save.title');
   const id = textInput('id');
   const name = textInput('name');
   const overwrite = checkbox('overwrite', k('templates.save.overwrite'));
-  const error = document.createElement('div');
-  error.className = 'form-error';
-  const done = document.createElement('p');
-  done.className = 'settings-note';
+  const error = el('div', 'form-error');
+  const done = el('p', 'settings-note');
   const { box, submit } = actions(k('common.save'), closeOverlay);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();

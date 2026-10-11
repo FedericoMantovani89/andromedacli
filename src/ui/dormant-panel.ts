@@ -3,6 +3,7 @@ import { api } from './api';
 import { STATE_KEYS } from './chips';
 import { bindText } from './i18n-client';
 import { errorText } from './new-agent';
+import { el } from './dom';
 
 /** How many of the agent's last entries the panel prints. */
 const MAX_ENTRIES = 6;
@@ -12,23 +13,18 @@ const MAX_ENTRIES = 6;
  * read panel, in full, not the cut line of the bar) so the user can read it before waking the agent, and has the Wake up button.
  */
 export function createDormantPanel(info: SessionInfo): HTMLElement {
-  const root = document.createElement('div');
-  root.className = 'panel panel-dormant';
+  const root = el('div', 'panel panel-dormant');
 
-  const header = document.createElement('div');
-  header.className = 'panel-header';
-  const title = document.createElement('span');
-  title.className = 'panel-title';
+  const header = el('div', 'panel-header');
+  const title = el('span', 'panel-title');
   title.textContent = info.slug; // the slug is data
-  const meta = document.createElement('span');
-  meta.className = 'panel-meta';
+  const meta = el('span', 'panel-meta');
   meta.textContent = info.profile;
-  const state = document.createElement('span');
+  const state = el('span');
   state.className = `panel-state ${info.state}`;
   bindText(state, STATE_KEYS[info.state]);
-  const error = document.createElement('span');
-  error.className = 'form-error';
-  const wake = document.createElement('button');
+  const error = el('span', 'form-error');
+  const wake = el('button');
   wake.type = 'button';
   wake.className = 'panel-wake';
   bindText(wake, 'panel.wake');
@@ -44,17 +40,15 @@ export function createDormantPanel(info: SessionInfo): HTMLElement {
   });
   header.append(title, meta, state, error, wake);
 
-  const body = document.createElement('div');
-  body.className = 'panel-dormant-body';
-  const none = document.createElement('span');
+  const body = el('div', 'panel-dormant-body');
+  const none = el('span');
   bindText(none, 'common.notAvailable'); // no data: "n/a", never an empty box
   body.append(none);
   void api<{ entries?: { text?: string }[] }>(`/api/reading/${info.slug}`).then((r) => {
     const texts = (r.status === 200 ? r.body?.entries ?? [] : []).map((e) => e.text ?? '').filter((t) => t.trim() !== '').slice(-MAX_ENTRIES);
     if (texts.length === 0) return;
     body.replaceChildren(...texts.map((text) => {
-      const entry = document.createElement('div');
-      entry.className = 'panel-dormant-entry';
+      const entry = el('div', 'panel-dormant-entry');
       entry.textContent = text; // the agent's own words: data, never markup
       return entry;
     }));

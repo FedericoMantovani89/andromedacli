@@ -312,36 +312,22 @@ export class RecoveryService {
         const u = this.d.budget.usage(ticket);
         const limit = t.budget?.limit ?? u?.limit;
         const proposed = limit !== undefined ? raisedLimit(limit, u?.used ?? 0) : undefined;
-        this.d.askUser(
-          {
-            text: `The recovery of ticket "${ticket}" proposes to raise its token budget${proposed !== undefined ? ` to ${proposed} tokens` : ''} and restart it with a new agent. Approve the spend?`,
-            options: ['approve', 'decline'],
-            payload: {
-              ticket, reason: 'recovery_raise', recovery: slug, remedy: report.remedy, used: u?.used, limit, proposed,
-              notes: [{ severity: 'diagnosis', text: report.diagnosis }, ...(report.notes ? [{ severity: 'notes', text: report.notes }] : [])],
-            },
-          },
-          (answer) => { void this.userDecided(ticket, answer, report); },
-        );
-        this.d.notifyMain(`${summary} A spend is the user's decision: the console asked the user to approve a raise of the budget. You will be told the answer.`);
-        this.d.changed();
+        this.askUserToDecide(ticket, slug, report, {
+          text: `The recovery of ticket "${ticket}" proposes to raise its token budget${proposed !== undefined ? ` to ${proposed} tokens` : ''} and restart it with a new agent. Approve the spend?`,
+          options: ['approve', 'decline'],
+          payload: { reason: 'recovery_raise', used: u?.used, limit, proposed },
+          told: `${summary} A spend is the user's decision: the console asked the user to approve a raise of the budget. You will be told the answer.`,
+        });
         return { ok: true, ticket, outcome: 'asked_user' };
       }
       if (report.remedy === 'change_model') {
         // Choosing a model is the user's call (out of scope for the console): a restart with the same model only if the user says so.
-        this.d.askUser(
-          {
-            text: `The recovery of ticket "${ticket}" says the work does not suit the model. Restart it with a new agent on the same model anyway, or leave it to you?`,
-            options: ['restart', 'leave'],
-            payload: {
-              ticket, reason: 'recovery_change_model', recovery: slug, remedy: report.remedy,
-              notes: [{ severity: 'diagnosis', text: report.diagnosis }, ...(report.notes ? [{ severity: 'notes', text: report.notes }] : [])],
-            },
-          },
-          (answer) => { void this.userDecided(ticket, answer, report); },
-        );
-        this.d.notifyMain(`${summary} Choosing a model is the user's decision: the console asked the user whether to restart the ticket with the same model or leave it. You will be told the answer.`);
-        this.d.changed();
+        this.askUserToDecide(ticket, slug, report, {
+          text: `The recovery of ticket "${ticket}" says the work does not suit the model. Restart it with a new agent on the same model anyway, or leave it to you?`,
+          options: ['restart', 'leave'],
+          payload: { reason: 'recovery_change_model' },
+          told: `${summary} Choosing a model is the user's decision: the console asked the user whether to restart the ticket with the same model or leave it. You will be told the answer.`,
+        });
         return { ok: true, ticket, outcome: 'asked_user' };
       }
       const out = await this.replace(ticket, { report });
@@ -350,6 +336,26 @@ export class RecoveryService {
         : `${summary} The new agent could not be started (${out.code}${out.detail ? `: ${out.detail}` : ''}), so the ticket now needs the user (needs_user). Tell the user.`);
       return { ok: true, ticket, outcome: out.ok ? 'restarted' : 'needs_user' };
     }
+  }
+
+  /** Puts a decision of the recovery in the user's queue (with the diagnosis as notes) and tells the main; `userDecided` runs with the answer. */
+  private askUserToDecide(
+    ticket: string, recovery: string, report: RecoveryReport,
+    o: { text: string; options: string[]; payload: Record<string, unknown>; told: string },
+  ): void {
+    this.d.askUser(
+      {
+        text: o.text,
+        options: o.options,
+        payload: {
+          ticket, recovery, remedy: report.remedy, ...o.payload,
+          notes: [{ severity: 'diagnosis', text: report.diagnosis }, ...(report.notes ? [{ severity: 'notes', text: report.notes }] : [])],
+        },
+      },
+      (answer) => { void this.userDecided(ticket, answer, report); },
+    );
+    this.d.notifyMain(o.told);
+    this.d.changed();
   }
 
   /**

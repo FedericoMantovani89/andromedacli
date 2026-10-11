@@ -5,6 +5,7 @@ import type { StateMessage } from '../shared/protocol';
 import { api, wsUrl } from './api';
 import { bindText, k } from './i18n-client';
 import { closeOverlay } from './settings';
+import { el } from './dom';
 
 const RESULT_KEYS = {
   done: k('prereq.install.result.done'),
@@ -21,19 +22,15 @@ const POLL_MS = 1000;
 export function openInstallTerminal(terminalId: string, onClose: () => void = closeOverlay): void {
   const tool = terminalId.replace(/^install-/, '');
   const overlay = document.getElementById('overlay')!;
-  const dialog = document.createElement('div');
-  dialog.className = 'dialog install-dialog';
+  const dialog = el('div', 'dialog install-dialog');
 
-  const title = document.createElement('h2');
+  const title = el('h2');
   bindText(title, 'prereq.install.running');
-  const host = document.createElement('div');
-  host.className = 'install-terminal';
-  const result = document.createElement('p');
-  result.className = 'install-result';
-  const note = document.createElement('p');
-  note.className = 'settings-note';
+  const host = el('div', 'install-terminal');
+  const result = el('p', 'install-result');
+  const note = el('p', 'settings-note');
   bindText(note, 'prereq.install.closeNote');
-  const close = document.createElement('button');
+  const close = el('button');
   bindText(close, 'common.close');
   dialog.append(title, host, result, note, close);
   overlay.replaceChildren(dialog);

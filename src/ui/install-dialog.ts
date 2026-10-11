@@ -1,6 +1,6 @@
 import type { ApiError } from '../shared/protocol';
 import { api } from './api';
-import { checkbox } from './dom';
+import { el, checkbox } from './dom';
 import { bindText, k, t } from './i18n-client';
 import { errorText } from './new-agent';
 import { openInstallTerminal } from './install-terminal';
@@ -33,13 +33,11 @@ export function openInstallDialog(id: string, onDone: () => void): void {
   const restore = () => { overlay.replaceChildren(...previous); onDone(); };
 
   void api<Described | ApiError>(`/api/prereq/${id}/install`).then((res) => {
-    const dialog = document.createElement('div');
-    dialog.className = 'dialog install-dialog';
-    const title = document.createElement('h2');
+    const dialog = el('div', 'dialog install-dialog');
+    const title = el('h2');
     const toolName = t('prereq.' + id);
-    const actions = document.createElement('div');
-    actions.className = 'form-actions';
-    const cancel = document.createElement('button');
+    const actions = el('div', 'form-actions');
+    const cancel = el('button');
     bindText(cancel, 'common.cancel');
     cancel.addEventListener('click', restore);
 
@@ -47,38 +45,35 @@ export function openInstallDialog(id: string, onDone: () => void): void {
     if (res.status !== 200 || !('display' in body)) {
       // Not installable from here: the manual instructions instead (no command is offered).
       bindText(title, TITLE_KEYS.install, { tool: toolName });
-      const why = document.createElement('p');
+      const why = el('p');
       const reason = res.status === 200 && 'unavailable' in body ? body.unavailable : '';
       if (UNAVAILABLE_KEYS[reason]) bindText(why, UNAVAILABLE_KEYS[reason]!);
       else why.textContent = errorText(res.body as ApiError);
-      const manual = document.createElement('p');
+      const manual = el('p');
       if (MANUAL_KEYS[id]) bindText(manual, MANUAL_KEYS[id]!);
       dialog.append(title, why, manual, actions);
       actions.append(cancel);
       bindText(cancel, 'common.close');
     } else {
       bindText(title, TITLE_KEYS[body.action], { tool: toolName });
-      const intro = document.createElement('p');
+      const intro = el('p');
       bindText(intro, 'prereq.install.command');
-      const code = document.createElement('pre');
-      code.className = 'install-command';
+      const code = el('pre', 'install-command');
       code.textContent = body.display;
-      const source = document.createElement('p');
+      const source = el('p');
       bindText(source, 'prereq.install.source', { origin: body.source.origin });
       dialog.append(title, intro, code, source);
       if (body.mayNeedAdmin) {
-        const admin = document.createElement('p');
-        admin.className = 'settings-note';
+        const admin = el('p', 'settings-note');
         bindText(admin, 'prereq.install.admin');
         dialog.append(admin);
       }
       if (!body.verified) {
-        const unverified = document.createElement('p');
-        unverified.className = 'settings-note';
+        const unverified = el('p', 'settings-note');
         bindText(unverified, 'prereq.install.unverified');
         dialog.append(unverified);
       }
-      const confirm = document.createElement('button');
+      const confirm = el('button');
       bindText(confirm, 'prereq.install.confirm');
       let script: HTMLInputElement | undefined;
       if (body.secondConfirm) {
@@ -88,8 +83,7 @@ export function openInstallDialog(id: string, onDone: () => void): void {
         confirm.disabled = true;
         script.addEventListener('change', () => { confirm.disabled = !script!.checked; });
       }
-      const error = document.createElement('div');
-      error.className = 'form-error';
+      const error = el('div', 'form-error');
       confirm.addEventListener('click', () => {
         confirm.disabled = true;
         void api<{ terminal: string } | ApiError>(`/api/prereq/${id}/install`, {

@@ -1,4 +1,4 @@
-import { keepFocus } from './dom';
+import { el, keepFocus } from './dom';
 import { bindText } from './i18n-client';
 
 /**
@@ -6,18 +6,15 @@ import { bindText } from './i18n-client';
  * list, and the "nothing here" line. The caller fills `list` (keeping its nodes stable) and shows `empty` when there is nothing to list.
  */
 export function createDrawerShell(root: HTMLElement, titleKey: string, emptyKey: string) {
-  const title = document.createElement('h2');
+  const title = el('h2');
   bindText(title, titleKey);
-  const close = document.createElement('button');
+  const close = el('button');
   bindText(close, 'common.close');
   keepFocus(close);
-  const head = document.createElement('div');
-  head.className = 'drawer-head';
+  const head = el('div', 'drawer-head');
   head.append(title, close);
-  const list = document.createElement('div');
-  list.className = 'queue-list';
-  const empty = document.createElement('div');
-  empty.className = 'queue-empty';
+  const list = el('div', 'queue-list');
+  const empty = el('div', 'queue-empty');
   bindText(empty, emptyKey);
   root.append(head, list, empty);
 

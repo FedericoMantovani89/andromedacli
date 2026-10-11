@@ -1,5 +1,6 @@
 import { api } from './api';
 import { bindText } from './i18n-client';
+import { el } from './dom';
 
 export interface ModelEntry { id: string; label: string; alias?: true }
 
@@ -11,7 +12,7 @@ export interface ModelEntry { id: string; label: string; alias?: true }
 export function fillModelSelect(select: HTMLSelectElement, models: readonly ModelEntry[], current: string, defaultKey: string): void {
   select.replaceChildren();
   const add = (value: string): HTMLOptionElement => {
-    const o = document.createElement('option');
+    const o = el('option');
     o.value = value;
     select.append(o);
     return o;

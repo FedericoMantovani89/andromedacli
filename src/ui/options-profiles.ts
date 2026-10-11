@@ -1,3 +1,4 @@
+import type { Profile } from '../shared/profile';
 import type { ApiError } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k, t } from './i18n-client';
@@ -7,9 +8,8 @@ import { createSlider, groupNumber, infoIcon } from './options';
 import { el, note } from './dom';
 
 /** What `GET /api/profiles` returns for one profile (the user's layer, plus where the version in force comes from). */
-interface ProfileRow {
-  name: string; description: string; model?: string; body: string; readOnly: boolean; budgetTokens?: number;
-  source: 'project' | 'user' | 'shipped'; shipped: boolean; userFile: boolean; projectOverrides: boolean;
+interface ProfileRow extends Profile {
+  shipped: boolean; userFile: boolean; projectOverrides: boolean;
 }
 
 const button = (name: string, key: string): HTMLButtonElement => {

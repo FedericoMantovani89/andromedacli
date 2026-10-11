@@ -4,6 +4,7 @@ import { renderGitProject } from './git-section';
 import { bindText, k } from './i18n-client';
 import { errorText } from './new-agent';
 import { closeOverlay, createLanguageSelect, renderPrereqTable } from './settings';
+import { el } from './dom';
 
 type Step = 'language' | 'prerequisites' | 'git';
 const STEP_TITLES: Record<Step, string> = {
@@ -33,28 +34,22 @@ export function openWizard(getState: () => StateMessage | undefined): void {
   const render = () => {
     const state = getState();
     const step = steps[index]!;
-    const dialog = document.createElement('div');
-    dialog.className = 'dialog';
+    const dialog = el('div', 'dialog');
 
     // One heading: the step is the title, "First start · step n of m" a quiet line above it.
-    const head = document.createElement('header');
-    head.className = 'wizard-head';
-    const progress = document.createElement('div');
-    progress.className = 'wizard-eyebrow';
+    const head = el('header', 'wizard-head');
+    const progress = el('div', 'wizard-eyebrow');
     bindText(progress, 'wizard.progress', { n: index + 1, total: steps.length });
-    const title = document.createElement('h2');
+    const title = el('h2');
     bindText(title, STEP_TITLES[step]);
     head.append(progress, title);
 
-    const body = document.createElement('div');
-    body.className = 'wizard-body';
-    const error = document.createElement('div');
-    error.className = 'form-error';
-    const actions = document.createElement('div');
-    actions.className = 'form-actions wizard-actions';
-    const left = document.createElement('div');
-    const middle = document.createElement('div');
-    const right = document.createElement('div');
+    const body = el('div', 'wizard-body');
+    const error = el('div', 'form-error');
+    const actions = el('div', 'form-actions wizard-actions');
+    const left = el('div');
+    const middle = el('div');
+    const right = el('div');
 
     if (step === 'language') {
       body.append(createLanguageSelect(chosenLanguage, state?.languages ?? [], (v) => { chosenLanguage = v; }));
@@ -66,22 +61,19 @@ export function openWizard(getState: () => StateMessage | undefined): void {
         error.textContent = errorText(res.body as ApiError);
         return true;
       }));
-      const later = document.createElement('p');
-      later.className = 'settings-note';
+      const later = el('p', 'settings-note');
       bindText(later, 'wizard.git.later');
       body.append(later);
     }
 
     const last = index === steps.length - 1;
     if (index > 0) {
-      const back = document.createElement('button');
-      back.className = 'wizard-back';
+      const back = el('button', 'wizard-back');
       bindText(back, 'common.back');
       back.addEventListener('click', () => { index -= 1; render(); });
       left.append(back);
     }
-    const next = document.createElement('button');
-    next.className = 'wizard-next';
+    const next = el('button', 'wizard-next');
     bindText(next, last ? k('wizard.finish') : k('common.next'));
     next.addEventListener('click', () => { if (last) void finish(); else { index += 1; render(); } });
     right.append(next);

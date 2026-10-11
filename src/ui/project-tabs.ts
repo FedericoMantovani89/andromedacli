@@ -1,6 +1,6 @@
 import type { ApiError, ProjectTab } from '../shared/protocol';
 import { api } from './api';
-import { checkbox, showDialog } from './dom';
+import { el, checkbox, showDialog } from './dom';
 import { bindText } from './i18n-client';
 import { errorText } from './new-agent';
 import { closeOverlay } from './settings';
@@ -18,7 +18,7 @@ export interface TabHandlers {
 export function renderProjectTabs(tabs: HTMLElement, projects: ProjectTab[], selected: string, h: TabHandlers): void {
   tabs.replaceChildren();
   for (const p of projects) {
-    const tab = document.createElement('button');
+    const tab = el('button');
     const classes = ['tab'];
     if (p.name === selected) classes.push('current');
     if (p.waiting > 0) classes.push('attention');
@@ -26,15 +26,13 @@ export function renderProjectTabs(tabs: HTMLElement, projects: ProjectTab[], sel
     tab.textContent = p.name; // project name is data, not UI text
     tab.dataset.project = p.name;
     tab.addEventListener('click', () => h.select(p.name));
-    const close = document.createElement('button');
-    close.className = 'tab-close';
+    const close = el('button', 'tab-close');
     close.dataset.project = p.name;
     bindText(close, 'projects.close');
     close.addEventListener('click', () => h.close(p.name));
     tabs.append(tab, close);
   }
-  const add = document.createElement('button');
-  add.className = 'tab';
+  const add = el('button', 'tab');
   bindText(add, 'tabs.newProject');
   add.addEventListener('click', () => h.add());
   tabs.append(add);
@@ -58,14 +56,12 @@ export function neighbourProject(projects: ProjectTab[], selected: string, direc
  * branches and `.andromedacli` go too and the project opens again as new). Closing the last project leaves the welcome screen, which needs a reload.
  */
 export function openCloseProjectDialog(name: string, last = false): void {
-  const message = document.createElement('div');
+  const message = el('div');
   bindText(message, 'projects.close.confirm', { name });
   const { row: purgeRow, input: purge } = checkbox('purge', 'projects.close.purge');
-  const error = document.createElement('div');
-  error.className = 'form-error';
-  const actions = document.createElement('div');
-  actions.className = 'form-actions';
-  const yes = document.createElement('button');
+  const error = el('div', 'form-error');
+  const actions = el('div', 'form-actions');
+  const yes = el('button');
   bindText(yes, 'projects.close.do');
   yes.addEventListener('click', () => {
     void api<ApiError | { name: string }>(`/api/projects/${encodeURIComponent(name)}${purge.checked ? '?purge=1' : ''}`, { method: 'DELETE' }).then((res) => {
@@ -73,7 +69,7 @@ export function openCloseProjectDialog(name: string, last = false): void {
       else error.textContent = errorText(res.body as ApiError);
     });
   });
-  const cancel = document.createElement('button');
+  const cancel = el('button');
   bindText(cancel, 'common.cancel');
   cancel.addEventListener('click', closeOverlay);
   actions.append(yes, cancel);

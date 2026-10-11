@@ -1,6 +1,6 @@
 import type { ApiError } from '../shared/protocol';
 import { api } from './api';
-import { showDialog } from './dom';
+import { el, showDialog } from './dom';
 import { bindText, k } from './i18n-client';
 import { errorText } from './new-agent';
 import { closeOverlay } from './settings';
@@ -12,23 +12,20 @@ import { closeOverlay } from './settings';
  * from the system, so that needs the console itself started again from a new terminal.
  */
 export function openRestartDialog(): void {
-  const title = document.createElement('h2');
+  const title = el('h2');
   bindText(title, 'options.restart.title');
-  const note = document.createElement('p');
-  note.className = 'settings-note';
+  const note = el('p', 'settings-note');
   bindText(note, k('options.restart.settings'));
-  const question = document.createElement('p');
+  const question = el('p');
   bindText(question, 'options.restart.question');
-  const error = document.createElement('div');
-  error.className = 'form-error';
-  const actions = document.createElement('div');
-  actions.className = 'form-actions';
-  const no = document.createElement('button');
+  const error = el('div', 'form-error');
+  const actions = el('div', 'form-actions');
+  const no = el('button');
   no.type = 'button';
   no.name = 'restartNo';
   bindText(no, 'common.no');
   no.addEventListener('click', closeOverlay);
-  const yes = document.createElement('button');
+  const yes = el('button');
   yes.type = 'button';
   yes.name = 'restartYes';
   bindText(yes, 'common.yes');

@@ -1,5 +1,6 @@
 import { focusElementFromUser } from './focus';
 import { k, setTitle } from './i18n-client';
+import { el } from './dom';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const SIZE = 220;
@@ -27,9 +28,8 @@ const at = (i: number, steps: number, radius: number): { x: number; y: number } 
  */
 export function attachClock(input: HTMLInputElement, labelKey: string): HTMLElement {
   input.type = 'hidden';
-  const wrap = document.createElement('span');
-  wrap.className = 'clock-field';
-  const button = document.createElement('button');
+  const wrap = el('span', 'clock-field');
+  const button = el('button');
   button.type = 'button';
   button.className = 'clock-button';
   button.name = `${input.name}-clock`;
@@ -53,18 +53,15 @@ function openDial(wrap: HTMLElement, button: HTMLElement, input: HTMLInputElemen
   let minute = m0;
   let mode: 'hour' | 'minute' = 'hour';
 
-  const pop = document.createElement('div');
-  pop.className = 'clock-popover';
+  const pop = el('div', 'clock-popover');
   pop.setAttribute('role', 'dialog');
-  const head = document.createElement('div');
-  head.className = 'clock-head';
-  const hourBtn = document.createElement('button');
-  const minBtn = document.createElement('button');
+  const head = el('div', 'clock-head');
+  const hourBtn = el('button');
+  const minBtn = el('button');
   hourBtn.type = minBtn.type = 'button';
   setTitle(hourBtn, k('time.hours'));
   setTitle(minBtn, k('time.minutes'));
-  const colon = document.createElement('span');
-  colon.className = 'clock-colon'; // the colon is drawn by CSS: it is a separator, not text
+  const colon = el('span', 'clock-colon'); // the colon is drawn by CSS: it is a separator, not text
   head.append(hourBtn, colon, minBtn);
   const face = svg('svg', { viewBox: `0 0 ${SIZE} ${SIZE}`, width: SIZE, height: SIZE, class: 'clock-face', tabindex: 0, role: 'slider' });
   pop.append(head, face);

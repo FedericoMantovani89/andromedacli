@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { audioMime, MAX_AUDIO_BYTES, transcribe, type DictationCode } from './dictation';
-import { fail, readBody, send } from './http-util';
+import { fail, readBody, readRaw, send } from './http-util';
 import { hasGroqKey, isValidGroqKey, maskGroqKey, readGroqKey, writeGroqKey } from './secrets';
 
 /** The routes of the voice dictation that are not about one project: the secrets and the transcription. The token and Host checks already ran. */
@@ -16,21 +16,6 @@ const STATUS: Partial<Record<DictationCode, number>> = {
   'dictation.groqRejected': 502, 'dictation.network': 502, 'dictation.timeout': 504,
 };
 const sendError = (res: ServerResponse, code: DictationCode): void => send(res, STATUS[code] ?? 500, { status: 'error', code });
-
-/** Reads the request body as bytes, giving up as soon as it is over `limit` (the rest is drained, not kept). */
-function readBytes(req: IncomingMessage, limit: number): Promise<Buffer | 'too_large'> {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    let over = false;
-    const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => {
-      size += c.length;
-      if (size > limit) { over = true; chunks.length = 0; } else if (!over) chunks.push(c);
-    });
-    req.on('end', () => resolve(over ? 'too_large' : Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
 
 /** Answers `GET/PUT /api/secrets` and `POST /api/dictation/transcribe`; returns false for any other path. */
 export async function handleDictationRoute(host: DictationHost, req: IncomingMessage, res: ServerResponse, path: string, url: URL): Promise<boolean> {
@@ -61,9 +46,10 @@ export async function handleDictationRoute(host: DictationHost, req: IncomingMes
     if (Number.isFinite(declared) && declared > MAX_AUDIO_BYTES) { tooBig(); return true; }
     const key = readGroqKey(host.configDir);
     if (!key) { req.resume(); sendError(res, 'dictation.noKey'); return true; }
-    let audio: Buffer | 'too_large';
-    try { audio = await readBytes(req, MAX_AUDIO_BYTES); } catch { fail(res, 400, 'bad_request'); return true; }
-    if (audio === 'too_large') { sendError(res, 'dictation.tooLarge'); return true; }
+    let raw: Awaited<ReturnType<typeof readRaw>>;
+    try { raw = await readRaw(req, MAX_AUDIO_BYTES); } catch { fail(res, 400, 'bad_request'); return true; }
+    if (raw.tooLarge) { sendError(res, 'dictation.tooLarge'); return true; }
+    const audio = raw.bytes;
     const language = url.searchParams.get('lang') ?? undefined;
     const out = await transcribe({ fetch: host.groqFetch ?? fetch, key, audio, mime, ...(language ? { language } : {}) });
     if (out.status === 'ok') send(res, 200, out); else sendError(res, out.code);

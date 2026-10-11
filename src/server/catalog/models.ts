@@ -1,5 +1,4 @@
-import { join } from 'node:path';
-import { mergeById, readShipped, RemoteCatalog, type CatalogSource, type TextFetcher } from './remote';
+import { catalogSettings, mergeById, readShipped, RemoteCatalog, type CatalogSource, type TextFetcher } from './remote';
 import type { Config } from '../config';
 
 export interface ModelEntry { id: string; label: string }
@@ -34,10 +33,9 @@ export class ModelCatalog {
   constructor(private readonly o: { configDir: string; config: () => Config['models']; fetch?: TextFetcher; now?: () => number }) {
     const shipped = validateModels(readShipped('models.json')) ?? { models: [] };
     this.catalog = new RemoteCatalog<ModelsDoc>({
-      name: 'models', shipped, url: () => o.config().catalogUrl, cacheFile: join(o.configDir, 'models.cache.json'),
-      cacheHours: () => o.config().cacheHours, validate: validateModels,
+      ...catalogSettings({ ...o, name: 'models' }), shipped, validate: validateModels,
       merge: (a, b) => ({ updated: b.updated ?? a.updated, models: mergeById(a.models, b.models) }),
-      updatedOf: (d) => d.updated, ...(o.fetch ? { fetch: o.fetch } : {}), ...(o.now ? { now: o.now } : {}),
+      updatedOf: (d) => d.updated,
     });
   }
 

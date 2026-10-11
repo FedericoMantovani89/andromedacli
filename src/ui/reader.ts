@@ -1,6 +1,7 @@
 import { api } from './api';
 import { bindText, k, setPlaceholder } from './i18n-client';
 import { renderInto } from './markdown-lazy';
+import { el } from './dom';
 
 export interface ReadingEntry { n: number; at: string; text: string; truncated?: true }
 
@@ -9,28 +10,22 @@ export interface ReadingEntry { n: number; at: string; text: string; truncated?:
  * a filter, and a copy button. The text never travels through the terminal.
  */
 export function createReader(root: HTMLElement) {
-  const head = document.createElement('div');
-  head.className = 'drawer-head';
-  const title = document.createElement('h2');
-  const search = document.createElement('input');
+  const head = el('div', 'drawer-head');
+  const title = el('h2');
+  const search = el('input');
   setPlaceholder(search, 'reader.search');
-  const copy = document.createElement('button');
+  const copy = el('button');
   bindText(copy, 'reader.copy');
-  const close = document.createElement('button');
+  const close = el('button');
   bindText(close, 'common.close');
   head.append(title, search, copy, close);
 
-  const body = document.createElement('div');
-  body.className = 'reader-body';
-  const turns = document.createElement('div');
-  turns.className = 'reader-turns';
-  const content = document.createElement('div');
-  content.className = 'reader-content';
-  const empty = document.createElement('div');
-  empty.className = 'queue-empty';
+  const body = el('div', 'reader-body');
+  const turns = el('div', 'reader-turns');
+  const content = el('div', 'reader-content');
+  const empty = el('div', 'queue-empty');
   bindText(empty, 'reader.empty');
-  const note = document.createElement('div');
-  note.className = 'form-error';
+  const note = el('div', 'form-error');
   note.hidden = true;
   bindText(note, 'reader.truncated');
   body.append(turns, content);
@@ -48,8 +43,7 @@ export function createReader(root: HTMLElement) {
     const e = entries.find((x) => x.n === n);
     content.replaceChildren();
     if (!e) return;
-    const html = document.createElement('div');
-    html.className = 'markdown';
+    const html = el('div', 'markdown');
     renderInto(html, e.text); // sanitised when formatted: answers are untrusted text
     content.append(...(e.truncated ? [note] : []), html);
     note.hidden = !e.truncated;
@@ -61,10 +55,10 @@ export function createReader(root: HTMLElement) {
     turns.replaceChildren();
     for (const e of [...entries].reverse()) {
       if (q && !e.text.toLowerCase().includes(q)) continue;
-      const b = document.createElement('button');
+      const b = el('button');
       b.dataset.n = String(e.n);
       bindText(b, k('reader.turn'), { n: e.n });
-      const time = document.createElement('small');
+      const time = el('small');
       time.textContent = new Date(e.at).toLocaleTimeString();
       b.append(' ', time);
       b.addEventListener('click', () => show(e.n));
