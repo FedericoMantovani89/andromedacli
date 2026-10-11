@@ -41,8 +41,8 @@ jobs:
 
       # The runner's default temp folder is in 8.3 form (C:\Users\RUNNER~1\...), while git answers with the long path: tests that compare
       # the two fail. The runner temp folder has no short names.
-      # scripts/ci-tests.sh: if a worker dies with no test failing (a native crash of node-pty on this runner), the files whose worker died
-      # run once more; a failing test, or a second crash, fails the job.
+      # scripts/ci-tests.sh: if a worker dies with no test failing (a native crash of node-pty on this runner), the whole suite
+      # runs once more; a failing test, or a second crash, fails the job.
       - name: Tests
         shell: bash
         run: bash scripts/ci-tests.sh
