@@ -204,7 +204,26 @@ describe('dictation dialog', () => {
     expect($<HTMLButtonElement>('button[name="dictationSend"]').disabled).toBe(false);
   });
 
-  it('closing keeps the text for the next time; Clear empties it', async () => {
+  it('while recording it shows the time since the start (and no bars where there is no Web Audio); it is hidden otherwise', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      await open();
+      expect($('.dictation-meter').hidden).toBe(true);
+      rec().click();
+      await flush();
+      expect($('.dictation-meter').hidden).toBe(false);
+      expect($('.dictation-time').textContent).toBe('0:00');
+      vi.advanceTimersByTime(65_500);
+      expect($('.dictation-time').textContent).toBe('1:05');
+      rec().click(); // stop
+      await flush();
+      expect($('.dictation-meter').hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('closing keeps the text for the next time; erasing it by hand empties it', async () => {
     await open();
     text().value = 'draft I want back';
     text().dispatchEvent(new Event('input'));
@@ -212,7 +231,8 @@ describe('dictation dialog', () => {
     expect($('#overlay').hidden).toBe(true);
     await open();
     expect(text().value).toBe('draft I want back');
-    $<HTMLButtonElement>('button[name="dictationClear"]').click();
+    text().value = '';
+    text().dispatchEvent(new Event('input')); // the user selects all and deletes
     expect(text().value).toBe('');
     $<HTMLButtonElement>('button[name="closeDictation"]').click();
     await open();

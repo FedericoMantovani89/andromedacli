@@ -449,13 +449,19 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .archive-confirm { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 
 /* Voice dictation: a roomy text box, a recording state, the Send button as the main action */
-.dictation-dialog { width: min(640px, 92vw); }
+.dictation-dialog { position: relative; width: min(640px, 92vw); }
+.dictation-dialog > .dialog-x { position: absolute; top: 12px; right: 14px; margin: 0; z-index: 1; }
 .dictation-body { display: grid; gap: 10px; }
 .dictation-dialog textarea { resize: vertical; min-height: 9rem; font: inherit; line-height: 1.45; }
+.dictation-meter { display: flex; align-items: center; gap: 12px; }
+.dictation-meter[hidden] { display: none; }
+.dictation-time { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--bad); min-width: 3.2ch; }
+.dictation-levels { display: flex; align-items: flex-end; gap: 3px; height: 28px; flex: 1 1 auto; }
+.dictation-bar { flex: 1 1 0; height: 8%; min-height: 2px; border-radius: 1px; background: var(--accent); }
 .dictation-dialog .dictation-status { min-height: 1.2em; }
 .dictation-dialog button[name="dictationSend"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .dictation-dialog button[disabled] { opacity: .5; cursor: default; }
-.dictation-dialog button[name="dictationRecord"][data-i18n="dictation.stop"] { border-color: var(--bad); color: var(--bad); }
+.dictation-dialog button[name="dictationRecord"] svg.icon { color: var(--bad); width: 18px; height: 18px; }
 .options-secret-status { display: flex; align-items: center; gap: 8px; }
 .options-secret-status .secret-state { font-weight: 600; }
 .options-secret-status .secret-state.willclear { color: var(--warn); }

@@ -2,13 +2,14 @@ import type { ApiError, StateMessage } from '../shared/protocol';
 import { api, token } from './api';
 import { el } from './dom';
 import { focusElementFromUser } from './focus';
-import { bindText, k, language, t } from './i18n-client';
+import { bindText, k, language, setTitle, t } from './i18n-client';
+import { setIconButton } from './icons';
 import { closeOverlay } from './settings';
 
 /**
  * Voice dictation for the main: record a clip with the browser's microphone, have the console transcribe it (the server calls Groq, so the
  * key never reaches the page), edit the text, record more (each transcript is appended) and type the result into the main's input
- * WITHOUT pressing Enter. Closing the dialog keeps the text until the page is reloaded, Clear is pressed or the text is sent.
+ * WITHOUT pressing Enter. Closing the dialog keeps the text until the page is reloaded, the text is erased by hand or it is sent.
  */
 
 /** The text being written; module-level so closing and reopening the dialog does not lose it. */
@@ -49,13 +50,14 @@ export async function openDictationDialog(getState: () => StateMessage | undefin
   bindText(title, 'dictation.title');
   const body = el('div', 'dictation-body');
   const error = el('div', 'form-error');
-  const close = el('button');
+  // The same X in the corner as the Options dialog, not a Close button.
+  const close = el('button', 'icon-btn dialog-x');
   close.type = 'button';
   close.name = 'closeDictation';
-  bindText(close, 'common.close');
+  setTitle(close, 'common.close');
   close.addEventListener('click', closeOverlay);
   const actions = el('div', 'form-actions');
-  dialog.append(title, body, error, actions);
+  dialog.append(close, title, body, error, actions);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
 
@@ -73,7 +75,7 @@ export async function openDictationDialog(getState: () => StateMessage | undefin
     open.name = 'dictationOpenSecrets';
     bindText(open, 'dictation.openSecrets');
     open.addEventListener('click', () => { void import('./options').then((m) => m.openOptions(getState, 'secrets')); });
-    actions.append(close, open);
+    actions.append(open);
     return;
   }
 
@@ -91,41 +93,83 @@ export async function openDictationDialog(getState: () => StateMessage | undefin
   status.setAttribute('role', 'status');
   const note = el('p', 'settings-note');
   bindText(note, 'dictation.sendNote');
-  body.append(label, status, note);
+  // While recording: the time since the start and bars that follow the voice (an equalizer), so the user sees the microphone is heard.
+  const meter = el('div', 'dictation-meter');
+  meter.hidden = true;
+  const clock = el('span', 'dictation-time');
+  const levels = el('div', 'dictation-levels');
+  const levelBars = Array.from({ length: 24 }, () => el('span', 'dictation-bar'));
+  levels.append(...levelBars);
+  meter.append(clock, levels);
+  body.append(label, meter, status, note);
 
   const record = el('button');
   record.type = 'button';
   record.name = 'dictationRecord';
-  bindText(record, 'dictation.record');
-  const clear = el('button');
-  clear.type = 'button';
-  clear.name = 'dictationClear';
-  bindText(clear, 'dictation.clear');
+  setIconButton(record, 'record', k('dictation.record'));
   const send = el('button');
   send.type = 'button';
   send.name = 'dictationSend';
   bindText(send, 'dictation.send');
-  actions.append(send, record, clear, close);
+  actions.append(send, record);
 
   type Phase = 'idle' | 'opening' | 'recording' | 'transcribing' | 'sending';
   let phase: Phase = 'idle';
   const render = (): void => {
     record.disabled = phase === 'opening' || phase === 'transcribing' || phase === 'sending';
-    bindText(record, phase === 'recording' ? k('dictation.stop') : k('dictation.record'));
-    clear.disabled = phase === 'recording' || phase === 'transcribing' || phase === 'sending';
+    setIconButton(record, phase === 'recording' ? 'stop' : 'record', phase === 'recording' ? k('dictation.stop') : k('dictation.record'));
     send.disabled = phase !== 'idle' || text.value.trim() === '';
     if (phase === 'recording') bindText(status, 'dictation.recording');
     else if (phase === 'transcribing') bindText(status, 'dictation.transcribing');
     else { status.textContent = ''; delete status.dataset.i18n; }
   };
-  const setPhase = (p: Phase): void => { phase = p; render(); };
+  const setPhase = (p: Phase): void => {
+    const was = phase;
+    phase = p;
+    if (p === 'recording' && was !== 'recording') startMeter();
+    else if (p !== 'recording' && was === 'recording') stopMeter();
+    render();
+  };
   text.addEventListener('input', () => { draft = text.value; render(); });
-  clear.addEventListener('click', () => { text.value = ''; draft = ''; clearError(); render(); });
 
   let recorder: MediaRecorder | undefined;
   let stream: MediaStream | undefined;
   let discard = false;
-  const releaseMic = (): void => { for (const t of stream?.getTracks() ?? []) t.stop(); stream = undefined; };
+  const releaseMic = (): void => { stopMeter(); for (const t of stream?.getTracks() ?? []) t.stop(); stream = undefined; };
+
+  let meterTimer: ReturnType<typeof setInterval> | undefined;
+  let meterFrame = 0;
+  let audio: AudioContext | undefined;
+  const mmss = (ms: number): string => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+  function startMeter(): void {
+    const began = Date.now();
+    clock.textContent = mmss(0);
+    meter.hidden = false;
+    meterTimer = setInterval(() => { clock.textContent = mmss(Date.now() - began); }, 250);
+    if (!stream || typeof AudioContext === 'undefined') return; // no bars here (an old browser, a test): the clock still runs
+    try {
+      audio = new AudioContext();
+      const analyser = audio.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.7;
+      audio.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const draw = (): void => {
+        analyser.getByteFrequencyData(data);
+        levelBars.forEach((bar, i) => { bar.style.height = `${Math.max(8, Math.round(((data[i + 1] ?? 0) / 255) * 100))}%`; }); // the voice lives in the lowest bins
+        meterFrame = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch { /* no bars: the clock still runs */ }
+  }
+  function stopMeter(): void {
+    clearInterval(meterTimer);
+    cancelAnimationFrame(meterFrame);
+    void audio?.close().catch(() => undefined);
+    audio = undefined;
+    meter.hidden = true;
+    for (const bar of levelBars) bar.style.height = '';
+  }
 
   /** The user left the dialog (Esc, X, another dialog): a clip in progress is dropped and the microphone is released. */
   const watcher = new MutationObserver(() => {

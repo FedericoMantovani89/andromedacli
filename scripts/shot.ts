@@ -5,6 +5,10 @@
 //   --split <pct>     the main column's share of the width (what dragging the divider remembers), for example 30 or 75
 //   --states          one agent per state (the page's state messages are rewritten: starting, working, waiting, idle with a merged ticket, studying, blocked,
 //                     interrupted, finished, suspended, dormant, queued), to see every button and chip; four are real panels, the rest bars
+//   --fake-mic        a fake microphone (Edge plays a beep into it) with the permission already given, for the dictation dialog
+//   --wait <ms>       wait this long after the clicks and before the shot (a recording running for a while, for example)
+//   --groq            answer that a Groq key is set (the dictation dialog then shows its recording form)
+//   --fill <css::text> type text into an element after the clicks (repeatable)
 //   --scroll          scroll the agents column to its end before the shot
 //   --many <n>        n agents in the list: four are real (panels), the rest exist only in the page's state messages (bars); prints how the agents column scrolls
 //   --agents <n>      start n fake agents (the limits on running agents are raised for the shot) and wait for their panels
@@ -51,12 +55,15 @@ if (kind === 'mixed') { const sub = join(project, 'sub-repo'); mkdirSync(sub); g
 
 const server = await startServer({ port: 0, projectRoot: project, projectName: 'shot-demo', configDir, claudeCommand: [process.execPath, fixture], modDir: null, projectsDir: tmpdir(),
   ...(updatePhase ? { updates: { state: () => ({ phase: updatePhase, version: '0.0.2', ...(updatePhase === 'downloading' ? { percent: 40 } : {}) }), download: () => undefined, install: () => undefined, onChange: () => undefined } } : {}) } as Parameters<typeof startServer>[0]);
-const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const fakeMic = args.includes('--fake-mic');
+const browser = await chromium.launch({ channel: 'msedge', headless: true, ...(fakeMic ? { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } : {}) });
 let failed = false;
 try {
-  const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, ...(fakeMic ? { permissions: ['microphone'] } : {}) });
+  const page = await context.newPage();
   page.on('pageerror', (e) => console.error(`page error: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') console.error(`console error: ${m.text()}`); });
+  if (args.includes('--groq')) await page.route((url) => url.pathname === '/api/secrets', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ groq: { set: true } }) }));
   if (split) await page.addInitScript((v) => { try { localStorage.setItem('console.split', v); } catch { /* not remembered */ } }, split);
   if (states) {
     // The first four agents are real (panels); the page is told they, and seven more that exist only in the message, are in one state each.
@@ -122,6 +129,7 @@ try {
     await page.waitForTimeout(600);
   }
   for (const sel of many('click')) await page.click(sel);
+  for (const f of many('fill')) { const at = f.indexOf('::'); await page.fill(f.slice(0, at), f.slice(at + 2)); }
   if (manyCount > 0 || agentCount > 0) {
     await page.waitForTimeout(1500);
     console.log(JSON.stringify(await page.evaluate(() => {
@@ -131,6 +139,7 @@ try {
     })));
   }
   if (args.includes('--scroll')) { await page.evaluate(() => { const col = document.querySelector('.project-agents') as HTMLElement; col.scrollTop = col.scrollHeight; }); await page.waitForTimeout(300); }
+  if (one('wait')) await page.waitForTimeout(Number(one('wait')));
   const hover = one('hover');
   if (hover) { await page.hover(hover); await page.waitForTimeout(300); }
   await page.screenshot({ path: out });

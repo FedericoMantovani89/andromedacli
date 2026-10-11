@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- The dictation dialog closes with the X in its corner (like Options) instead of a Close button, records with a red dot and stops with a red square, and has no Clear button (the text is erased by hand). While it records, it shows the time since the start (m:ss) and bars that follow the voice, like an equalizer (Web Audio; where that is missing the clock still runs). `npm run shot` has `--groq`, `--fill`, `--fake-mic` and `--wait` for this.
 - Expanding a dormant agent no longer opens an empty terminal: the panel prints the agent's last words in full (the entries of the read panel, n/a when there are none) and keeps the Wake up button in its header, so the text can be read before waking it.
 - The update chip (version found, downloading, ready to restart) is the last thing in the status bar, at its far right edge.
 - The divider between main and the agents keeps the main column between 30% and 75% of the width (it was 20% to 80%).
