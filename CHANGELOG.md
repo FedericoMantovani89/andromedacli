@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- Expanding a dormant agent no longer opens an empty terminal: the panel prints the agent's last words in full (the entries of the read panel, n/a when there are none) and keeps the Wake up button in its header, so the text can be read before waking it.
 - The update chip (version found, downloading, ready to restart) is the last thing in the status bar, at its far right edge.
 - The divider between main and the agents keeps the main column between 30% and 75% of the width (it was 20% to 80%).
 - The "+ new agent" control is always the first item of the agents column, and stays on top while the column scrolls.

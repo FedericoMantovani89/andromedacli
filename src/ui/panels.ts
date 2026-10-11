@@ -9,6 +9,7 @@ import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
 import { setIconButton } from './icons';
 import { createArchiveButton, syncArchiveButton } from './archive';
+import { createDormantPanel } from './dormant-panel';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyRequests, applyTicket, applyWaiting } from './chips';
 import { SCROLLBACK, TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
@@ -186,6 +187,8 @@ export class Workspace {
   private lastMain: SessionInfo | undefined;
   private lastAgents: SessionInfo[] = [];
   private newAgentControl: HTMLElement | undefined;
+  /** The expanded panels of dormant agents (no process, so no terminal): built once, dropped when the agent wakes or is no longer a panel. */
+  private readonly dormantPanels = new Map<string, HTMLElement>();
   /** Bars are kept between updates: rebuilding them would move every node after them and drop the keyboard focus. */
   private readonly bars = new Map<string, { el: HTMLElement; state: HTMLElement; progress: HTMLElement; stalled: HTMLElement; ticket: HTMLElement; budget: HTMLElement; loop: HTMLElement; waiting: HTMLElement; requestsWaiting: HTMLElement; requestsOwed: HTMLElement; pending: boolean; dormant: boolean; stale: HTMLElement }>();
 
@@ -247,7 +250,13 @@ export class Workspace {
     const children: HTMLElement[] = this.newAgentControl ? [this.newAgentControl] : [];
     for (const item of layout) {
       const info = bySlug.get(item.slug)!;
-      if (item.mode === 'panel') {
+      if (item.mode === 'panel' && info.state === 'dormant') {
+        this.dropPanel(item.slug);
+        let d = this.dormantPanels.get(item.slug);
+        if (!d) { d = createDormantPanel(info); this.dormantPanels.set(item.slug, d); }
+        children.push(d);
+      } else if (item.mode === 'panel') {
+        this.dormantPanels.delete(item.slug);
         const p = this.ensurePanel(info);
         p.setState(info.state, info.progress, stallOf(info), info.ticket, info.budget, info.loop, info.waiting, info.requests);
         children.push(p.root);
@@ -255,6 +264,9 @@ export class Workspace {
         this.dropPanel(item.slug); // the server keeps the scrollback; reconnecting restores it
         children.push(this.bar(info));
       }
+    }
+    for (const slug of [...this.dormantPanels.keys()]) {
+      if (!layout.some((l) => l.slug === slug && l.mode === 'panel') || bySlug.get(slug)?.state !== 'dormant') this.dormantPanels.delete(slug);
     }
     const barSlugs = new Set(layout.filter((l) => l.mode === 'bar').map((l) => l.slug));
     for (const slug of [...this.bars.keys()]) if (!barSlugs.has(slug)) this.bars.delete(slug);

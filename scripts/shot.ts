@@ -86,6 +86,11 @@ try {
       DEMO.length = 0;
       for (let i = 0; i < manyCount; i++) DEMO.push({ ...CYCLE[i % CYCLE.length]!, slug: `job-${String(i + 1).padStart(2, '0')}-${['login', 'billing', 'search', 'export', 'upload', 'audit'][i % 6]}` });
     }
+    // What the dormant demo agent last said, for its expanded panel (the read panel's entries).
+    await page.route((url) => url.pathname === '/api/reading/dormant-agent', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ entries: [
+      { text: 'Step 3 of 5 done: the CSV export endpoint returns the rows in the order of the table and the tests for it pass.' },
+      { text: 'Next I was going to add the pagination parameters (page and size) to the same endpoint and cover them with tests. I stopped because the console restarted; nothing is uncommitted, the last commit is the step 3 one.' },
+    ] }) }));
     await page.routeWebSocket((url) => url.pathname === '/ws/ui', (ws) => {
       const upstream = ws.connectToServer();
       ws.onMessage((m) => upstream.send(m));
