@@ -243,7 +243,8 @@ export class Workspace {
       ...computeAgentLayout(live.map((a) => a.slug), this.expanded),
       ...agents.filter((a) => a.status === 'pending').map((a) => ({ slug: a.slug, mode: 'bar' as const })),
     ];
-    const children: HTMLElement[] = [];
+    // The "+ new agent" control is always the first thing in the agents column, whatever the number of agents.
+    const children: HTMLElement[] = this.newAgentControl ? [this.newAgentControl] : [];
     for (const item of layout) {
       const info = bySlug.get(item.slug)!;
       if (item.mode === 'panel') {
@@ -260,7 +261,6 @@ export class Workspace {
     for (const slug of [...this.panels.keys()]) {
       if (slug !== main.slug && !bySlug.has(slug)) this.dropPanel(slug);
     }
-    if (this.newAgentControl) children.push(this.newAgentControl);
     reconcile(this.agentsCol, children);
     refreshActiveStyles(this.focus, this.panels); // styles only: a new panel never takes the focus (P2)
   }

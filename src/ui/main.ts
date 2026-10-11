@@ -64,22 +64,25 @@ function renderChrome(s: StateMessage): void {
 }
 
 const SPLIT_KEY = 'console.split';
+/** The main column keeps between 30% and 75% of the width, so neither side can be dragged out of sight. */
+const SPLIT_MIN = 30;
+const SPLIT_MAX = 75;
 
-/** The draggable divider between main and the agents: sets the main column's share (clamped 20-80%), remembered per browser. Terminals refit through their ResizeObserver. */
+/** The draggable divider between main and the agents: sets the main column's share (clamped 30-75%), remembered per browser. Terminals refit through their ResizeObserver. */
 function makeSplitHandle(ws: HTMLElement): HTMLElement {
   const handle = document.createElement('div');
   handle.className = 'split-handle';
   handle.setAttribute('role', 'separator');
   handle.setAttribute('aria-orientation', 'vertical');
   const set = (pct: number): number => {
-    const p = Math.min(80, Math.max(20, pct));
+    const p = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, pct));
     ws.style.setProperty('--split', `${p}fr`);
     ws.style.setProperty('--split-rest', `${100 - p}fr`);
     return p;
   };
   try {
     const saved = Number(localStorage.getItem(SPLIT_KEY));
-    if (saved >= 20 && saved <= 80) set(saved);
+    if (saved >= SPLIT_MIN && saved <= SPLIT_MAX) set(saved);
   } catch { /* storage may be blocked: keep the default half */ }
   let current = 50;
   handle.addEventListener('pointerdown', (e) => {

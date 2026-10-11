@@ -8,6 +8,11 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- The update chip (version found, downloading, ready to restart) is the last thing in the status bar, at its far right edge.
+- The divider between main and the agents keeps the main column between 30% and 75% of the width (it was 20% to 80%).
+- The "+ new agent" control is always the first item of the agents column, and stays on top while the column scrolls.
+- With many agents the agents column scrolls instead of crushing the panels: a panel keeps a minimum height of 140 px, a bar its own height.
+- `npm run shot` has new options to look at the interface in a given situation: `--update`, `--agents`, `--many`, `--states`, `--split`, `--scroll`; it also prints the page errors.
 - The app has an icon: the galaxy from the splash picture (`build/icon.ico`, 16 to 256 px) on `AndromedaCli.exe`, on the installer and uninstaller and in the installer header. `signAndEditExecutable: false` became `signExecutable: false` so the icon is written into the exe; there is still no code signing.
 - The page has a favicon (the galaxy, `favicon.png`, served without a token like the splash).
 - The splash picture is twice as large (2798x1434, resampled with Lanczos, lightly cleaned and sharpened); it is the same picture, so it is smoother but has no new detail.

@@ -15,6 +15,7 @@ export function errorText(err: ApiError): string {
  */
 export function createNewAgentControl(getProfiles: () => readonly string[], afterCreate: () => void, getRepos: () => readonly string[] = () => []): HTMLElement {
   const wrap = document.createElement('div');
+  wrap.className = 'new-agent-wrap';
   const button = document.createElement('button');
   button.id = 'new-agent-btn';
   bindText(button, 'panel.newAgent');

@@ -64,7 +64,9 @@ function build(el: HTMLElement): Bar {
   updateBtn.addEventListener('click', () => {
     if (bar.updateAction) void api(`/api/update/${bar.updateAction}`, { method: 'POST' }).catch(() => undefined);
   });
-  el.replaceChildren(budget, quota, sleep, resume, update, updateBtn, agents, archived, suspended);
+  // The update chip is the last thing in the bar, at its far right edge (margin-left: auto on the text in styles.css).
+  update.className = 'statusbar-update-text';
+  el.replaceChildren(budget, quota, sleep, resume, agents, archived, suspended, update, updateBtn);
   return bar;
 }
 

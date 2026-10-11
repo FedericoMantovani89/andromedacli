@@ -2,6 +2,13 @@
 //   --tab <name>      open the Options dialog on that tab (models, profiles, budget, guard, notifications, language, prerequisites, plugins, projects, git)
 //   --lang <code>     interface language (default en)
 //   --folder <kind>   the project folder: plain (not a repository, default), repo (a repository with one commit), mixed (not a repository, holds one)
+//   --split <pct>     the main column's share of the width (what dragging the divider remembers), for example 30 or 75
+//   --states          one agent per state (the page's state messages are rewritten: starting, working, waiting, idle with a merged ticket, studying, blocked,
+//                     interrupted, finished, suspended, dormant, queued), to see every button and chip; four are real panels, the rest bars
+//   --scroll          scroll the agents column to its end before the shot
+//   --many <n>        n agents in the list: four are real (panels), the rest exist only in the page's state messages (bars); prints how the agents column scrolls
+//   --agents <n>      start n fake agents (the limits on running agents are raised for the shot) and wait for their panels
+//   --update <phase>  show the update chip as the desktop app would offer it: available, downloading or ready (version 0.0.2)
 //   --hover <css>     hover this element before the shot (a tooltip, for example)
 //   --click <css>     click this element first (repeatable)
 //   --out <file>      where to write the PNG (default: shot.png in the temp folder; the path is printed)
@@ -21,6 +28,13 @@ const many = (name: string): string[] => args.flatMap((a, i) => (a === `--${name
 const tab = one('tab');
 const lang = one('lang', 'en')!;
 const kind = one('folder', 'plain')!;
+const split = one('split');
+const manyCount = Number(one('many', '0'));
+const states = args.includes('--states') || manyCount > 0;
+const agentCount = states ? 4 : Number(one('agents', '0'));
+if (!Number.isInteger(agentCount) || agentCount < 0 || agentCount > 9) { console.error('--agents is a number from 0 to 9'); process.exit(1); }
+const updatePhase = one('update') as 'available' | 'downloading' | 'ready' | undefined;
+if (updatePhase !== undefined && !['available', 'downloading', 'ready'].includes(updatePhase)) { console.error('--update is available, downloading or ready'); process.exit(1); }
 const out = resolve(one('out') ?? join(tmpdir(), 'shot.png'));
 if (!['plain', 'repo', 'mixed'].includes(kind)) { console.error('--folder is plain, repo or mixed'); process.exit(1); }
 
@@ -31,23 +45,87 @@ const git = (cwd: string, ...a: string[]): void => { execFileSync('git', ['-c', 
 
 const configDir = mkdtempSync(join(tmpdir(), 'shot-cfg-'));
 const project = mkdtempSync(join(tmpdir(), 'shot-proj-'));
-writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: lang })); // a saved config: no first-start wizard
+writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: lang, ...(agentCount > 0 ? { agents: { maxActiveGlobal: 12, maxActivePerProject: 12 } } : {}) })); // a saved config: no first-start wizard
 if (kind === 'repo') { git(project, 'init', '-q', '-b', 'main'); writeFileSync(join(project, 'README.md'), 'hello\n'); git(project, 'add', '-A'); git(project, 'commit', '-q', '-m', 'init'); }
 if (kind === 'mixed') { const sub = join(project, 'sub-repo'); mkdirSync(sub); git(sub, 'init', '-q', '-b', 'main'); }
 
-const server = await startServer({ port: 0, projectRoot: project, projectName: 'shot-demo', configDir, claudeCommand: [process.execPath, fixture], modDir: null, projectsDir: tmpdir() } as Parameters<typeof startServer>[0]);
+const server = await startServer({ port: 0, projectRoot: project, projectName: 'shot-demo', configDir, claudeCommand: [process.execPath, fixture], modDir: null, projectsDir: tmpdir(),
+  ...(updatePhase ? { updates: { state: () => ({ phase: updatePhase, version: '0.0.2', ...(updatePhase === 'downloading' ? { percent: 40 } : {}) }), download: () => undefined, install: () => undefined, onChange: () => undefined } } : {}) } as Parameters<typeof startServer>[0]);
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 let failed = false;
 try {
   const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  page.on('pageerror', (e) => console.error(`page error: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error') console.error(`console error: ${m.text()}`); });
+  if (split) await page.addInitScript((v) => { try { localStorage.setItem('console.split', v); } catch { /* not remembered */ } }, split);
+  if (states) {
+    // The first four agents are real (panels); the page is told they, and seven more that exist only in the message, are in one state each.
+    type Row = { slug: string; state: string; status?: string; ticket?: { status: string; round: number; maxRounds: number }; progress?: { done: number; total: number }; waiting?: number; budget?: { used: number; limit: number; step: string }; stale?: true };
+    const DEMO: Row[] = [
+      { slug: 'starting-agent', state: 'starting' },
+      { slug: 'working-agent', state: 'working', progress: { done: 2, total: 6 }, budget: { used: 40_000, limit: 100_000, step: 'ok' } },
+      { slug: 'waiting-agent', state: 'waiting_user', waiting: 1, progress: { done: 3, total: 6 } },
+      { slug: 'merged-idle-agent', state: 'idle', ticket: { status: 'merged', round: 0, maxRounds: 2 }, progress: { done: 6, total: 6 } },
+      { slug: 'studying-agent', state: 'studying' },
+      { slug: 'blocked-agent', state: 'blocked', progress: { done: 1, total: 5 } },
+      { slug: 'interrupted-agent', state: 'interrupted', status: 'exited' },
+      { slug: 'finished-agent', state: 'finished', status: 'exited', ticket: { status: 'released', round: 0, maxRounds: 2 } },
+      { slug: 'suspended-agent', state: 'suspended', status: 'exited', ticket: { status: 'suspended_limit', round: 0, maxRounds: 2 }, progress: { done: 2, total: 5 }, budget: { used: 100_000, limit: 100_000, step: 'stopped' } },
+      { slug: 'dormant-agent', state: 'dormant', status: 'exited', stale: true },
+      { slug: 'queued-agent', state: 'queued', status: 'pending' },
+    ];
+    if (manyCount > 0) {
+      const CYCLE: Row[] = [
+        { slug: '', state: 'working', progress: { done: 2, total: 6 }, budget: { used: 40_000, limit: 100_000, step: 'ok' } },
+        { slug: '', state: 'idle', ticket: { status: 'merged', round: 0, maxRounds: 2 }, progress: { done: 6, total: 6 } },
+        { slug: '', state: 'finished', status: 'exited', ticket: { status: 'released', round: 0, maxRounds: 2 } },
+        { slug: '', state: 'dormant', status: 'exited', stale: true },
+        { slug: '', state: 'waiting_user', waiting: 1, progress: { done: 3, total: 6 } },
+        { slug: '', state: 'suspended', status: 'exited', ticket: { status: 'suspended_limit', round: 0, maxRounds: 2 }, progress: { done: 2, total: 5 } },
+      ];
+      DEMO.length = 0;
+      for (let i = 0; i < manyCount; i++) DEMO.push({ ...CYCLE[i % CYCLE.length]!, slug: `job-${String(i + 1).padStart(2, '0')}-${['login', 'billing', 'search', 'export', 'upload', 'audit'][i % 6]}` });
+    }
+    await page.routeWebSocket((url) => url.pathname === '/ws/ui', (ws) => {
+      const upstream = ws.connectToServer();
+      ws.onMessage((m) => upstream.send(m));
+      upstream.onMessage((m) => {
+        try {
+          const msg = JSON.parse(String(m)) as { type: string; agents?: Array<Record<string, unknown>> };
+          if (msg.type === 'state' && Array.isArray(msg.agents)) {
+            const main = msg.agents.filter((a) => a.role === 'main');
+            const real = msg.agents.filter((a) => a.role !== 'main');
+            const rows = DEMO.map((d, i) => ({ ...(real[i] ?? { profile: 'developer', role: 'agent', status: 'running' }), ...d, slug: real[i]?.slug ?? d.slug }));
+            msg.agents = [...main, ...rows];
+          }
+          ws.send(JSON.stringify(msg));
+        } catch { ws.send(m); }
+      });
+    });
+  }
   await page.goto(`${server.url}/?token=${server.token}`);
   await page.waitForSelector('#splash', { state: 'hidden', timeout: 40_000 });
+  const NAMES = ['fix-login-timeout', 'add-export-csv', 'refactor-billing-api', 'update-readme-docs', 'speed-up-search-index', 'migrate-user-table', 'cleanup-old-jobs', 'add-dark-mode', 'harden-upload-limits'];
+  for (const slug of NAMES.slice(0, agentCount)) {
+    const r = await fetch(`${server.url}/api/agents`, { method: 'POST', headers: { authorization: `Bearer ${server.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ slug, profile: 'developer' }) });
+    if (!r.ok) throw new Error(`could not start ${slug}: ${r.status}`);
+  }
+  if (agentCount > 0) await page.waitForTimeout(6000);
   if (tab) {
     await page.click('#settings-btn');
     await page.click(`.options-tab[data-tab="${tab}"]`);
     await page.waitForTimeout(600);
   }
   for (const sel of many('click')) await page.click(sel);
+  if (manyCount > 0 || agentCount > 0) {
+    await page.waitForTimeout(1500);
+    console.log(JSON.stringify(await page.evaluate(() => {
+      const col = document.querySelector('.project-agents') as HTMLElement;
+      const cs = getComputedStyle(col);
+      return { agentsColumn: { clientHeight: col.clientHeight, scrollHeight: col.scrollHeight, overflowY: cs.overflowY, children: col.children.length }, panels: Array.from(col.querySelectorAll(':scope > .panel')).map((p) => (p as HTMLElement).offsetHeight), newAgent: (col.querySelector('.new-agent-wrap') as HTMLElement | null)?.offsetHeight, page: { innerHeight: innerHeight, documentScrollHeight: document.documentElement.scrollHeight, bodyScrollHeight: document.body.scrollHeight } };
+    })));
+  }
+  if (args.includes('--scroll')) { await page.evaluate(() => { const col = document.querySelector('.project-agents') as HTMLElement; col.scrollTop = col.scrollHeight; }); await page.waitForTimeout(300); }
   const hover = one('hover');
   if (hover) { await page.hover(hover); await page.waitForTimeout(300); }
   await page.screenshot({ path: out });
