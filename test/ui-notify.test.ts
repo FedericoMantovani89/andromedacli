@@ -98,6 +98,21 @@ describe('Notifications tab', () => {
     expect(calls[0]!.init.method).toBe('PUT');
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ notifications: { enabled: { question: false } } });
   });
+  it('the main-notifies-me switch is off by default, and turning it on is staged and mirrored for the restart question', async () => {
+    const calls = mockFetch();
+    const { stage, staged } = staging();
+    const mirrored: [string, unknown][] = [];
+    const c = document.createElement('div');
+    renderNotificationsTab(c, stateWith({ toast: 'ok', config: DEFAULT_NOTIFICATIONS }), stage, (p, v) => mirrored.push([p, v]));
+    const box = c.querySelector('input[name="mainPush"]') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    expect(mirrored).toEqual([['notifications.mainPush', true]]);
+    expect([...staged.keys()]).toEqual(['notifications:mainPush']);
+    await [...staged.values()][0]!(false);
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ notifications: { mainPush: true } });
+  });
   it('changing the same setting twice keeps only the last one', () => {
     const { stage, staged } = staging();
     const c = document.createElement('div');

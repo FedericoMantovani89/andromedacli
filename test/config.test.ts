@@ -17,6 +17,17 @@ it('keeps valid values and falls back per invalid entry without throwing', () =>
   expect(config.telemetry).toBe(false);
   expect(errors.map((e) => e.path).sort()).toEqual(['agents.bypassPermissions', 'telemetry']);
 });
+it('the main-notifies switch is off by default, read when valid and reported when it is not a boolean', () => {
+  expect(DEFAULT_CONFIG.notifications.mainPush).toBe(false);
+  const ok = join(dir(), 'config.json');
+  writeFileSync(ok, JSON.stringify({ schema: 1, notifications: { mainPush: true } }));
+  expect(loadConfig(ok).config.notifications.mainPush).toBe(true);
+  const bad = join(dir(), 'config.json');
+  writeFileSync(bad, JSON.stringify({ schema: 1, notifications: { mainPush: 'yes' } }));
+  const r = loadConfig(bad);
+  expect(r.config.notifications.mainPush).toBe(false);
+  expect(r.errors.map((e) => e.path)).toEqual(['notifications.mainPush']);
+});
 it('survives corrupt JSON', () => {
   const p = join(dir(), 'config.json');
   writeFileSync(p, '{not json');

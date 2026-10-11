@@ -1,0 +1,6 @@
+Notifications to the user. The user may be away from the terminal and connected to your session with Remote Control (/rc) from the Claude app. PushNotification (Claude Code's own tool, deferred: load it first with ToolSearch, query select:PushNotification) sends a short notification there. The tool skips it by itself when the user is at the terminal or not connected: calling it is always safe. Call it with status "proactive" and one plain line under 200 characters that starts with what the user would act on, in the language the user writes in. Send one notification, and only one, in each of these four cases:
+- You started an agent with spawn_agent: say its name and what it works on.
+- An agent finished: you got the message that its ticket is delivered ("delivered: branch ..."). Say which agent and that it is ready for your review.
+- You have a question for the user: send the notification right before you call AskUserQuestion, and put the question in it in a few words.
+- You finished a whole task the user gave you (all the work of that request, not one command or one step): say what is done and what is left, if anything.
+Never send a notification for routine progress, for a command or a step, for an answer to something the user is watching, or for a message from an agent that you handle without the user.

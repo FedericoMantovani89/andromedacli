@@ -7,6 +7,9 @@ introduces the behaviour.
 
 ## [Unreleased]
 
+### Added
+- Options > Notifications: "The main notifies me in the Claude app (Remote Control)" (`notifications.mainPush`, off by default, one switch). When on, the main's prompt gets `prompts/main-push.md` and `PushNotification` is allowed: with `/rc` connected the main notifies when it starts an agent, when an agent finishes, when it has a question and when it finishes a whole task. Read when the sessions start, so Save asks for the restart.
+
 ### Changed
 - CI: when a vitest worker crashes on the GitHub runner with no test failing, the whole suite runs once more (`scripts/ci-tests.sh`); a failing test or a second crash still fails the job.
 - Options > Secrets: the saved Groq key shows in the field itself, as grey text, its first five characters and five stars (`gsk_a*****`; the console sends only that, never the key); typing replaces it, and below the field there is only "Remove key". The field has an eye that shows or hides what is being typed, like a password field (it never reveals the saved key).

@@ -11,6 +11,8 @@ export interface NotificationsConfig {
   groupSeconds: number;
   /** Also show a browser notification when no toast can be sent and the tab is not focused. */
   browserFallback: boolean;
+  /** The main notifies the Claude app (Remote Control) about its own news: an agent started or finished, a question, a task done. Read when the main starts. */
+  mainPush: boolean;
 }
 
 /** `unknown` until the first availability check or send. */
@@ -22,6 +24,7 @@ export const DEFAULT_NOTIFICATIONS: NotificationsConfig = {
   sound: true,
   groupSeconds: 5,
   browserFallback: false,
+  mainPush: false,
 };
 
 /** What the UI reports about itself (POST /api/presence). */

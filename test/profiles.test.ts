@@ -37,6 +37,13 @@ it('rejects unknown names and path traversal', () => {
   expect(loadProfile('../secret', tmp(), tmp())).toBeUndefined();
   expect(loadProfile('a/b', tmp(), tmp())).toBeUndefined();
 });
+it('the main prompt asks for notifications to the Claude app only when the switch is on', () => {
+  const off = readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'English', outDir: tmp() }), 'utf8');
+  expect(off).not.toContain('PushNotification');
+  const on = readFileSync(renderMainPrompt({ project: 'shop-api', workLanguage: 'English', outDir: tmp(), mainPush: true }), 'utf8');
+  expect(on).toContain('select:PushNotification');
+  for (const when of ['started an agent', 'An agent finished', 'right before you call AskUserQuestion', 'whole task']) expect(on).toContain(when);
+});
 it('the main prompt names every console tool by full name and says how to load them', () => {
   const dir = tmp();
   const file = renderMainPrompt({ project: 'shop-api', workLanguage: 'Italian', outDir: dir });

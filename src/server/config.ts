@@ -268,6 +268,7 @@ export function mergeNotifications(base: NotificationsConfig, raw: unknown, bad:
   }
   if ('sound' in raw) { if (typeof raw.sound === 'boolean') out.sound = raw.sound; else bad('notifications.sound'); }
   if ('browserFallback' in raw) { if (typeof raw.browserFallback === 'boolean') out.browserFallback = raw.browserFallback; else bad('notifications.browserFallback'); }
+  if ('mainPush' in raw) { if (typeof raw.mainPush === 'boolean') out.mainPush = raw.mainPush; else bad('notifications.mainPush'); }
   if ('groupSeconds' in raw) {
     const v = raw.groupSeconds;
     if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 60) out.groupSeconds = v; else bad('notifications.groupSeconds');

@@ -183,14 +183,15 @@ function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.m
 }
 
 /** The main's system-prompt addition (SPEC 10.4, 13.4). Returns the path of the rendered file. With `projectRoot`, the project's main.md and rules.md follow. */
-export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[]; /** The profiles the main may name in spawn_agent. */ profiles?: readonly string[]; helpers?: string; /** Repositories (relative names, '' for the project folder) with no .gitignore that were not yet brought up. */ noGitignore?: string[] }): string {
+export function renderMainPrompt(o: { project: string; workLanguage: string; outDir: string; projectRoot?: string; repos?: string[]; /** The profiles the main may name in spawn_agent. */ profiles?: readonly string[]; helpers?: string; /** Repositories (relative names, '' for the project folder) with no .gitignore that were not yet brought up. */ noGitignore?: string[]; /** Notifications > the main notifies the Claude app (Remote Control): the instructions to do so are added. */ mainPush?: boolean }): string {
   const template = readFileSync(join(promptsDir(), 'main.md'), 'utf8');
   const base = fill(template, { project: o.project, workLanguage: o.workLanguage, profiles: (o.profiles && o.profiles.length > 0 ? o.profiles : ['developer']).join(', ') });
   // A project folder that holds several repositories: every agent works in exactly one, which the main must name.
   const repoText = o.repos && o.repos.length > 1
     ? `This project folder holds several git repositories: ${o.repos.join(', ')}. Every agent works in exactly one of them: pass its name as "repo" to spawn_agent. Work that touches two repositories needs one agent for each.`
     : undefined;
-  const extra = [repoText, gitignoreTextForMain(o.noGitignore), o.helpers, projectText(o.projectRoot, 'main.md'), projectText(o.projectRoot, 'rules.md')].filter((x): x is string => x !== undefined);
+  const push = o.mainPush ? readFileSync(join(promptsDir(), 'main-push.md'), 'utf8').replace(/\r\n/g, '\n').trim() : undefined;
+  const extra = [repoText, gitignoreTextForMain(o.noGitignore), o.helpers, push, projectText(o.projectRoot, 'main.md'), projectText(o.projectRoot, 'rules.md')].filter((x): x is string => x !== undefined);
   return writePrompt(o.outDir, `main-${o.project}.md`, extra.length > 0 ? `${base.trimEnd()}\n\n${extra.join('\n\n')}\n` : base);
 }
 

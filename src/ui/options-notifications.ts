@@ -2,7 +2,7 @@ import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES, type NotificationsConfig, type Not
 import type { ApiError, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k } from './i18n-client';
-import { el, checkbox } from './dom';
+import { el, checkbox, note } from './dom';
 import { errorText } from './new-agent';
 import { FIELD_LABELS } from './options';
 import { attachClock } from './time-picker';
@@ -11,7 +11,7 @@ import { attachClock } from './time-picker';
  * The Notifications tab (SPEC 20.4, 22.2): which events notify, quiet hours, sound, grouping, the browser fallback, a test toast and
  * whether a toast can be shown at all. Changes are staged and sent by the dialog's Save through PUT /api/config; they apply to the next event.
  */
-export function renderNotificationsTab(container: HTMLElement, state: StateMessage, stage: (key: string, run: (dry: boolean) => Promise<{ status: number; body: unknown }>) => void): void {
+export function renderNotificationsTab(container: HTMLElement, state: StateMessage, stage: (key: string, run: (dry: boolean) => Promise<{ status: number; body: unknown }>) => void, /** Tells the dialog the staged value of a setting its Save compares (the restart question). */ mirror?: (path: string, value: unknown) => void): void {
   const config: NotificationsConfig = structuredClone(state.notifications?.config ?? DEFAULT_NOTIFICATIONS);
   container.replaceChildren();
   const box = el('div', 'settings-agents settings-notifications');
@@ -135,6 +135,15 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   const browserHelp = el('p', 'settings-note');
   bindText(browserHelp, 'settings.notifications.browser.help');
 
+  // The main's own notifications to the Claude app (Remote Control): read by the main when it starts, so Save asks for a restart.
+  const mainPush = checkbox('mainPush', 'settings.notifications.mainPush');
+  mainPush.input.checked = config.mainPush;
+  mainPush.input.addEventListener('change', () => {
+    mirror?.('notifications.mainPush', mainPush.input.checked);
+    save({ mainPush: mainPush.input.checked });
+  });
+  const mainPushHelp = note(k('settings.notifications.mainPush.help'));
+
   // The test toast and what is known about toasts on this machine.
   const status = el('div', 'settings-note settings-toast-status');
   const showToast = (toast: 'ok' | 'unavailable' | 'unknown'): void => {
@@ -157,6 +166,6 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   const testRow = el('div', 'settings-switch');
   testRow.append(test, result);
 
-  box.append(quietRow, times, soundRow, groupLabel, browserRow, browserHelp, status, testRow, error);
+  box.append(quietRow, times, soundRow, groupLabel, browserRow, browserHelp, mainPush.row, mainPushHelp, status, testRow, error);
   container.append(box);
 }

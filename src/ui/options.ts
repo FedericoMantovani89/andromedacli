@@ -717,13 +717,13 @@ function pluginsTab(env: Env): HTMLElement {
 }
 
 /** Settings Claude reads only when a session starts: a changed one asks for a restart after Save. */
-const RESTART_PATHS = ['agents.bypassPermissions', 'guard.mode', 'models.agent'] as const;
+const RESTART_PATHS = ['agents.bypassPermissions', 'guard.mode', 'models.agent', 'notifications.mainPush'] as const;
 
 const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
   models: modelsTab, profiles: profilesTab, budget: budgetTab, projects: projectsTab, git: gitTab, guard: guardTab,
   notifications: (env) => {
     const box = el('div');
-    if (env.state) renderNotificationsTab(box, env.state, env.stage);
+    if (env.state) renderNotificationsTab(box, env.state, env.stage, (path, value) => { if (env.options) setPath(env.options.config, path, value); });
     return box;
   },
   language: languageTab, prerequisites: prereqTab, plugins: pluginsTab,
@@ -738,6 +738,7 @@ const BUILDERS: Record<OptionTab, (env: Env) => HTMLElement> = {
 function getRestartDefault(path: (typeof RESTART_PATHS)[number], state: StateMessage | undefined): unknown {
   if (path === 'agents.bypassPermissions') return state?.settings.bypassPermissions ?? false;
   if (path === 'guard.mode') return state?.settings.guardMode ?? 'enforce';
+  if (path === 'notifications.mainPush') return false;
   return '';
 }
 
