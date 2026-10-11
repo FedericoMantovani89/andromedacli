@@ -145,7 +145,7 @@ it('reports whether a key is set, never the key; saves, replaces and clears it, 
   expect(bad).toMatchObject({ status: 422, body: { code: 'dictation.keyInvalid' } });
   expect((await ui(s, '/api/secrets', 'PUT', { groqKey: KEY })).body).toEqual({ groq: { set: true } });
   expect(readGroqKey(dir)).toBe(KEY);
-  expect((await ui(s, '/api/secrets')).body).toEqual({ groq: { set: true } });
+  expect((await ui(s, '/api/secrets')).body).toEqual({ groq: { set: true, preview: 'gsk_T*****' } }); // five characters and stars, never the key
   expect((await ui(s, '/api/secrets', 'PUT', { nothing: 1 })).status).toBe(400);
   expect((await ui(s, '/api/secrets', 'PUT', { groqKey: null })).body).toEqual({ groq: { set: false } });
   expect(existsSync(secretsPath(dir)) ? readGroqKey(dir) : undefined).toBeUndefined();

@@ -63,7 +63,7 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (e) => console.error(`page error: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') console.error(`console error: ${m.text()}`); });
-  if (args.includes('--groq')) await page.route((url) => url.pathname === '/api/secrets', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ groq: { set: true } }) }));
+  if (args.includes('--groq')) await page.route((url) => url.pathname === '/api/secrets', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ groq: { set: true, preview: 'gsk_a*****' } }) }));
   if (split) await page.addInitScript((v) => { try { localStorage.setItem('console.split', v); } catch { /* not remembered */ } }, split);
   if (states) {
     // The first four agents are real (panels); the page is told they, and seven more that exist only in the message, are in one state each.

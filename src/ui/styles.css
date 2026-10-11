@@ -462,6 +462,9 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .dictation-dialog button[name="dictationSend"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .dictation-dialog button[disabled] { opacity: .5; cursor: default; }
 .dictation-dialog button[name="dictationRecord"] svg.icon { color: var(--bad); width: 18px; height: 18px; }
+.options-secret-entry { display: flex; align-items: center; gap: 6px; }
+.options-secret-entry input { flex: 1 1 auto; min-width: 0; }
+.options-secret-entry input::-ms-reveal, .options-secret-entry input::-ms-clear { display: none; } /* Edge's own eye: ours is the only one */
 .options-secret-status { display: flex; align-items: center; gap: 8px; }
 .options-secret-status .secret-state { font-weight: 600; }
 .options-secret-status .secret-state.willclear { color: var(--warn); }

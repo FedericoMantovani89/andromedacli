@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { audioMime, MAX_AUDIO_BYTES, transcribe, type DictationCode } from './dictation';
 import { fail, readBody, send } from './http-util';
-import { hasGroqKey, isValidGroqKey, readGroqKey, writeGroqKey } from './secrets';
+import { hasGroqKey, isValidGroqKey, maskGroqKey, readGroqKey, writeGroqKey } from './secrets';
 
 /** The routes of the voice dictation that are not about one project: the secrets and the transcription. The token and Host checks already ran. */
 export interface DictationHost {
@@ -35,7 +35,11 @@ function readBytes(req: IncomingMessage, limit: number): Promise<Buffer | 'too_l
 /** Answers `GET/PUT /api/secrets` and `POST /api/dictation/transcribe`; returns false for any other path. */
 export async function handleDictationRoute(host: DictationHost, req: IncomingMessage, res: ServerResponse, path: string, url: URL): Promise<boolean> {
   if (path === '/api/secrets') {
-    if (req.method === 'GET') { send(res, 200, { groq: { set: hasGroqKey(host.configDir) } }); return true; }
+    if (req.method === 'GET') {
+      const saved = readGroqKey(host.configDir);
+      send(res, 200, { groq: saved === undefined ? { set: false } : { set: true, preview: maskGroqKey(saved) } });
+      return true;
+    }
     if (req.method === 'PUT') {
       let body: unknown;
       try { body = await readBody(req); } catch { fail(res, 400, 'bad_request'); return true; }

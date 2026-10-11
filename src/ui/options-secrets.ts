@@ -3,6 +3,7 @@ import { api } from './api';
 import { el } from './dom';
 import { infoIcon } from './info-icon';
 import { bindText, k } from './i18n-client';
+import { setIconButton } from './icons';
 
 type Stage = (key: string, run: (dry: boolean) => Promise<{ status: number; body: unknown }>) => void;
 
@@ -26,23 +27,39 @@ export function renderSecretsTab(container: HTMLElement, stage: Stage): void {
   input.spellcheck = false;
   const head = el('span', 'options-field-head');
   head.append(label, infoIcon(k('options.secrets.groqTip')));
-  field.append(head, input);
+  // The eye shows or hides what is being typed, like a password field. It never reveals the saved key: the page does not have it.
+  const eye = el('button', 'icon-btn secret-eye');
+  eye.type = 'button';
+  eye.name = 'toggleGroqKey';
+  const paintEye = (): void => setIconButton(eye, input.type === 'password' ? 'eye' : 'eyeOff', input.type === 'password' ? k('options.secrets.show') : k('options.secrets.hide'));
+  eye.addEventListener('mousedown', (ev) => ev.preventDefault()); // the keyboard stays in the field
+  eye.addEventListener('click', () => { input.type = input.type === 'password' ? 'text' : 'password'; paintEye(); });
+  paintEye();
+  const entry = el('div', 'options-secret-entry');
+  entry.append(input, eye);
+  field.append(head, entry);
   box.append(field);
 
+  // One key, so its start (five characters and stars, as the console sends it) is the grey text of the field itself; below the field there is
+  // only the way to remove it. A typed key replaces it; the page never has the saved key, so the eye shows only what is typed.
   const row = el('div', 'options-secret-status');
-  const rowLabel = el('span');
-  bindText(rowLabel, 'options.secrets.status');
+  row.hidden = true;
   const state = el('span', 'secret-state');
   state.dataset.secretStatus = 'groq';
-  row.append(rowLabel, state);
+  row.append(state);
   box.append(row);
 
   let saved: boolean | undefined; // unknown until the console answers
+  let preview: string | undefined; // the first five characters and stars
   let clearing = false;
   let clearBtn: HTMLButtonElement | undefined;
   const paint = (): void => {
+    input.placeholder = !clearing && saved ? (preview ?? '*****') : ''; // data, not interface text
+    row.hidden = saved !== true;
+    state.hidden = !clearing;
     state.classList.toggle('willclear', clearing);
-    bindText(state, clearing ? k('options.secrets.willClear') : saved ? k('options.secrets.set') : k('common.notAvailable'));
+    if (clearing) bindText(state, k('options.secrets.willClear'));
+    else { delete state.dataset.i18n; delete state.dataset.i18nParams; state.textContent = ''; }
     if (saved && !clearBtn) {
       clearBtn = el('button');
       clearBtn.type = 'button';
@@ -62,8 +79,9 @@ export function renderSecretsTab(container: HTMLElement, stage: Stage): void {
     return api<ApiError>(dry ? '/api/secrets?dryRun=1' : '/api/secrets', { method: 'PUT', body: { groqKey: clearing ? null : typed } });
   });
 
-  void api<{ groq?: { set?: boolean } }>('/api/secrets').then((res) => {
+  void api<{ groq?: { set?: boolean; preview?: string } }>('/api/secrets').then((res) => {
     saved = res.status === 200 && res.body?.groq?.set === true;
+    preview = saved && typeof res.body?.groq?.preview === 'string' ? res.body.groq.preview : undefined;
     paint();
   }, () => undefined);
 

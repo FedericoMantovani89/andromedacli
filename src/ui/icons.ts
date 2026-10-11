@@ -1,6 +1,6 @@
 import { setTitle } from './i18n-client';
 
-export type IconName = 'bell' | 'gear' | 'clipboard' | 'mic' | 'record' | 'stop';
+export type IconName = 'bell' | 'gear' | 'clipboard' | 'mic' | 'record' | 'stop' | 'eye' | 'eyeOff';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -12,6 +12,8 @@ const PATHS: Record<IconName, string[]> = {
     'M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1',
   ],
   mic: ['M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z', 'M5.5 11a6.5 6.5 0 0 0 13 0', 'M12 17.5V21'],
+  eye: ['M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'],
+  eyeOff: ['M3 3l18 18', 'M10.6 6.2A10.5 10.5 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-3.2 3.9', 'M6.2 7.6A17 17 0 0 0 2 12s3.6 6.5 10 6.5c1.6 0 3-.4 4.2-1', 'M9.9 9.9a3 3 0 0 0 4.2 4.2'],
   // Filled shapes (see svgFor): the red dot of a recorder and its red stop square.
   record: ['M12 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14z'],
   stop: ['M6.5 6.5h11v11h-11z'],

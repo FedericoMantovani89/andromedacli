@@ -24,6 +24,9 @@ export function readGroqKey(configDir: string): string | undefined {
   return isValidGroqKey(key) ? key : undefined;
 }
 
+/** What the page may see of a saved key: its first five characters and five stars, never more (a key is at least 8 long, so a part is always hidden). */
+export const maskGroqKey = (key: string): string => `${key.slice(0, 5)}*****`;
+
 export const hasGroqKey = (configDir: string): boolean => readGroqKey(configDir) !== undefined;
 
 /** Saves the key (replacing any), or removes it with `null`. The caller has validated it. */
