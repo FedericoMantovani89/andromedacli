@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- CI: when a vitest worker crashes on the GitHub runner with no test failing, the files whose worker died run once more (`scripts/ci-tests.sh`); a failing test or a second crash still fails the job.
 - Options > Secrets: the saved Groq key shows in the field itself, as grey text, its first five characters and five stars (`gsk_a*****`; the console sends only that, never the key); typing replaces it, and below the field there is only "Remove key". The field has an eye that shows or hides what is being typed, like a password field (it never reveals the saved key).
 - The dictation dialog closes with the X in its corner (like Options) instead of a Close button, records with a red dot and stops with a red square, and has no Clear button (the text is erased by hand). While it records, it shows the time since the start (m:ss) and bars that follow the voice, like an equalizer (Web Audio; where that is missing the clock still runs). `npm run shot` has `--groq`, `--fill`, `--fake-mic` and `--wait` for this.
 - Expanding a dormant agent no longer opens an empty terminal: the panel prints the agent's last words in full (the entries of the read panel, n/a when there are none) and keeps the Wake up button in its header, so the text can be read before waking it.
