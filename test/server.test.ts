@@ -329,6 +329,15 @@ it('keeps the project name stored in project.json even if the folder was renamed
   expect(st.main.slug).toBe('shop-api');
 });
 
+it('serves the favicon without a token, as a real PNG', async () => {
+  const s = await boot();
+  const r = await fetch(`http://127.0.0.1:${s.port}/favicon.png`);
+  expect(r.status).toBe(200);
+  expect(r.headers.get('content-type')).toBe('image/png');
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  expect([bytes[0], bytes[1], bytes[2], bytes[3]]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+});
+
 it('serves the splash image without a token, as a real JPEG', async () => {
   const s = await boot();
   const r = await fetch(`http://127.0.0.1:${s.port}/splash.jpg`);

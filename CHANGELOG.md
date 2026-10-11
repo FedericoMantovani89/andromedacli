@@ -8,6 +8,9 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- The app has an icon: the galaxy from the splash picture (`build/icon.ico`, 16 to 256 px) on `AndromedaCli.exe`, on the installer and uninstaller and in the installer header. `signAndEditExecutable: false` became `signExecutable: false` so the icon is written into the exe; there is still no code signing.
+- The page has a favicon (the galaxy, `favicon.png`, served without a token like the splash).
+- The splash picture is twice as large (2798x1434, resampled with Lanczos, lightly cleaned and sharpened); it is the same picture, so it is smoother but has no new detail.
 - Tests: `git-clone` and `project-fields` close their server before they remove their folders (afterEach hooks run last-declared first); on the GitHub runner the folder was locked by the still running agent and the hook timed out.
 - Tests: the hook timeout is 60 s (was 10 s), so the cleanup of a temporary folder that Windows still holds for a moment no longer fails a test.
 - The full test suite now runs on GitHub (`.github/workflows/ci.yml`: check and `vitest run` on every push to main and every pull request), and the local commit gate is gone (the Claude Code hook, `scripts/commit-gate.ts`, `scripts/stamp-tests.ts`); `npm test` is plain `vitest run`. Locally only the tests of what changed are run; the pre-commit hook still runs `npm run check` and wants a CHANGELOG line.

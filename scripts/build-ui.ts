@@ -28,6 +28,7 @@ export async function buildUi(opts: { map: boolean; outDir?: string } = { map: f
   copyFileSync(join(root, 'src', 'ui', 'index.html'), join(out, 'index.html'));
   copyFileSync(join(root, 'src', 'ui', 'styles.css'), join(out, 'styles.css'));
   copyFileSync(join(root, 'src', 'ui', 'splash.jpg'), join(out, 'splash.jpg'));
+  copyFileSync(join(root, 'src', 'ui', 'favicon.png'), join(out, 'favicon.png'));
   copyFileSync(join(root, 'node_modules', '@xterm', 'xterm', 'css', 'xterm.css'), join(out, 'xterm.css'));
   // The server sends the Brotli copy to a client that accepts it (SPEC 33.2): the text files are about a quarter of their size.
   for (const file of filesToCompress(out)) {

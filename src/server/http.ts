@@ -156,8 +156,8 @@ export interface Context extends V1Context {
   applyConfig(config: Config, applied: Record<string, unknown>): void;
 }
 
-/** The built UI files the page may ask for: the entry, its lazy chunks, the styles and the splash (a `.map` exists only in a build made with --map). */
-const STATIC_FILE = /^\/(app\.js|styles\.css|xterm\.css|splash\.jpg|chunks\/[\w.-]+\.js)(\.map)?$/;
+/** The built UI files the page may ask for: the entry, its lazy chunks, the styles, the splash and the favicon (a `.map` exists only in a build made with --map). */
+const STATIC_FILE = /^\/(app\.js|styles\.css|xterm\.css|splash\.jpg|favicon\.png|chunks\/[\w.-]+\.js)(\.map)?$/;
 
 /** The state is built on every push and lists the profile folders each time: a few seconds of memory is plenty (SPEC 33.2). */
 const profileNamesMemo = new Map<string, { at: number; names: string[] }>();

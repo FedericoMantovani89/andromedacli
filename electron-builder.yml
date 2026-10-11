@@ -43,13 +43,19 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  # No code signing and no icon yet: this also avoids electron-builder's signing tool download.
-  signAndEditExecutable: false
+  # The galaxy (build/icon.ico, made from the splash picture) on the exe. No code signing yet: signExecutable false skips only the signing,
+  # the icon and the version info are still written into the exe.
+  icon: build/icon.ico
+  signExecutable: false
 nsis:
   # No spaces: GitHub turns them into dots in a release asset's name.
   artifactName: AndromedaCli-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  # The same galaxy on the installer, the uninstaller and the installer's header.
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 # Only the languages the console has.
 electronLanguages: [en-US, it]

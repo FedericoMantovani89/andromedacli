@@ -4,7 +4,7 @@ import { join, normalize } from 'node:path';
 
 const TYPES: Record<string, string> = {
   '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8',
-  '.jpg': 'image/jpeg', '.map': 'application/json',
+  '.jpg': 'image/jpeg', '.png': 'image/png', '.map': 'application/json',
 };
 
 export interface UiAsset { body: Buffer; type: string; etag: string; encoding?: 'br' }
