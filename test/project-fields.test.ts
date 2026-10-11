@@ -8,9 +8,9 @@ import { makeRepo, removeDir, type TestRepo } from './git-helpers';
 import { worktreePathFor } from '../src/server/git/worktree';
 
 vi.setConfig({ testTimeout: 60_000 });
-autoClose();
 const repos: TestRepo[] = [];
 afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
+autoClose(); // after the folder removal: afterEach hooks run last-declared first, so the server (and its agents, whose folder is inside the repo) closes before the folder goes
 
 const KNOWN = ['developer', 'reviewer', 'recovery'];
 const newStore = (): ProjectStore => { const s = new ProjectStore(mkdtempSync(join(tmpdir(), 'pf-'))); s.init('shop-api'); return s; };

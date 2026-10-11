@@ -8,6 +8,7 @@ introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- Tests: `git-clone` and `project-fields` close their server before they remove their folders (afterEach hooks run last-declared first); on the GitHub runner the folder was locked by the still running agent and the hook timed out.
 - Tests: the hook timeout is 60 s (was 10 s), so the cleanup of a temporary folder that Windows still holds for a moment no longer fails a test.
 - The full test suite now runs on GitHub (`.github/workflows/ci.yml`: check and `vitest run` on every push to main and every pull request), and the local commit gate is gone (the Claude Code hook, `scripts/commit-gate.ts`, `scripts/stamp-tests.ts`); `npm test` is plain `vitest run`. Locally only the tests of what changed are run; the pre-commit hook still runs `npm run check` and wants a CHANGELOG line.
 - A release that is a fast-forward no longer runs the test command again on the target branch: the tree is the one the proposal already tested on that tip. A real merge still does.

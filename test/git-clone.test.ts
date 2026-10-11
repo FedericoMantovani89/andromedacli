@@ -7,9 +7,9 @@ import { autoClose, bootServer, ui } from './helpers';
 import { gitSync, makeRepo, removeDir, type TestRepo } from './git-helpers';
 
 vi.setConfig({ testTimeout: 60_000 }); // real git
-autoClose();
 const made: TestRepo[] = [];
 afterEach(() => { while (made.length) removeDir(made.pop()!.base); });
+autoClose(); // after the folder removal: afterEach hooks run last-declared first, so the server (and its agents, whose folder is inside the repo) closes before the folder goes
 
 describe('validCloneUrl', () => {
   it('accepts what a hosting page gives: https, ssh and git@host:path', () => {
