@@ -35,6 +35,14 @@ jobs:
       - name: Check (texts, literals, types)
         run: npm run check
 
-      # `vitest run` and not `npm test`: the stamp that opens the local commit gate belongs to this machine's checkout.
+      # The server tests read the built UI.
+      - name: Build the UI
+        run: npm run build
+
+      # The runner's default temp folder is in 8.3 form (C:\Users\RUNNER~1\...), while git answers with the long path: tests that compare
+      # the two fail. The runner temp folder has no short names.
       - name: Tests
         run: npx vitest run
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
