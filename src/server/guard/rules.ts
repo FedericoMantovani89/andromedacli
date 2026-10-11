@@ -202,7 +202,8 @@ function isHooksPath(p: string): boolean {
   return parts.includes('console-hooks') || parts.some((c, i) => c === '.git' && parts[i + 1] === 'hooks');
 }
 
-function hooksTarget(argv: string[]): string | undefined {
+/** The words of a command that it may write to: redirection targets and, for a command that writes files, its non-flag arguments. */
+function writtenPaths(argv: string[]): string[] {
   const name = commandName(argv[0] ?? '');
   const rest = argv.slice(1);
   const candidates: string[] = [];
@@ -211,19 +212,15 @@ function hooksTarget(argv: string[]): string | undefined {
     else if (/^\d*>>?[^&>]/.test(t)) candidates.push(t.replace(/^\d*>>?/, ''));
   });
   if (WRITERS.has(name)) candidates.push(...rest.filter((t) => !isFlag(t)));
-  return candidates.find(isHooksPath);
+  return candidates;
+}
+
+function hooksTarget(argv: string[]): string | undefined {
+  return writtenPaths(argv).find(isHooksPath);
 }
 
 function dotGitTarget(argv: string[]): string | undefined {
-  const name = commandName(argv[0] ?? '');
-  const rest = argv.slice(1);
-  const candidates: string[] = [];
-  rest.forEach((t, i) => {
-    if (/^\d*>>?$/.test(t) && rest[i + 1] !== undefined) candidates.push(rest[i + 1]!);
-    else if (/^\d*>>?[^&>]/.test(t)) candidates.push(t.replace(/^\d*>>?/, ''));
-  });
-  if (WRITERS.has(name)) candidates.push(...rest.filter((t) => !isFlag(t)));
-  return candidates.find((t) => hasComponent(t, '.git') || hasComponent(t, 'console-hooks'));
+  return writtenPaths(argv).find((t) => hasComponent(t, '.git') || hasComponent(t, 'console-hooks'));
 }
 
 function downloadRule(segments: Segment[]): GuardDecision | undefined {

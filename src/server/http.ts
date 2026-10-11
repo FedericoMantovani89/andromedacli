@@ -171,6 +171,13 @@ function profileNamesOf(projectRoot: string, userDir: string): string[] {
   return names;
 }
 
+/** A folder just became a repository: forget what was known about its repositories and keep `.andromedacli/` out of its status. */
+async function afterRepoMade(ctx: Pick<Context, 'forgetRepos' | 'prepareRepo' | 'projectRoot' | 'broadcastState'>): Promise<void> {
+  ctx.forgetRepos();
+  await ctx.prepareRepo(ctx.projectRoot);
+  ctx.broadcastState();
+}
+
 export function buildState(ctx: Context): StateMessage {
   const status = (slug: string): SessionInfo['status'] => {
     const p = ctx.ptys.status(slug);
@@ -634,9 +641,7 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const { initRepo } = await import('./templates/apply');
       const made = await initRepo(ctx.projectRoot);
       if (!made.ok) return fail(res, 422, made.code, made.detail ? { reason: made.detail } : undefined);
-      ctx.forgetRepos();
-      await ctx.prepareRepo(ctx.projectRoot); // keeps .andromedacli/ out of the new repository's status
-      ctx.broadcastState();
+      await afterRepoMade(ctx);
       return send(res, 200, { ok: true });
     }
 
@@ -652,9 +657,7 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       if (!validCloneUrl(url.trim())) return fail(res, 422, 'git.cloneUrlInvalid');
       const done = await cloneIntoFolder(ctx.projectRoot, url.trim());
       if (!done.ok) return fail(res, done.code === 'git.cloneFolderNotEmpty' ? 409 : 422, done.code, done.detail ? { reason: done.detail } : undefined);
-      ctx.forgetRepos();
-      await ctx.prepareRepo(ctx.projectRoot); // keeps .andromedacli/ out of the new repository's status
-      ctx.broadcastState();
+      await afterRepoMade(ctx);
       return send(res, 200, { ok: true, ...(done.branch ? { branch: done.branch } : {}) });
     }
 

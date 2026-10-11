@@ -3,6 +3,7 @@ import type { TicketStore } from '../tickets/store';
 import type { AgentRegistry } from './registry';
 import { SESSION_ID_RE } from '../pty/claude-launch';
 import { errorMessage } from '../../shared/guards';
+import { MainTeller } from '../main-teller';
 
 export interface ResumeDeps {
   tickets: TicketStore;
@@ -94,7 +95,7 @@ export class ResumeService {
         const w = this.d.quotaWorst();
         const limit = this.d.config().freezePercent;
         if (w !== undefined && w.percent >= limit) {
-          this.tell(`Resuming ${batch.map((b) => `"${b}"`).join(', ')} was put off: the usage is at ${Math.round(w.percent)}% (resume is refused at ${limit}% or more), so the tickets stay suspended. Call resume_agent again when it is lower.`);
+          this.main.tell(`Resuming ${batch.map((b) => `"${b}"`).join(', ')} was put off: the usage is at ${Math.round(w.percent)}% (resume is refused at ${limit}% or more), so the tickets stay suspended. Call resume_agent again when it is lower.`);
           this.safeChanged();
           return;
         }
@@ -123,8 +124,8 @@ export class ResumeService {
     let run: Promise<{ ok: true } | { ok: false; code: string }>;
     try { run = this.d.wake!(name, sessionId); } catch (err) { run = Promise.reject(err); }
     void run.then(
-      (r) => { if (!r.ok) this.tell(`Waking "${name}" failed (${r.code}); it stays as it was.`); },
-      (err: unknown) => this.tell(`Waking "${name}" failed (${errorMessage(err)}); it stays as it was.`),
+      (r) => { if (!r.ok) this.main.tell(`Waking "${name}" failed (${r.code}); it stays as it was.`); },
+      (err: unknown) => this.main.tell(`Waking "${name}" failed (${errorMessage(err)}); it stays as it was.`),
     ).finally(() => this.safeChanged());
   }
 
@@ -133,7 +134,7 @@ export class ResumeService {
     try {
       this.d.tickets.restart(name);
     } catch (err) {
-      this.tell(`Resuming "${name}" did not start: its ticket is no longer suspended for the usage limit (${errorMessage(err)}).`);
+      this.main.tell(`Resuming "${name}" did not start: its ticket is no longer suspended for the usage limit (${errorMessage(err)}).`);
       return;
     }
     let run: Promise<{ ok: true } | { ok: false; code: string }>;
@@ -148,13 +149,11 @@ export class ResumeService {
     try {
       if (this.d.tickets.get(name)?.status === 'in_progress') this.d.tickets.move(name, 'suspended_limit');
     } catch { /* the message below still goes */ }
-    this.tell(`Resuming "${name}" failed (${code}); its ticket is suspended again.`);
+    this.main.tell(`Resuming "${name}" failed (${code}); its ticket is suspended again.`);
     this.safeChanged();
   }
 
-  private tell(text: string): void {
-    try { this.d.tellMain(text); } catch { /* nothing more can be done */ }
-  }
+  private readonly main = new MainTeller((text) => this.d.tellMain(text));
 
   private safeChanged(): void {
     try { this.d.changed(); } catch { /* the UI push must not break a resume */ }

@@ -83,16 +83,17 @@ function appendPrereqRow(container: HTMLElement, r: PrereqResult, recheckHost: H
   const action = document.createElement(fixable ? 'button' : 'span');
   if (fixable) {
     bindText(action, r.status === 'missing' ? k('prereq.install') : k('prereq.update'));
-    action.addEventListener('click', () => {
-      openInstallDialog(r.id, () => {
-        void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => {
-          if (res.status === 200) renderPrereqTable(container, res.body, recheckHost, requiredOnly, usage);
-        });
-      });
-    });
+    action.addEventListener('click', () => { openInstallDialog(r.id, () => recheck(container, recheckHost, requiredOnly, usage)); });
   }
   row.append(action);
   container.append(row);
+}
+
+/** Asks the server to check the tools again and draws the table anew. */
+function recheck(container: HTMLElement, recheckHost: HTMLElement | undefined, requiredOnly: boolean, usage?: HelperUse): void {
+  void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => {
+    if (res.status === 200) renderPrereqTable(container, res.body, recheckHost, requiredOnly, usage);
+  });
 }
 
 function appendRecheck(container: HTMLElement, recheckHost: HTMLElement | undefined, requiredOnly: boolean, usage?: HelperUse): void {
@@ -100,11 +101,7 @@ function appendRecheck(container: HTMLElement, recheckHost: HTMLElement | undefi
   if (requiredOnly) {
     // The first-start wizard: check again, so the user can go on once a required tool is there.
     bindText(again, 'prereq.recheck');
-    again.addEventListener('click', () => {
-      void api<PrereqResult[]>('/api/prereq/recheck', { method: 'POST' }).then((res) => {
-        if (res.status === 200) renderPrereqTable(container, res.body, recheckHost, requiredOnly, usage);
-      });
-    });
+    again.addEventListener('click', () => recheck(container, recheckHost, requiredOnly, usage));
   } else {
     // Options: a program installed after the console started is not on the PATH this process was given, and the console never reads the
     // PATH from the system. Checking again or restarting the sessions would show nothing new: the console has to be started again from

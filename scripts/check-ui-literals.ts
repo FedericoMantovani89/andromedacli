@@ -1,20 +1,11 @@
 // Fails the build on user-visible literal strings in UI code and on .focus() outside src/ui/focus.ts (P2, P12).
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { findUiLiterals, findStrayFocus } from '../src/shared/i18n-checks';
+import { walk } from './walk.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const uiDir = join(root, 'src', 'ui');
-
-function walk(dir: string, out: string[] = []): string[] {
-  if (!existsSync(dir)) return out;
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (p.endsWith('.ts')) out.push(p);
-  }
-  return out;
-}
 
 let failures = 0;
 for (const file of walk(uiDir)) {

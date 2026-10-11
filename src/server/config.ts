@@ -298,6 +298,17 @@ export interface ConfigPatch {
   notifications?: NotificationsConfig;
 }
 
+/** The user's file as written (`{ schema: 1 }` when there is none); not readable when it is not a JSON object. */
+function readRawConfig(path: string): { ok: true; raw: Record<string, unknown> } | { ok: false } {
+  if (!existsSync(path)) return { ok: true, raw: { schema: 1 } };
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return isObj(parsed) ? { ok: true, raw: parsed } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export function patchConfig(path: string, patch: ConfigPatch): { ok: true } | { ok: false; code: 'config.unreadable' } {
   let raw: Record<string, unknown> = { schema: 1 };
   if (existsSync(path)) {

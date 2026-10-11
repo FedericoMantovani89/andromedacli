@@ -138,3 +138,13 @@ export class TestQueue {
     this.stopWatching();
   }
 }
+
+/** What the ticket services (steps, review, recovery) need to find and run a project's tests. */
+export interface TicketTestDeps {
+  project: string;
+  worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
+  testCommand(): string | undefined;
+  testTimeoutMs(): number;
+  /** Runs a test command through the machine's test queue (default: straight away). */
+  runTests?: TestRunner;
+}

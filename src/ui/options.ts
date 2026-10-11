@@ -12,7 +12,7 @@ import { renderGitProject } from './git-section';
 import { renderNotificationsTab } from './options-notifications';
 import { renderSecretsTab } from './options-secrets';
 import { openSaveTemplateDialog } from './new-project';
-import { el } from './dom';
+import { el, note } from './dom';
 
 /** What `GET /api/options` returns (the config is the effective one, defaults filled in). */
 interface OptionsPayload {
@@ -62,11 +62,6 @@ interface Env {
   profileEditing(on: boolean): void;
 }
 
-const note = (key: string, params?: Record<string, string | number>): HTMLElement => {
-  const p = el('p', 'settings-note');
-  bindText(p, key, params);
-  return p;
-};
 export { infoIcon };
 const footnote = (key: string): HTMLElement => {
   const p = note(key);

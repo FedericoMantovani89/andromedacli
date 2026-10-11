@@ -3,23 +3,17 @@ import { git } from '../git/git';
 import { changedFiles } from '../git/merge';
 import { buildReport, isDocFile, writeReport, type ChangedFile } from './report';
 import type { ReviewNote, Ticket, TicketStore, Verdict } from './store';
-import { runDirect, type TestRunner } from './test-queue';
+import { runDirect, type TicketTestDeps } from './test-queue';
 import { KeyedQueue } from '../keyed-queue';
 
 export const MAX_REWORK_ROUNDS = 2;
 
-export interface ReviewDeps {
+export interface ReviewDeps extends TicketTestDeps {
   tickets: TicketStore;
   /** The project folder (where `.andromedacli/` lives). */
   root: string;
-  project: string;
-  worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
-  testCommand(): string | undefined;
   /** The user switched the tests off for this project: nothing is run and the facts say so. */
   testsDisabled?(): boolean;
-  testTimeoutMs(): number;
-  /** Runs a test command through the machine's test queue (default: straight away). */
-  runTests?: TestRunner;
   /** The interface language right now and its translator (report headings follow it). */
   language(): { lang: string; t: Translate };
   /** Starts the reviewer session through the normal spawn flow (limits, worktree, token). */

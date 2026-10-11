@@ -4,7 +4,7 @@ import { bindText, k, t } from './i18n-client';
 import { errorText } from './new-agent';
 import { loadModelSelect } from './model-select';
 import { createSlider, groupNumber, infoIcon } from './options';
-import { el } from './dom';
+import { el, note } from './dom';
 
 /** What `GET /api/profiles` returns for one profile (the user's layer, plus where the version in force comes from). */
 interface ProfileRow {
@@ -12,11 +12,6 @@ interface ProfileRow {
   source: 'project' | 'user' | 'shipped'; shipped: boolean; userFile: boolean; projectOverrides: boolean;
 }
 
-const note = (key: string, params?: Record<string, string | number>): HTMLElement => {
-  const p = el('p', 'settings-note');
-  bindText(p, key, params);
-  return p;
-};
 const button = (name: string, key: string): HTMLButtonElement => {
   const b = el('button');
   b.type = 'button';

@@ -6,7 +6,7 @@ import { pushBranch } from '../git/push';
 import { findMarkers } from '../requests/markers';
 import { validateChecklist, type ChecklistError, type Step } from './checklist';
 import type { TicketStore } from './store';
-import { runDirect, type TestRunner } from './test-queue';
+import { runDirect, type TicketTestDeps } from './test-queue';
 import { KeyedQueue } from '../keyed-queue';
 
 export type StepRefusal =
@@ -26,16 +26,10 @@ export type ChecklistSetResult =
   | { status: 'ok'; steps: Step[] }
   | { status: 'refused'; code: ChecklistError | 'no_worktree' | 'already_delivered'; detail: string };
 
-export interface StepDeps {
+export interface StepDeps extends TicketTestDeps {
   tickets: TicketStore;
-  project: string;
-  worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
-  testCommand(): string | undefined;
   /** The user switched the tests off for this project: the validation step closes without running anything. */
   testsDisabled?(): boolean;
-  testTimeoutMs(): number;
-  /** Runs a test command through the machine's test queue (default: straight away). */
-  runTests?: TestRunner;
   /** The place (1 = next) of this agent's validation in the test queue, when it waits. */
   queuePosition?(slug: string): number | undefined;
   secretPatterns(): string[];

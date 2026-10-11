@@ -12,7 +12,8 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
-function button(key: string, value: string, send: (answer: string) => void): HTMLButtonElement {
+/** An answer button of a queue entry: sends `value`, never takes the keyboard. */
+export function answerButton(key: string, value: string, send: (answer: string) => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
   bindText(b, key);
@@ -115,9 +116,9 @@ export function createConfirmEntry(item: QueueItem, send: (answer: string) => vo
 
   const row = document.createElement('div');
   row.className = 'queue-options';
-  const approve = button(k('queue.confirm.approve'), 'approve', send);
+  const approve = answerButton(k('queue.confirm.approve'), 'approve', send);
   if (p.truncated === true) approve.disabled = true;
-  row.append(approve, button(k('queue.confirm.reject'), 'reject', send));
+  row.append(approve, answerButton(k('queue.confirm.reject'), 'reject', send));
   el.append(row);
   return { el };
 }
@@ -183,7 +184,7 @@ export function createDecisionEntry(item: QueueItem, send: (answer: string) => v
   const optionKeys = str(p.reason) === 'recovery_raise' ? RAISE_OPTION_KEYS : OPTION_KEYS;
   for (const option of item.options ?? []) {
     const key = optionKeys[option];
-    if (key) row.append(button(key, option, send));
+    if (key) row.append(answerButton(key, option, send));
   }
   el.append(row);
   return { el };
@@ -202,9 +203,9 @@ export function createBudgetEntry(item: QueueItem, send: (answer: string) => voi
   const row = document.createElement('div');
   row.className = 'queue-options';
   row.append(
-    button(k('queue.budget.raise'), 'raise', send),
-    button(k('queue.budget.close'), 'close', send),
-    button(k('queue.budget.recover'), 'recover', send),
+    answerButton(k('queue.budget.raise'), 'raise', send),
+    answerButton(k('queue.budget.close'), 'close', send),
+    answerButton(k('queue.budget.recover'), 'recover', send),
   );
   el.append(title, row);
   return { el };
@@ -230,7 +231,7 @@ export function createWeeklyEntry(item: QueueItem, send: (answer: string) => voi
   bindText(choices, 'queue.weekly.choices');
   const row = document.createElement('div');
   row.className = 'queue-options';
-  row.append(button(k('queue.weekly.ok'), 'ok', send));
+  row.append(answerButton(k('queue.weekly.ok'), 'ok', send));
   el.append(title, choices, row);
   return { el };
 }

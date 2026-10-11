@@ -48,3 +48,10 @@ export function showDialog(children: Node[], extraClass?: string): HTMLElement {
   overlay.hidden = false;
   return dialog;
 }
+
+/** A paragraph of help text under a setting. */
+export const note = (key: string, params?: Record<string, string | number>): HTMLElement => {
+  const p = el('p', 'settings-note');
+  bindText(p, key, params);
+  return p;
+};

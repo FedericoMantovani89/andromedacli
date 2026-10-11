@@ -1,5 +1,6 @@
 import type { BudgetConfig } from '../config';
 import { errorMessage } from '../../shared/guards';
+import { MainTeller } from '../main-teller';
 
 export interface RateLimit { kind: 'five_hour' | 'seven_day' | 'spend_limit'; percentUsed: number; resetsAt?: string }
 
@@ -97,7 +98,7 @@ export interface QuotaDeps {
 export class QuotaService {
   private current: QuotaStep = 'none';
   private chain: Promise<unknown> = Promise.resolve();
-  private readonly toldFailed = new Set<string>();
+  private readonly main = new MainTeller((text) => this.d.tellMain(text));
   private readonly reached = new Set<string>();
   private readonly toldFreeze = new Set<string>();
 
@@ -113,9 +114,7 @@ export class QuotaService {
   }
 
   private report(key: string, err: unknown): void {
-    if (this.toldFailed.has(key)) return;
-    this.toldFailed.add(key);
-    try { this.d.tellMain(`Usage limit handling (${key}) failed: ${errorMessage(err)}`); } catch { /* nothing more can be done */ }
+    this.main.once(key, `Usage limit handling (${key}) failed: ${errorMessage(err)}`);
   }
 
   /** Runs one effect; a failure is told to the main once per name and the next effect still runs. */

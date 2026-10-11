@@ -4,6 +4,7 @@ import { turnEntry, type Ledger, type LedgerScope } from './ledger';
 import type { ToolUseEvent, TranscriptEvent, TranscriptReader, UsageEvent } from './transcript';
 import { KeyedQueue } from '../keyed-queue';
 import { errorMessage } from '../../shared/guards';
+import { MainTeller } from '../main-teller';
 
 export type BudgetStep = 'ok' | 'alert' | 'limit' | 'stopped';
 const ORDER: BudgetStep[] = ['ok', 'alert', 'limit', 'stopped'];
@@ -40,7 +41,7 @@ export class BudgetService {
   private readonly queue = new KeyedQueue();
   private readonly lastSession = new Map<string, { sessionId: string; turn: number }>();
   private readonly toldMissing = new Set<string>();
-  private readonly toldFailed = new Set<string>();
+  private readonly main = new MainTeller((text) => this.d.tellMain(text));
 
   constructor(private readonly d: BudgetDeps) {}
 
@@ -49,10 +50,7 @@ export class BudgetService {
 
   /** A failure of the budget tracking itself, told to the main once per agent (the tracking must never fail silently). */
   reportFailure(slug: string, err: unknown): void {
-    if (this.toldFailed.has(slug)) return;
-    this.toldFailed.add(slug);
-    const detail = errorMessage(err);
-    try { this.d.tellMain(`budget tracking failed for ${slug}: ${detail}`); } catch { /* nothing more can be done */ }
+    this.main.once(slug, `budget tracking failed for ${slug}: ${errorMessage(err)}`);
   }
 
   /** Runs one effect; a failure is told to the main (itself guarded) and the next effect still runs. */
@@ -60,8 +58,7 @@ export class BudgetService {
     try {
       await fn();
     } catch (err) {
-      const detail = errorMessage(err);
-      try { this.d.tellMain(`Budget handling of "${slug}": the step "${what}" failed (${detail}).`); } catch { /* nothing more can be done */ }
+      this.main.tell(`Budget handling of "${slug}": the step "${what}" failed (${errorMessage(err)}).`);
     }
   }
 

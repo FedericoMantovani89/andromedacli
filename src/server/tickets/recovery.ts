@@ -3,7 +3,7 @@ import { budgetTokens, type Ledger } from '../budget/ledger';
 import { git } from '../git/git';
 import { canMove } from './flow';
 import type { Ticket, TicketStore } from './store';
-import { runDirect, type TestRunner } from './test-queue';
+import { runDirect, type TicketTestDeps } from './test-queue';
 import { KeyedQueue } from '../keyed-queue';
 import { errorMessage } from '../../shared/guards';
 
@@ -30,17 +30,11 @@ const stepLine = (s: { n: number; title: string; done: boolean; waitingOn?: { re
 
 type SpawnResult = { ok: true } | { ok: false; code: string; detail?: string };
 
-export interface RecoveryDeps {
+export interface RecoveryDeps extends TicketTestDeps {
   tickets: TicketStore;
   ledger: Ledger;
   /** The project folder: with `project` it scopes the ledger (agent names repeat across projects). */
   root: string;
-  project: string;
-  worktreeOf(slug: string): { worktree: string; branch: string } | undefined;
-  testCommand(): string | undefined;
-  testTimeoutMs(): number;
-  /** Runs a test command through the machine's test queue (default: straight away). */
-  runTests?: TestRunner;
   /** Starts the read-only recovery session through the normal spawn flow, on a detached checkout of `sha`. */
   spawnRecovery(r: { slug: string; ticket: string; sha: string; goal: string; model?: string }): Promise<SpawnResult>;
   /** Starts the new agent that takes the ticket over: `from`'s worktree goes, the new one checks out `from`'s branch. */

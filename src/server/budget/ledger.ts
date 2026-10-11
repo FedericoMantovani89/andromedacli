@@ -26,21 +26,21 @@ type Total = { tokens: number; turns: number };
 const scopedKey = (agent: string, s: LedgerScope): string => JSON.stringify([s.project, normaliseRoot(s.root), agent]);
 const anyKey = (agent: string): string => JSON.stringify([agent]);
 
+/** Adds one turn to the totals of its agent, and of its agent within its project when the line says which. */
+function tally(index: Map<string, Total>, e: LedgerEntry): void {
+  const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.project === 'string' ? [scopedKey(e.agent, { project: e.project, root: e.root })] : [])];
+  for (const k of keys) {
+    const t = index.get(k) ?? { tokens: 0, turns: 0 };
+    index.set(k, { tokens: t.tokens + budgetTokens(e), turns: t.turns + 1 });
+  }
+}
+
 /** One JSONL file per month, one line per turn, never rewritten (SPEC 16.6). Values are per turn, so a restart zeroes nothing. */
 export class Ledger {
   /** Totals per agent (unscoped) and per scope + agent: read from the files once, then kept up to date by `append`. */
   private index: Map<string, Total> | undefined;
 
   constructor(private readonly dir: string, private readonly now: () => Date = () => new Date()) {}
-
-  private add(e: LedgerEntry): void {
-    const index = this.index!;
-    const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.project === 'string' ? [scopedKey(e.agent, { project: e.project, root: e.root })] : [])];
-    for (const k of keys) {
-      const t = index.get(k) ?? { tokens: 0, turns: 0 };
-      index.set(k, { tokens: t.tokens + budgetTokens(e), turns: t.turns + 1 });
-    }
-  }
 
   append(e: LedgerEntry): void {
     mkdirSync(this.dir, { recursive: true });
@@ -66,7 +66,7 @@ export class Ledger {
     }
 
     appendFileSync(path, `${JSON.stringify(e)}\n`, 'utf8');
-    if (this.index) this.add(e); // only once the line is on disk
+    if (this.index) tally(this.index, e); // only once the line is on disk
   }
 
   /** Reads the files (every query; the totals use the in-memory index instead). With a scope only that project's lines count. */
@@ -81,13 +81,7 @@ export class Ledger {
     if (!this.index) {
       const index = new Map<string, Total>();
       // Build the map in a local variable; if readAll() throws, this.index stays undefined so the next call retries.
-      for (const e of this.readAll()) {
-        const keys = [anyKey(e.agent), ...(typeof e.root === 'string' && typeof e.project === 'string' ? [scopedKey(e.agent, { project: e.project, root: e.root })] : [])];
-        for (const k of keys) {
-          const t = index.get(k) ?? { tokens: 0, turns: 0 };
-          index.set(k, { tokens: t.tokens + budgetTokens(e), turns: t.turns + 1 });
-        }
-      }
+      for (const e of this.readAll()) tally(index, e);
       this.index = index;
     }
     return { ...(this.index.get(scope ? scopedKey(agent, scope) : anyKey(agent)) ?? { tokens: 0, turns: 0 }) };

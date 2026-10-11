@@ -3,6 +3,7 @@ import type { LoopDetector, LoopFinding } from './loop-detector';
 import type { TranscriptEvent } from './transcript';
 import { KeyedQueue } from '../keyed-queue';
 import { errorMessage } from '../../shared/guards';
+import { MainTeller } from '../main-teller';
 
 export interface LoopDeps {
   detector: LoopDetector;
@@ -31,7 +32,7 @@ export type LoopLevel = 0 | 1 | 2 | 3;
 export class LoopService {
   private readonly levels = new Map<string, LoopLevel>();
   private readonly queue = new KeyedQueue();
-  private readonly toldFailed = new Set<string>();
+  private readonly main = new MainTeller((text) => this.d.tellMain(text));
 
   constructor(private readonly d: LoopDeps) {}
 
@@ -58,10 +59,7 @@ export class LoopService {
     try {
       await fn();
     } catch (err) {
-      if (this.toldFailed.has(slug)) return;
-      this.toldFailed.add(slug);
-      const detail = errorMessage(err);
-      this.tellMainSafe(`Loop handling of "${slug}": the step "${what}" failed (${detail}).`);
+      this.main.once(slug, `Loop handling of "${slug}": the step "${what}" failed (${errorMessage(err)}).`);
     }
   }
 
@@ -88,9 +86,7 @@ export class LoopService {
   }
 
   private reportOnce(slug: string, err: unknown): void {
-    if (this.toldFailed.has(slug)) return;
-    this.toldFailed.add(slug);
-    this.tellMainSafe(`Loop handling of "${slug}" failed: ${errorMessage(err)}`);
+    this.main.once(slug, `Loop handling of "${slug}" failed: ${errorMessage(err)}`);
   }
 
   private async correct(slug: string, evidence: string): Promise<void> {
@@ -133,11 +129,11 @@ export class LoopService {
       for (const { slug, finding } of this.d.detector.tick(slugs)) {
         if (finding.signal === 'silence') {
           const alive = this.d.processAlive(slug);
-          this.tellMainSafe(alive
+          this.main.tell(alive
             ? `Agent "${slug}": ${finding.evidence}; its process is alive (probably a long tool or a wait). Nothing was done.`
             : `Agent "${slug}": ${finding.evidence}, and its process is no longer running.`);
         } else {
-          this.tellMainSafe(`Agent "${slug}": ${finding.evidence}.`);
+          this.main.tell(`Agent "${slug}": ${finding.evidence}.`);
         }
       }
     } catch (err) { this.reportOnce('all agents', err); }
@@ -147,7 +143,7 @@ export class LoopService {
   forget(slug: string): void {
     this.d.detector.forget(slug);
     this.levels.delete(slug);
-    this.toldFailed.delete(slug);
+    this.main.reset(slug);
     this.queue.forget(slug);
   }
 
@@ -159,7 +155,7 @@ export class LoopService {
   onStepDone(slug: string, o: { skipped?: boolean; empty?: boolean } = {}): void {
     if (o.skipped || o.empty) return;
     this.levels.delete(slug);
-    this.toldFailed.delete(slug);
+    this.main.reset(slug);
     try { this.d.detector.onStepDone(slug); this.d.clearRestriction(slug); this.d.changed(); } catch (err) { this.reportOnce(slug, err); }
   }
 }

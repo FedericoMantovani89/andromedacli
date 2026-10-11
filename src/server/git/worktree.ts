@@ -94,12 +94,7 @@ export function createReviewWorktree(o: { repo: string; slug: string; sha: strin
     if (!/^[0-9a-f]{7,40}$/.test(o.sha)) throw new GitError('git.badName', `invalid commit ${o.sha}`);
     const path = worktreePathFor(o.repo, o.slug, o.dir);
     if (existsSync(path)) throw new GitError('git.worktreeExists', `folder ${path} already exists`);
-    mkdirSync(dirname(path), { recursive: true });
-    const added = await git(o.repo, ['worktree', 'add', '-q', '--detach', fwd(path), o.sha]);
-    if (added.code !== 0) {
-      await removeWorktree(o.repo, path);
-      throw new GitError('git.failed', added.stderr.trim());
-    }
+    await addWorktree(o.repo, path, ['--detach', fwd(path), o.sha]);
     return { path };
   });
 }
@@ -111,6 +106,27 @@ export async function discardAgentWorktree(o: { repo: string; slug: string; bran
   try {
     rmSync(join(await commonDir(o.repo), 'console-hooks', o.slug), { recursive: true, force: true });
   } catch { /* nothing to remove */ }
+}
+
+/** `git worktree add` into `path` (whose parent folder is made first); a failure removes what it left, runs `undo` and throws. */
+async function addWorktree(repo: string, path: string, args: string[], undo?: () => Promise<unknown>): Promise<void> {
+  mkdirSync(dirname(path), { recursive: true });
+  const added = await git(repo, ['worktree', 'add', '-q', ...args]);
+  if (added.code === 0) return;
+  await removeWorktree(repo, path);
+  await undo?.();
+  throw new GitError('git.failed', added.stderr.trim());
+}
+
+/** Keeps the console's folder out of the repository's status; when that fails the new worktree goes again (and `undo` runs). */
+async function excludeOrRollback(repo: string, path: string, undo?: () => Promise<unknown>): Promise<void> {
+  try {
+    await excludeConsoleFolder(repo);
+  } catch (e) {
+    await removeWorktree(repo, path);
+    await undo?.();
+    throw new GitError('git.failed', errorMessage(e));
+  }
 }
 
 export async function removeWorktree(repo: string, path: string): Promise<void> {
@@ -137,18 +153,8 @@ async function resumeBranchWorktreeUnlocked(o: { repo: string; project: string; 
   const path = worktreePathFor(o.repo, o.slug, o.dir);
   if (existsSync(path)) throw new GitError('git.worktreeExists', `folder ${path} already exists`);
   if ((await git(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${o.branch}`])).code !== 0) throw new GitError('git.failed', `branch ${o.branch} does not exist`);
-  mkdirSync(dirname(path), { recursive: true });
-  const added = await git(o.repo, ['worktree', 'add', '-q', fwd(path), o.branch]);
-  if (added.code !== 0) {
-    await removeWorktree(o.repo, path);
-    throw new GitError('git.failed', added.stderr.trim());
-  }
-  try {
-    await excludeConsoleFolder(o.repo);
-  } catch (e) {
-    await removeWorktree(o.repo, path);
-    throw new GitError('git.failed', errorMessage(e));
-  }
+  await addWorktree(o.repo, path, [fwd(path), o.branch]);
+  await excludeOrRollback(o.repo, path);
   return { path, branch: o.branch };
 }
 
@@ -161,19 +167,8 @@ async function createAgentWorktreeUnlocked(o: { repo: string; project: string; s
   if ((await git(o.repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0) {
     throw new GitError('git.worktreeExists', `branch ${branch} already exists`);
   }
-  mkdirSync(dirname(path), { recursive: true });
-  const added = await git(o.repo, ['worktree', 'add', '-q', '-b', branch, fwd(path), project.branch]);
-  if (added.code !== 0) {
-    await removeWorktree(o.repo, path);
-    await git(o.repo, ['branch', '-D', branch]);
-    throw new GitError('git.failed', added.stderr.trim());
-  }
-  try {
-    await excludeConsoleFolder(o.repo);
-  } catch (e) {
-    await removeWorktree(o.repo, path);
-    await git(o.repo, ['branch', '-D', branch]);
-    throw new GitError('git.failed', errorMessage(e));
-  }
+  const undo = (): Promise<unknown> => git(o.repo, ['branch', '-D', branch]);
+  await addWorktree(o.repo, path, ['-b', branch, fwd(path), project.branch], undo);
+  await excludeOrRollback(o.repo, path, undo);
   return { path, branch };
 }

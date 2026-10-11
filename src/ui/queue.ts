@@ -4,7 +4,7 @@ import { keepFocus, reconcile } from './dom';
 import { createDrawerShell } from './drawer';
 import { bindText, k, setPlaceholder } from './i18n-client';
 import { infoIcon } from './info-icon';
-import { createBudgetEntry, createConfirmEntry, createDecisionEntry, createWeeklyEntry, type Entry } from './console-items';
+import { answerButton, createBudgetEntry, createConfirmEntry, createDecisionEntry, createWeeklyEntry, type Entry } from './console-items';
 
 /** The console's own decision kinds that have an entry of their own (`payload.kind`). */
 function payloadKind(item: QueueItem): unknown {
@@ -51,13 +51,7 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
     for (const value of offered) {
       const key = labels[value];
       if (!key) continue;
-      const b = document.createElement('button');
-      b.type = 'button';
-      bindText(b, key);
-      b.dataset.answer = value;
-      b.addEventListener('click', () => send(value));
-      keepFocus(b);
-      row.append(b);
+      row.append(answerButton(key, value, send));
     }
     if (offered.includes('allow_always')) row.append(infoIcon(k('queue.alwaysInfo')));
     el.append(what, detail, row);
