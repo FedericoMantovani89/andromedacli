@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { loadProfile, renderAgentPrompt } from '../src/server/profiles';
+import { questionText } from '../src/server/requests/texts';
 
 const read = (f: string): string => readFileSync(join(__dirname, '..', 'prompts', f), 'utf8');
 
@@ -21,7 +22,7 @@ it('the main prompt explains the escalated requests', () => {
   const p = read('main.md');
   expect(p).toContain('mcp__console-mod__send_message');
   expect(p).toMatch(/escalated to you/);
-  expect(p).toMatch(/ask_user/);
+  expect(p).toMatch(/AskUserQuestion/);
   expect(p).toMatch(/list_agents also lists the requests you still have to answer/);
 });
 it('only an author session gets the request rules; the reviewer and the recovery prompts do not', () => {
@@ -34,4 +35,14 @@ it('only an author session gets the request rules; the reviewer and the recovery
   expect(author).toContain('select:mcp__console-mod__send_message');
   expect(render('reviewer', 'review-fix-login', { review: true })).not.toContain('send_message');
   expect(render('recovery', 'recover-x', { recovery: true })).not.toContain('send_message');
+});
+
+it('an agent that writes the work is told to ask the main, a reviewer keeps the queue, and the main is told to relay the question as written', () => {
+  const tmp = (): string => mkdtempSync(join(tmpdir(), 'req-prompts-'));
+  const render = (flags: { review?: boolean }): string =>
+    readFileSync(renderAgentPrompt({ profile: loadProfile('developer', tmp(), tmp())!, slug: 'fix-login', project: 'shop-api', outDir: tmp(), ...flags }), 'utf8');
+  expect(render({})).toMatch(/AskUserQuestion is refused to you.*named "shop-api".*to: "shop-api"/);
+  expect(render({ review: true })).toMatch(/in its queue/);
+  expect(questionText({ id: 'TODO-aaaaaa', from: 'fix-login', text: 'Pasta or pizza?', toMain: true })).toMatch(/AskUserQuestion exactly as written/);
+  expect(questionText({ id: 'TODO-aaaaaa', from: 'fix-login', text: 'x' })).not.toMatch(/AskUserQuestion/);
 });

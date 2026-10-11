@@ -247,7 +247,8 @@ export class ReleaseService {
         const undone = await this.undo(root, before);
         return { code: 'release.conflict', text: `the project branch does not merge cleanly into ${target}.${undone ? ' Nothing was pushed and the checkout was left as it was.' : ` Your own edits made it impossible to undo completely: check ${target}.`}` };
       }
-      const command = this.d.testCommand()?.trim();
+      // A fast-forward leaves the target with exactly the tree the proposal already tested on this tip: only a real merge is new code to test.
+      const command = fastForward ? undefined : this.d.testCommand()?.trim();
       if (command) {
         const run = await (this.d.runTests ?? runDirect)({ cwd: root, command, timeoutMs: this.d.testTimeoutMs(), owner: `release:${this.d.project}` });
         if (!run.ok) {

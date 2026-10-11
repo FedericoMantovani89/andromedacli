@@ -95,10 +95,9 @@ it('a template saved from a project carries testCommands, and applying and copyi
   expect(new ProjectStore(third).project.testCommands).toBeUndefined(); // the two end up alike
 });
 
-it('package.json defines test:ticket and test:smoke, and neither writes the commit-gate stamp', () => {
+it('package.json defines test:ticket and test:smoke', () => {
   const scripts = JSON.parse(readFileSync(join(dirname(import.meta.dirname), 'package.json'), 'utf8')).scripts as Record<string, string>;
   expect(scripts['test:ticket']).toBe('npm run check && vitest run --changed project/multiconsole --passWithNoTests');
   expect(scripts['test:smoke']).toMatch(/^npm run check && vitest run /);
   for (const f of ['server', 'merge-ticket', 'spawn', 'pty-manager', 'git-worktree', 'v1', 'i18n-checks']) expect(scripts['test:smoke']).toContain(`test/${f}.test.ts`);
-  for (const k of ['test:ticket', 'test:smoke']) expect(scripts[k]).not.toMatch(/stamp/);
 });

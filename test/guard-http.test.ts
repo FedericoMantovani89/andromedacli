@@ -137,7 +137,7 @@ it('a repository with no .gitignore: the main is told once to ask the user, the 
   const prompts = join(t.repo, '.andromedacli', 'state', 'prompts');
   const main = readFileSync(join(prompts, 'main-shop-api.md'), 'utf8');
   expect(main).toContain('No .gitignore was found in: the project folder.');
-  expect(main).toContain('ask_user');
+  expect(main).toContain('AskUserQuestion');
   await spawn(s, 'first-job');
   expect(readFileSync(join(prompts, 'agent-first-job.md'), 'utf8')).toContain('This repository has no .gitignore.');
   // the question is asked once per repository: a second main prompt of the same project does not repeat it

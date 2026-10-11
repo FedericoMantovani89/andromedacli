@@ -55,7 +55,7 @@ function startInboxPoll($) {
 }
 
 const TOOLS_BY_ROLE = {
-  main: ['spawn_agent', 'list_agents', 'ask_user', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup'],
+  main: ['spawn_agent', 'list_agents', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup'],
   agent: ['list_agents', 'send_message', 'checklist_set', 'step_done', 'report_blocked'],
   reviewer: ['list_agents', 'review_verdict'],
   recovery: ['list_agents', 'recovery_report'],
@@ -338,9 +338,15 @@ async function onConsoleTool($, name, e) {
   }
 }
 
-/** An agent's native AskUserQuestion goes to the console queue instead of a dialog nobody is watching. */
+/**
+ * An agent never asks the human itself: its question goes to the main (send_message), which shows it with its own native dialog, so it
+ * can be answered from Remote Control too. Other sessions (reviewer, recovery) still go to the console queue instead of a dialog nobody watches.
+ */
 async function onNativeQuestion($, e, next) {
   try {
+    if (ctx && ctx.role === 'agent') {
+      return { deny: 'You cannot ask the user directly. Ask the main session instead: mcp__console-mod__send_message {type: "question", to: <the main, see list_agents>, text} with the question and, if it has fixed choices, every option written out; the answer arrives later as a message.' };
+    }
     if (!ctx || ctx.role === 'main' || !Array.isArray(e.questions) || e.questions.length === 0) return next(e);
     const answers = {};
     for (const q of e.questions) {

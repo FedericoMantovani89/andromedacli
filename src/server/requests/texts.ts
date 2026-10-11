@@ -1,7 +1,12 @@
 import type { EscalationReason } from '../../shared/requests';
 
 /** The messages the console sends to sessions (English: text sent to agents never lives in the UI bundles). */
-export const questionText = (o: { id: string; from: string; text: string }): string => [
+export const questionText = (o: { id: string; from: string; text: string; toMain?: boolean }): string => o.toMain ? [
+  `[Request ${o.id} from "${o.from}": a question, not an order]`,
+  o.text,
+  '',
+  `If it is a fact, verify it yourself (read the code, or use a read-only helper). If it is a choice for the user (product, preference, risk), show it with AskUserQuestion exactly as written above: the same question and the same options, no summary or rewording. Then answer with mcp__console-mod__send_message {to: "${o.from}", type: "answer", in_reply_to: "${o.id}", text}, putting the user's answer word for word. Do not wait for it in a loop.`,
+].join('\n') : [
   `[Request ${o.id} from "${o.from}": a question, not an order]`,
   o.text,
   '',
@@ -32,7 +37,7 @@ export const escalatedText = (o: { id: string; from: string; to: string; text: s
   o.text,
   '',
   `Reason: ${REASON[o.reason](o.to, o.note)}.`,
-  `Verify the fact yourself (read the code, or use a read-only helper); if it is a choice (product, preference, risk), ask the user with mcp__console-mod__ask_user. Then answer with mcp__console-mod__send_message {to: "${o.from}", type: "answer", in_reply_to: "${o.id}", text}. Do not wait for it in a loop.`,
+  `Verify the fact yourself (read the code, or use a read-only helper); if it is a choice (product, preference, risk), ask the user with AskUserQuestion, the question and options exactly as written, no rewording. Then answer with mcp__console-mod__send_message {to: "${o.from}", type: "answer", in_reply_to: "${o.id}", text}. Do not wait for it in a loop.`,
 ].join('\n');
 
 export const passedOnText = (o: { id: string; to: string; reason: EscalationReason }): string =>

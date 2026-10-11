@@ -1,0 +1,40 @@
+# The full test suite on GitHub, so it does not have to run on a laptop: every push to main and every pull request.
+# Windows on purpose: the tests drive real node-pty children, real git and PowerShell, as the app does.
+# Same pinning and read-only token as release.yml: nothing here can write to the repository.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check (texts, literals, types)
+        run: npm run check
+
+      # `vitest run` and not `npm test`: the stamp that opens the local commit gate belongs to this machine's checkout.
+      - name: Tests
+        run: npx vitest run

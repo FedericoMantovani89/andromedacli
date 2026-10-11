@@ -41,7 +41,7 @@ it('the main prompt names every console tool by full name and says how to load t
   const dir = tmp();
   const file = renderMainPrompt({ project: 'shop-api', workLanguage: 'Italian', outDir: dir });
   const text = readFileSync(file, 'utf8');
-  for (const t of ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user']) expect(text).toContain(t);
+  for (const t of ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents']) expect(text).toContain(t);
   expect(text).toContain('ToolSearch');
   expect(text).toContain('select:');
   expect(text).toContain('Italian');
@@ -193,11 +193,11 @@ describe('a repository without a .gitignore', () => {
     expect(new GitignoreAsked(file).take(['abc-be', 'abc-docs'])).toEqual(['abc-docs']); // a new run of the console remembers too
     expect(asked.take([])).toEqual([]);
   });
-  it('the main prompt tells it to ask the user with ask_user, naming the repositories; nothing when none is missing', () => {
+  it('the main prompt tells it to ask the user with AskUserQuestion, naming the repositories; nothing when none is missing', () => {
     const out = dir();
     const text = readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out, noGitignore: ['abc-fe', ''] }), 'utf8');
     expect(text).toContain('No .gitignore was found in: abc-fe, the project folder.');
-    expect(text).toContain('ask the user with ask_user whether a .gitignore should be created');
+    expect(text).toContain('ask the user with AskUserQuestion whether a .gitignore should be created');
     expect(readFileSync(renderMainPrompt({ project: 'p', workLanguage: 'English', outDir: out, noGitignore: [] }), 'utf8')).not.toContain('.gitignore');
   });
 });

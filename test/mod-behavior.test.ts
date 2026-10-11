@@ -59,7 +59,7 @@ it('registers the tools of its role once and starts one inbox poller, even if se
   const f = fake$();
   await find('session.start')(f.$, {}, next);
   await find('session.start')(f.$, {}, next);
-  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'ask_user', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup']);
+  expect(f.registeredTools).toEqual(['spawn_agent', 'list_agents', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup']);
   expect(f.ticks).toHaveLength(1);
 });
 it('an agent gets list_agents and the ticket tools, never spawn_agent', async () => {
@@ -125,13 +125,17 @@ it('ask_user gives up with a clear message when the console stops answering, ins
   expect(created).toBe(true);
   expect(out.result).toMatch(/No answer/);
 });
-it('an agent native AskUserQuestion goes to the console; if the console is unreachable the normal dialog is left alone', async () => {
+it('an agent is refused AskUserQuestion and told to ask the main; a reviewer still goes to the console, and if it is unreachable the normal dialog is left alone', async () => {
   const { find } = await loadMod();
-  const f = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: () => new Error('down') });
+  const agent = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: () => new Error('down') });
+  await find('session.start')(agent.$, {}, next);
+  const refused = await find('tool.call', 'AskUserQuestion')(agent.$, { questions: [{ question: 'Fruit?' }] }, next);
+  expect(refused.deny).toMatch(/send_message/);
+  const f = fake$({ env: { CONSOLE_ROLE: 'reviewer', CONSOLE_AGENT: 'review-x' }, fetch: () => new Error('down') });
   await find('session.start')(f.$, {}, next);
   const e = { questions: [{ question: 'Fruit?', options: [{ label: 'Apple' }, { label: 'Pear' }] }] };
   expect(await find('tool.call', 'AskUserQuestion')(f.$, e, next)).toEqual({ next: e });
-  const answering = fake$({ env: { CONSOLE_ROLE: 'agent', CONSOLE_AGENT: 'fix-login' }, fetch: (url, init) => {
+  const answering = fake$({ env: { CONSOLE_ROLE: 'reviewer', CONSOLE_AGENT: 'review-x' }, fetch: (url, init) => {
     if (init.method === 'POST' && url.endsWith('/v1/tools/ask_user')) return { ok: true, text: JSON.stringify({ id: 'q9' }) };
     if (url.includes('/v1/questions/q9')) return { ok: true, text: JSON.stringify({ answered: true, answer: 'Pear' }) };
     return { ok: true, text: '{}' };

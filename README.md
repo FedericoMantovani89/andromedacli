@@ -14,7 +14,7 @@ One coding agent can handle a task. Several at once create a different job: who 
 
 - **See everything.** Real terminals (xterm.js) side by side, with a state dot for each agent (working, waiting for you, idle, blocked, dormant...).
 - **Isolation by default.** Every agent gets `<project>/.andromedacli/worktrees/<name>` on the branch `agent/<project>/<name>`; the console commits each checklist step, runs your tests and pushes only that branch.
-- **One queue for you.** Questions, permission prompts, merge decisions and budget decisions all arrive in a single drawer, with desktop notifications when you are away.
+- **One place to answer.** Questions from agents reach you through the main, as its own dialog, so you can answer from the Claude app over Remote Control when you are away. Merge decisions, budget decisions and the release confirmation arrive in the console's queue drawer, with desktop notifications.
 - **A brake that is not the model's good intentions.** A guard checks every file and shell tool call against explicit rules before it runs.
 - **Cost under control.** Per-agent token budgets, loop detection and subscription-limit handling (sleep until the window resets, wake only the main).
 - **Closing the tab is safe.** The server owns every process; the browser only displays. A restart brings the main and the agents back.
@@ -55,7 +55,7 @@ Useful options:
 1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.andromedacli/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and commands, detected from `pom.xml`, Gradle or `package.json`; or start from the settings of a project that is already open. A folder that is not a git repository can be initialised, or cloned from an address, in *Options → Git*. A project with no tests can switch them off (*Inhibit the tests for this project*): reports then say "not run", never "passed".
 2. **Talk to the main.** The left panel is a normal Claude Code session that knows the console's tools. Describe what you want; the main decides which jobs to start.
 3. **Agents appear on the right.** The main starts one agent per job (profile `developer` by default, any you add in *Options → Profiles*, plus the read-only `reviewer` and `recovery` that the console starts itself), or you press *new agent* yourself. Four panels fit; more collapse into bars. Agents above the active limit wait in a queue and start by themselves. An agent that has ended for good (its ticket merged, its review done) leaves the column by itself and moves to the *Archived (N)* list in the status bar, where you can bring it back; nothing is deleted. The *Archive all finished* button in that list clears every closed agent still in the column in one go, after asking.
-4. **Answer the queue.** Open the drawer with the *Queue* (bell) button (`Alt+Q`). It collects questions to you, tool permissions, merge conflicts, budget decisions and the release confirmation.
+4. **Answer.** An agent never asks you directly: it asks the main, which shows you the question (and its options) exactly as written with its own dialog, and passes your answer back; with Remote Control on, that dialog is answerable from the Claude app. The *Queue* (bell) button (`Alt+Q`) opens the drawer with what the console itself asks: merge conflicts, budget decisions, the release confirmation and, for reviewer and recovery sessions, their questions.
 5. **Review and merge.** When an agent delivers a ticket the console reruns your tests on exactly that commit (long test runs share one queue per machine, one at a time; after the merges settle it also runs the full `release` command once on `project/<name>` and, if that turns red, works out which merged ticket broke it and tells its author or asks you), a read-only reviewer reads the diff, and the main merges approved tickets one at a time into `project/<name>`. Reaching your real `main` takes one confirmation from you; the console then merges and pushes with a one-time token that the repository's pre-push hook checks.
 
 **Voice dictation.** The microphone button in the main's panel header records from your browser microphone, transcribes with Groq Whisper (the audio is sent to Groq; add your key in *Options → Secrets*, it stays on this computer and is never shown again) and, with *Send to main*, types the text into the main's input without pressing Enter: you confirm in the terminal. The text is typed as plain text, so a transcript starting with `/` or `!` is seen by the main as typed.
@@ -87,7 +87,7 @@ Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read pane
 - The server listens on **127.0.0.1 only**, with a per-start token and Host/Origin checks. Each launched session has its own token and can only call `/v1`.
 - The **guard** denies force pushes, deleting remote branches, pushing tags, writing outside the agent's worktree, reading or writing files that look like secrets, tampering with the push hook or `.git`, wide `rm`, and download-and-execute. The main is bound by the git and secret rules; the main is also refused Claude Code's built-in subagents (other than read-only lookups), so file-changing work always goes through visible console agents.
 - Reviewers and recovery agents are **read-only**, enforced by the guard.
-- `agents.bypassPermissions` is **off by default**. When you turn it on in Options, the guard is the only brake. The guard states its limits: it does not try to stop obfuscated commands.
+- `agents.bypassPermissions` is **off by default**. When you turn it on in Options, the guard is the only brake. With it off, an agent's tool permission prompts go to the queue drawer, where only the console shows them (not Remote Control); with it on there are none to answer. The guard states its limits: it does not try to stop obfuscated commands.
 - Telemetry is off. Nothing leaves your machine except what Claude Code itself sends.
 
 ## Configuration
@@ -111,8 +111,10 @@ The interface is translated through `src/i18n/messages_<lang>.properties` (Engli
 ## Development
 
 ```bash
-npm test                      # the full suite (about 10 minutes); it also leaves the stamp the commit gate looks for
-npx vitest run test/slug.test.ts
+npx vitest run test/slug.test.ts   # locally run only the tests of what you changed
+npm run test:ticket           # check, then the tests related to your diff against project/<name>
+npm run test:smoke            # check, then a fixed set of seven files (server, merge, spawn, pty, worktree, v1, i18n)
+npm test                      # the full suite (10-15 minutes): it runs on GitHub (.github/workflows/ci.yml) on every push to main and pull request
 npm run check                 # i18n parity, no literal UI text, no stray .focus(), then tsc
 npm run build                 # bundles the UI into dist/ui
 npm run shot -- --tab git     # a screenshot of the real UI from a throw-away console

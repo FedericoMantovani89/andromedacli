@@ -1,6 +1,6 @@
 // Real temporary git repositories for the Phase 3 tests (the repository path contains a space on purpose).
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,9 +21,10 @@ export const gitSync = (cwd: string, ...args: string[]): string => {
 
 export interface TestRepo { base: string; repo: string; remote: string }
 
-/** A repo with one commit on `main`, a bare `origin`, and a configured identity. */
-export function makeRepo(o: { remote?: boolean; commit?: boolean; identity?: boolean } = {}): TestRepo {
-  const base = mkdtempSync(join(tmpdir(), 'gitt-'));
+interface RepoOptions { remote?: boolean; commit?: boolean; identity?: boolean }
+
+/** Builds the repo (and its bare origin) inside `base` with real git calls: about a second, so it is done once per option set and copied. */
+function buildRepo(base: string, o: RepoOptions): { repo: string; remote: string } {
   const repo = join(base, 'my repo');
   const remote = join(base, 'remote.git');
   mkdirSync(repo);
@@ -41,6 +42,34 @@ export function makeRepo(o: { remote?: boolean; commit?: boolean; identity?: boo
     gitSync(repo, 'remote', 'add', 'origin', remote);
     if (o.commit !== false) gitSync(repo, 'push', '-q', 'origin', 'main');
   }
+  return { repo, remote };
+}
+
+/** One built repo per option set in this process (each test file runs in its own), removed when the process ends. */
+const templates = new Map<string, string>();
+
+function templateFor(o: RepoOptions): string {
+  const key = `${o.remote ? 'r' : '-'}${o.commit === false ? '-' : 'c'}${o.identity === false ? '-' : 'i'}`;
+  let dir = templates.get(key);
+  if (dir === undefined) {
+    dir = mkdtempSync(join(tmpdir(), 'gitt-template-'));
+    buildRepo(dir, o);
+    templates.set(key, dir);
+    if (templates.size === 1) process.on('exit', () => { for (const d of templates.values()) { try { rmSync(d, { recursive: true, force: true }); } catch { /* the temp cleaner gets it later */ } } });
+  }
+  return dir;
+}
+
+/**
+ * A repo with one commit on `main`, a bare `origin`, and a configured identity. It is a copy of a repo built once per option set
+ * (about 0.2 s instead of 1 s of git calls, much more under load); only `origin` has to point at the copy's own bare repo.
+ */
+export function makeRepo(o: RepoOptions = {}): TestRepo {
+  const base = mkdtempSync(join(tmpdir(), 'gitt-'));
+  cpSync(templateFor(o), base, { recursive: true });
+  const repo = join(base, 'my repo');
+  const remote = join(base, 'remote.git');
+  if (o.remote) gitSync(repo, 'remote', 'set-url', 'origin', remote);
   return { base, repo, remote };
 }
 

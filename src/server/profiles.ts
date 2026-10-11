@@ -172,8 +172,11 @@ const MAX_PROJECT_TEXT = 32 * 1024;
 function gitignoreTextForMain(repos: string[] | undefined): string | undefined {
   if (!repos || repos.length === 0) return undefined;
   const names = repos.map((r) => (r === '' ? 'the project folder' : r)).join(', ');
-  return `No .gitignore was found in: ${names}. The console commits everything that is not ignored, so dependencies and build output (node_modules, target, dist...) would end up in the agents' commits. Before the first ticket for each of them, ask the user with ask_user whether a .gitignore should be created, and suggest what fits the stack (dependencies, build output, caches, .env and editor folders). If they say yes, put "create the .gitignore" in the goal of that repository's first ticket; if they say no, do not ask again.`;
+  return `No .gitignore was found in: ${names}. The console commits everything that is not ignored, so dependencies and build output (node_modules, target, dist...) would end up in the agents' commits. Before the first ticket for each of them, ask the user with AskUserQuestion whether a .gitignore should be created, and suggest what fits the stack (dependencies, build output, caches, .env and editor folders). If they say yes, put "create the .gitignore" in the goal of that repository's first ticket; if they say no, do not ask again.`;
 }
+/** How a session reaches the human: an author asks the main (which shows it natively, so Remote Control can answer); a reviewer or recovery session has no way to the main and uses the console queue. */
+const humanViaMain = (main: string): string => `You cannot ask the human directly (AskUserQuestion is refused to you). When you need a decision, ask the main session, which is named "${main}", with mcp__console-mod__send_message {type: "question", to: "${main}", text}: write the question and, if it has fixed choices, every option, so the main can show them as they are. The answer arrives later as a message.`;
+const HUMAN_VIA_QUEUE = 'When you need a decision from the human, use the AskUserQuestion tool: the console shows the question to them in its queue and brings the answer back to you.';
 const GITIGNORE_AGENT = 'This repository has no .gitignore. Do not create or edit one unless your goal says so, and keep dependencies and build output (node_modules, target, dist...) out of your work: if they cannot be avoided, say so in the note of the documentation step so the main can ask the user.';
 
 /** A project's own text file (`.andromedacli/main.md`, `.andromedacli/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
@@ -206,7 +209,7 @@ export function renderAgentPrompt(o: { profile: Profile; slug: string; project: 
   const template = readFileSync(join(promptsDir(), 'agent.md'), 'utf8');
   const rulesFile = o.review ? 'reviewer-git.md' : o.recovery ? 'recovery-git.md' : 'agent-git.md';
   const gitRules = o.git ? fill(readFileSync(join(promptsDir(), rulesFile), 'utf8'), { worktree: o.git.worktree, branch: o.git.branch, project: o.project }) : '';
-  const text = fill(template, { slug: o.slug, project: o.project, profile: o.profile.body, git: gitRules });
+  const text = fill(template, { slug: o.slug, project: o.project, profile: o.profile.body, git: gitRules, human: o.review || o.recovery ? HUMAN_VIA_QUEUE : humanViaMain(o.project) });
   // The project's rules reach every session; the documents to update concern only the one that writes the work (not a review or a recovery).
   const docs = o.docs && o.docs.length > 0 && !o.review && !o.recovery ? `At the last step update: ${o.docs.join(', ')}.` : undefined;
   const requests = !o.review && !o.recovery ? readFileSync(join(promptsDir(), 'agent-requests.md'), 'utf8').replace(/\r\n/g, '\n').trim() : undefined;

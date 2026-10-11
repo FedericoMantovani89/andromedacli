@@ -189,6 +189,16 @@ describe('the user answers', () => {
     expect(tickets.get('a-job')!.status).toBe('merged');
     expect(main.join('\n')).toMatch(/release\.testsFailed|tests/i);
   });
+  it('a fast-forward release runs the tests once (at the proposal): the tree on main is the one already tested', async () => {
+    await mergedTicket('a-job', 'a.txt');
+    const runs = join(t.base, 'runs.log');
+    command = `node -e "require('fs').appendFileSync(process.argv[1], 'x')" "${runs.replace(/\\/g, '/')}"`;
+    await svc.proposeRelease();
+    asked[0]!.answer('approve');
+    await settled();
+    expect(remoteMain()).toBe(projectTip());
+    expect(readFileSync(runs, 'utf8')).toBe('x');
+  });
   it('a push that fails keeps the tickets merged, and a later proposal pushes without merging again', async () => {
     await mergedTicket('a-job', 'a.txt');
     await svc.proposeRelease();

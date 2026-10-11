@@ -129,7 +129,7 @@ export class RequestService {
       this.d.changed();
       return { status: 'ok', requestId: id, escalated: 'recipient_gone' };
     }
-    const messageId = this.d.push(to, questionText({ id, from, text }));
+    const messageId = this.d.push(to, questionText({ id, from, text, toMain: to === this.d.mainSlug }));
     this.d.store.update(id, { messageId, ...(to === this.d.mainSlug ? {} : { deadline: now + UNDELIVERED_FACTOR * this.d.timeoutMs() }) });
     this.d.changed();
     return { status: 'ok', requestId: id };
@@ -165,7 +165,7 @@ export class RequestService {
     if (!r) return refuse('unknown_request');
     if (r.state !== 'open') return refuse('already_closed', r.state === 'escalated' ? 'the main already has it' : undefined);
     if (from !== r.to) return refuse('not_addressee');
-    if (r.to === this.d.mainSlug) return refuse('top_of_chain', 'the main is the top of the chain: verify the fact yourself or ask the user with ask_user');
+    if (r.to === this.d.mainSlug) return refuse('top_of_chain', 'the main is the top of the chain: verify the fact yourself or ask the user with AskUserQuestion');
     this.escalate(id, reason, note);
     this.d.changed();
     return { status: 'ok' };

@@ -13,7 +13,7 @@
     "console": "tsx src/server/cli.ts",
     "dev": "tsx watch src/server/cli.ts serve",
     "build": "tsx scripts/build-ui.ts && tsc -p tsconfig.json --noEmit",
-    "test": "tsx scripts/stamp-tests.ts begin && vitest run && tsx scripts/stamp-tests.ts done",
+    "test": "vitest run",
     "test:ticket": "npm run check && vitest run --changed project/multiconsole --passWithNoTests",
     "test:smoke": "npm run check && vitest run test/server.test.ts test/merge-ticket.test.ts test/spawn.test.ts test/pty-manager.test.ts test/git-worktree.test.ts test/v1.test.ts test/i18n-checks.test.ts",
     "check": "tsx scripts/check-i18n.ts && tsx scripts/check-ui-literals.ts && tsc -p tsconfig.json --noEmit",
