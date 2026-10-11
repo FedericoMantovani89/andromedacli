@@ -2,6 +2,7 @@ import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES, type NotificationsConfig, type Not
 import type { ApiError, StateMessage } from '../shared/protocol';
 import { api } from './api';
 import { bindText, k } from './i18n-client';
+import { checkbox } from './dom';
 import { errorText } from './new-agent';
 import { FIELD_LABELS } from './options';
 import { attachClock } from './time-picker';
@@ -36,20 +37,13 @@ export function renderNotificationsTab(container: HTMLElement, state: StateMessa
   bindText(typesTitle, 'settings.notifications.types');
   box.append(typesTitle);
   for (const type of NOTIFY_TYPES) {
-    const row = document.createElement('label');
-    row.className = 'settings-switch';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.name = `type-${type}`;
+    const { row, input } = checkbox(`type-${type}`, `settings.notifications.type.${type}`);
     input.checked = config.enabled[type];
-    const text = document.createElement('span');
-    bindText(text, `settings.notifications.type.${type}`);
     input.addEventListener('change', () => {
       const wanted = input.checked;
       config.enabled[type as NotifyType] = wanted;
       save({ enabled: { [type]: wanted } });
     });
-    row.append(input, text);
     box.append(row);
   }
 

@@ -2,6 +2,7 @@ import type { BudgetConfig } from '../config';
 import type { TicketStore } from '../tickets/store';
 import type { AgentRegistry } from './registry';
 import { SESSION_ID_RE } from '../pty/claude-launch';
+import { errorMessage } from '../../shared/guards';
 
 export interface ResumeDeps {
   tickets: TicketStore;
@@ -123,7 +124,7 @@ export class ResumeService {
     try { run = this.d.wake!(name, sessionId); } catch (err) { run = Promise.reject(err); }
     void run.then(
       (r) => { if (!r.ok) this.tell(`Waking "${name}" failed (${r.code}); it stays as it was.`); },
-      (err: unknown) => this.tell(`Waking "${name}" failed (${err instanceof Error ? err.message : String(err)}); it stays as it was.`),
+      (err: unknown) => this.tell(`Waking "${name}" failed (${errorMessage(err)}); it stays as it was.`),
     ).finally(() => this.safeChanged());
   }
 
@@ -132,14 +133,14 @@ export class ResumeService {
     try {
       this.d.tickets.restart(name);
     } catch (err) {
-      this.tell(`Resuming "${name}" did not start: its ticket is no longer suspended for the usage limit (${err instanceof Error ? err.message : String(err)}).`);
+      this.tell(`Resuming "${name}" did not start: its ticket is no longer suspended for the usage limit (${errorMessage(err)}).`);
       return;
     }
     let run: Promise<{ ok: true } | { ok: false; code: string }>;
     try { run = this.d.launch(name, sessionId); } catch (err) { run = Promise.reject(err); }
     void run.then(
       (r) => { if (!r.ok) this.failed(name, r.code); },
-      (err: unknown) => this.failed(name, err instanceof Error ? err.message : String(err)),
+      (err: unknown) => this.failed(name, errorMessage(err)),
     );
   }
 

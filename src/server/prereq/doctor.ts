@@ -9,6 +9,7 @@ import { startServer } from '../index';
 import { checkBundles } from '../../shared/i18n-checks';
 import { ToastNotifier, type Notifier } from '../notify/notifier';
 import { runChecks,type CheckResult, type Runner } from './checks';
+import { errorMessage } from '../../shared/guards';
 
 export type DoctorStatus = 'ok' | 'warn' | 'fail' | 'error';
 export interface DoctorCheck { id: string; status: DoctorStatus; detail?: string; fix?: string }
@@ -85,7 +86,7 @@ export async function runDoctor(o: { configDir: string; projectRoot: string; run
   const checks: DoctorCheck[] = (await runChecks(o.run, { claudeCommand: loaded.config.claude.command })).map(fromPrereq);
 
   try { checks.push(await securitySelfTest()); }
-  catch (e) { checks.push({ id: 'server.security', status: 'error', detail: e instanceof Error ? e.message : String(e) }); }
+  catch (e) { checks.push({ id: 'server.security', status: 'error', detail: errorMessage(e) }); }
 
   const { errors } = loaded;
   checks.push(errors.length === 0
@@ -103,7 +104,7 @@ export async function runDoctor(o: { configDir: string; projectRoot: string; run
       ? { id: 'disk', status: 'ok', detail: `${Math.round(free / 1024 ** 3)} GiB free` }
       : { id: 'disk', status: 'warn', detail: `${Math.round(free / 1024 ** 2)} MiB free`, fix: 'Free some disk space: agent worktrees need room.' });
   } catch (e) {
-    checks.push({ id: 'disk', status: 'error', detail: e instanceof Error ? e.message : String(e) });
+    checks.push({ id: 'disk', status: 'error', detail: errorMessage(e) });
   }
 
   // SPEC 29.6 "Notifiche": the toast module loads. It never sends a toast.
@@ -113,7 +114,7 @@ export async function runDoctor(o: { configDir: string; projectRoot: string; run
       ? { id: 'notifications', status: 'ok' }
       : { id: 'notifications', status: 'error', detail: 'the toast module could not be loaded', fix: 'Reinstall the dependencies (npm install); the browser fallback in Options > Notifications works meanwhile.' });
   } catch (e) {
-    checks.push({ id: 'notifications', status: 'error', detail: e instanceof Error ? e.message : String(e), fix: 'Reinstall the dependencies (npm install).' });
+    checks.push({ id: 'notifications', status: 'error', detail: errorMessage(e), fix: 'Reinstall the dependencies (npm install).' });
   }
 
   return { ok: !checks.some((c) => c.status === 'fail' || c.status === 'error'), checks };

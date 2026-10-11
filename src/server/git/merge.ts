@@ -4,6 +4,7 @@ import { identityArgs } from './commit';
 import { git } from './git';
 import { commonDir, ensureProjectBranch, withRepoLock } from './worktree';
 import type { ChangedFile } from '../tickets/report';
+import { errorMessage } from '../../shared/guards';
 
 const fwd = (p: string): string => p.replace(/\\/g, '/');
 const same = (a: string, b: string): boolean => fwd(a).toLowerCase() === fwd(b).toLowerCase();
@@ -57,7 +58,7 @@ export async function ensureProjectWorktree(repo: string, project: string, dir?:
   try {
     await ensureProjectBranch(repo, project);
   } catch (e) {
-    return { ok: false, code: 'git_failed', detail: e instanceof Error ? e.message : String(e) };
+    return { ok: false, code: 'git_failed', detail: errorMessage(e) };
   }
   return withRepoLock(repo, async () => {
     const branch = `project/${project}`;

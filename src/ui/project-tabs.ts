@@ -1,5 +1,6 @@
 import type { ApiError, ProjectTab } from '../shared/protocol';
 import { api } from './api';
+import { checkbox, showDialog } from './dom';
 import { bindText } from './i18n-client';
 import { errorText } from './new-agent';
 import { closeOverlay } from './settings';
@@ -57,20 +58,9 @@ export function neighbourProject(projects: ProjectTab[], selected: string, direc
  * branches and `.andromedacli` go too and the project opens again as new). Closing the last project leaves the welcome screen, which needs a reload.
  */
 export function openCloseProjectDialog(name: string, last = false): void {
-  const overlay = document.getElementById('overlay')!;
-  const dialog = document.createElement('div');
-  dialog.className = 'dialog';
-  dialog.dataset.escape = '';
   const message = document.createElement('div');
   bindText(message, 'projects.close.confirm', { name });
-  const purgeRow = document.createElement('label');
-  purgeRow.className = 'settings-switch';
-  const purge = document.createElement('input');
-  purge.type = 'checkbox';
-  purge.name = 'purge';
-  const purgeText = document.createElement('span');
-  bindText(purgeText, 'projects.close.purge');
-  purgeRow.append(purge, purgeText);
+  const { row: purgeRow, input: purge } = checkbox('purge', 'projects.close.purge');
   const error = document.createElement('div');
   error.className = 'form-error';
   const actions = document.createElement('div');
@@ -87,7 +77,5 @@ export function openCloseProjectDialog(name: string, last = false): void {
   bindText(cancel, 'common.cancel');
   cancel.addEventListener('click', closeOverlay);
   actions.append(yes, cancel);
-  dialog.append(message, purgeRow, error, actions);
-  overlay.replaceChildren(dialog);
-  overlay.hidden = false;
+  showDialog([message, purgeRow, error, actions]);
 }

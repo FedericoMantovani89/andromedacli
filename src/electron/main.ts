@@ -9,6 +9,7 @@ import { createTranslator, type Translate } from '../shared/i18n';
 import { createShutdownGate } from './shutdown';
 import { createUpdates } from './updates';
 import { isInternalUrl } from './window';
+import { errorMessage } from '../shared/guards';
 
 // The packaged app finds its shipped folders next to the program (SPEC 33.3); in development the repository root is used.
 if (app.isPackaged) process.env.CONSOLE_APP_ROOT = join(process.resourcesPath, 'app-root');
@@ -113,7 +114,7 @@ async function start(): Promise<void> {
   } catch (e) {
     const t = translator();
     const busy = (e as NodeJS.ErrnoException).code === 'EADDRINUSE';
-    dialog.showErrorBox('AndromedaCli', busy ? t('app.portBusy', { port: PORT }) : e instanceof Error ? e.message : String(e));
+    dialog.showErrorBox('AndromedaCli', busy ? t('app.portBusy', { port: PORT }) : errorMessage(e));
     app.exit(1);
     return;
   }

@@ -1,6 +1,7 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { isObj } from '../../shared/guards';
 
 export interface UsageEvent { kind: 'usage'; messageId: string; model?: string; ts?: string; input: number; output: number; cacheCreation: number; cacheRead: number }
 export interface ToolUseEvent { kind: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
@@ -24,7 +25,6 @@ export function pickTranscript(projectsDir: string, folders: (string | undefined
 }
 export const defaultProjectsDir =(): string => join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects');
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
 
 function textOf(content: unknown): string {

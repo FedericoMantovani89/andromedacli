@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ApiError } from '../shared/protocol';
+import { isObj } from '../shared/guards';
 
 export function send(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -27,4 +28,17 @@ export function readBody(req: IncomingMessage, limit = 64 * 1024): Promise<unkno
     });
     req.on('error', reject);
   });
+}
+
+/** Reads the JSON body; on failure it answers 400 `bad_request` itself and returns undefined (a valid body is never undefined). */
+export async function readBodyOr400(req: IncomingMessage, res: ServerResponse, limit?: number): Promise<unknown> {
+  try { return await readBody(req, limit); } catch { fail(res, 400, 'bad_request'); return undefined; }
+}
+
+/** Like `readBodyOr400`, and the body must be a JSON object (not null, not an array). */
+export async function readObjectBody(req: IncomingMessage, res: ServerResponse, limit?: number): Promise<Record<string, unknown> | undefined> {
+  const body = await readBodyOr400(req, res, limit);
+  if (body === undefined) return undefined;
+  if (!isObj(body)) { fail(res, 400, 'bad_request'); return undefined; }
+  return body;
 }

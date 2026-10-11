@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, appendFileSync } from 'nod
 import { basename, dirname, join, resolve } from 'node:path';
 import { git } from './git';
 import { SLUG_RE } from '../../shared/slug';
+import { errorMessage } from '../../shared/guards';
 
 export class GitError extends Error {
   constructor(public readonly code: string, message?: string) {
@@ -146,7 +147,7 @@ async function resumeBranchWorktreeUnlocked(o: { repo: string; project: string; 
     await excludeConsoleFolder(o.repo);
   } catch (e) {
     await removeWorktree(o.repo, path);
-    throw new GitError('git.failed', e instanceof Error ? e.message : String(e));
+    throw new GitError('git.failed', errorMessage(e));
   }
   return { path, branch: o.branch };
 }
@@ -172,7 +173,7 @@ async function createAgentWorktreeUnlocked(o: { repo: string; project: string; s
   } catch (e) {
     await removeWorktree(o.repo, path);
     await git(o.repo, ['branch', '-D', branch]);
-    throw new GitError('git.failed', e instanceof Error ? e.message : String(e));
+    throw new GitError('git.failed', errorMessage(e));
   }
   return { path, branch };
 }

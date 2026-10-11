@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { defaultRunner, type Runner } from '../prereq/checks';
+import { isObj } from '../../shared/guards';
 
 /** One line of `claude plugin list --json`: a plugin installed in one scope (the same id can appear in several). */
 export interface InstalledPlugin { id: string; version?: string; scope: string; enabled: boolean; projectPath?: string }
@@ -11,8 +12,6 @@ export interface InstalledPlugin { id: string; version?: string; scope: string; 
  */
 export type PluginInstallState = 'installed' | 'project' | 'disabled' | 'other_project' | 'not_installed';
 export interface PluginStatus { state: PluginInstallState; version?: string }
-
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The valid lines of the JSON the command printed; undefined when it is not a list at all (unknown is never "not installed"). */
 export function parseInstalled(stdout: string): InstalledPlugin[] | undefined {

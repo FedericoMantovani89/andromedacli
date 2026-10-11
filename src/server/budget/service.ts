@@ -2,6 +2,8 @@ import type { BudgetConfig } from '../config';
 import type { TicketStore } from '../tickets/store';
 import { turnEntry, type Ledger, type LedgerScope } from './ledger';
 import type { ToolUseEvent, TranscriptEvent, TranscriptReader, UsageEvent } from './transcript';
+import { KeyedQueue } from '../keyed-queue';
+import { errorMessage } from '../../shared/guards';
 
 export type BudgetStep = 'ok' | 'alert' | 'limit' | 'stopped';
 const ORDER: BudgetStep[] = ['ok', 'alert', 'limit', 'stopped'];
@@ -35,7 +37,7 @@ const validLimit = (n: number): boolean => Number.isFinite(n) && n > 0;
 
 export class BudgetService {
   private ledgerWarned = false;
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly queue = new KeyedQueue();
   private readonly lastSession = new Map<string, { sessionId: string; turn: number }>();
   private readonly toldMissing = new Set<string>();
   private readonly toldFailed = new Set<string>();
@@ -49,15 +51,8 @@ export class BudgetService {
   reportFailure(slug: string, err: unknown): void {
     if (this.toldFailed.has(slug)) return;
     this.toldFailed.add(slug);
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = errorMessage(err);
     try { this.d.tellMain(`budget tracking failed for ${slug}: ${detail}`); } catch { /* nothing more can be done */ }
-  }
-
-  /** Calls for one agent run one after the other: effects never overlap and a later call sees the step the earlier one persisted. */
-  private serial<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(slug) ?? Promise.resolve()).then(fn, fn);
-    this.chains.set(slug, run.catch(() => undefined));
-    return run;
   }
 
   /** Runs one effect; a failure is told to the main (itself guarded) and the next effect still runs. */
@@ -65,7 +60,7 @@ export class BudgetService {
     try {
       await fn();
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = errorMessage(err);
       try { this.d.tellMain(`Budget handling of "${slug}": the step "${what}" failed (${detail}).`); } catch { /* nothing more can be done */ }
     }
   }
@@ -113,7 +108,7 @@ export class BudgetService {
 
   /** Never rejects: a failure is told to the main once (`reportFailure`). */
   onTurnComplete(slug: string, session: { sessionId: string; turn: number }): Promise<TranscriptEvent[]> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       if (!this.d.tickets.get(slug)?.budget) return [];
       this.lastSession.set(slug, session);
       const events = this.readAndAppend(slug, session, true);
@@ -128,7 +123,7 @@ export class BudgetService {
     try { all = this.d.tickets.list(); } catch (err) { this.reportFailure('all agents', err); return; }
     for (const t of all) {
       if (t.budget?.step === 'limit' && t.status === 'in_progress' && this.d.isLive(t.slug)) {
-        await this.serial(t.slug, () => this.advance(t.slug)).catch((err) => this.reportFailure(t.slug, err));
+        await this.queue.run(t.slug, () => this.advance(t.slug)).catch((err) => this.reportFailure(t.slug, err));
       }
     }
   }
@@ -194,7 +189,7 @@ export class BudgetService {
       const r = await this.d.wipCommit(slug, reason);
       return r.ok ? { ok: true } : { ok: false, detail: r.detail };
     } catch (err) {
-      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+      return { ok: false, detail: errorMessage(err) };
     }
   }
 

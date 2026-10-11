@@ -1,5 +1,6 @@
 import type { ApiError } from '../shared/protocol';
 import { api } from './api';
+import { showDialog } from './dom';
 import { bindText, k } from './i18n-client';
 import { errorText } from './new-agent';
 import { closeOverlay } from './settings';
@@ -11,17 +12,11 @@ import { closeOverlay } from './settings';
  * from the system, so that needs the console itself started again from a new terminal.
  */
 export function openRestartDialog(): void {
-  const overlay = document.getElementById('overlay')!;
-  const dialog = document.createElement('div');
-  dialog.className = 'dialog restart-dialog';
-  dialog.dataset.escape = '';
   const title = document.createElement('h2');
   bindText(title, 'options.restart.title');
-  dialog.append(title);
   const note = document.createElement('p');
   note.className = 'settings-note';
   bindText(note, k('options.restart.settings'));
-  dialog.append(note);
   const question = document.createElement('p');
   bindText(question, 'options.restart.question');
   const error = document.createElement('div');
@@ -50,7 +45,5 @@ export function openRestartDialog(): void {
     }, () => { location.reload(); }); // the connection dropped while the sessions were restarting: the page loads again
   });
   actions.append(no, yes);
-  dialog.append(question, error, actions);
-  overlay.replaceChildren(dialog);
-  overlay.hidden = false;
+  showDialog([title, note, question, error, actions], 'restart-dialog');
 }

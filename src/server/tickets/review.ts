@@ -4,6 +4,7 @@ import { changedFiles } from '../git/merge';
 import { buildReport, isDocFile, writeReport, type ChangedFile } from './report';
 import type { ReviewNote, Ticket, TicketStore, Verdict } from './store';
 import { runDirect, type TestRunner } from './test-queue';
+import { KeyedQueue } from '../keyed-queue';
 
 export const MAX_REWORK_ROUNDS = 2;
 
@@ -138,15 +139,9 @@ const noteLines = (notes: ReviewNote[]): string[] => notes.map((n, i) => `${i + 
  * Everything that changes a ticket happens here, one call at a time per ticket.
  */
 export class ReviewService {
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly queue = new KeyedQueue();
 
   constructor(private readonly d: ReviewDeps) {}
-
-  private serial<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(slug) ?? Promise.resolve()).then(fn, fn);
-    this.chains.set(slug, run.catch(() => undefined));
-    return run;
-  }
 
   async ticketReport(slug: string, o: { rerun?: boolean } = {}): Promise<TicketReportResult> {
     const ticket = this.d.tickets.get(slug);
@@ -196,7 +191,7 @@ export class ReviewService {
    * reviewer is started. A refused start leaves the ticket delivered, so the main can try again.
    */
   requestReview(slug: string, o: { model?: string } = {}): Promise<RequestReviewResult> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       const ticket = this.d.tickets.get(slug);
       if (!ticket || ticket.status !== 'delivered' || !ticket.deliveredSha) return { ok: false, code: 'not_delivered' };
       const report = await this.ticketReport(slug);
@@ -234,7 +229,7 @@ export class ReviewService {
 
   /** The main's own check (SPEC 15.2) found the work does not answer the objective: back to the author, no reviewer needed. */
   sendBack(slug: string, note: string): Promise<{ ok: true; status: 'sent_back'; round: number } | { ok: true; status: 'needs_user' } | { ok: false; code: 'not_delivered' | 'notes_required' }> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       const ticket = this.d.tickets.get(slug);
       if (!ticket || ticket.status !== 'delivered') return { ok: false, code: 'not_delivered' } as const;
       const notes = normalizeNotes([{ severity: 'high', text: note }]) ?? [];
@@ -255,7 +250,7 @@ export class ReviewService {
     if (!notes) return { ok: false, code: 'bad_request' };
     if (!b.pass && notes.length === 0) return { ok: false, code: 'notes_required' };
 
-    return this.serial(found.slug, async () => {
+    return this.queue.run(found.slug, async () => {
       const ticket = this.d.tickets.get(found.slug);
       if (!ticket || ticket.status !== 'in_review' || ticket.reviewer !== reviewer) return { ok: false, code: 'not_reviewer' } as const;
       this.d.endReviewer(reviewer);

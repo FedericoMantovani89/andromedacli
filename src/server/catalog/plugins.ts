@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { mergeById, readShipped, RemoteCatalog, type CatalogSource, type TextFetcher } from './remote';
 import type { Config } from '../config';
+import { isObj } from '../../shared/guards';
 
 export const PLUGIN_TIERS = ['recommended', 'on_request', 'discouraged'] as const;
 export const PLUGIN_TRUSTS = ['official', 'community', 'demonstrative', 'unverified'] as const;
@@ -28,8 +29,6 @@ export interface PluginsDoc { schema: 1; updated?: string; marketplaces: (Market
 
 const str = (v: unknown, max = 400): v is string => typeof v === 'string' && v.trim() !== '' && v.length <= max;
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => str(x, 100)) : []);
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
 function perLanguage(v: unknown): PerLanguage | undefined {
   if (!isObj(v) || !str(v.en)) return undefined;
   const out: Record<string, string> = {};

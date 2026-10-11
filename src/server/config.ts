@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 import { DEFAULT_SECRET_PATTERNS } from './git/secrets';
 import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES, type NotificationsConfig } from '../shared/notify';
+import { isObj } from '../shared/guards';
 
 /** "auto" or a language code that has a bundle (checked against the bundles by the server). */
 export type Language = string;
@@ -85,8 +86,6 @@ export const isCatalogUrl = (v: unknown): v is string => {
   return u.protocol === 'https:' || (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost'));
 };
 const isCacheHours = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 168; // CONFIG_RANGES holds the same limits for the error text
-
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** SPEC 29.7: an invalid entry never blocks the console; the default is used and the error is reported. */
 export function loadConfig(path: string): { config: Config; errors: ConfigError[] } {

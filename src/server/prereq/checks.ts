@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { errorMessage } from '../../shared/guards';
 
 /** `restart`: installed where the installer puts it, but this process does not see it (Windows gives a program the PATH it started with). */
 export type CheckStatus = 'ok' | 'outdated' | 'missing' | 'error' | 'not_required' | 'restart';
@@ -98,7 +99,7 @@ async function check(
       }
       return { ...base, status: 'missing' };
     }
-    return { ...base, status: 'error', message: e instanceof Error ? e.message : String(e) };
+    return { ...base, status: 'error', message: errorMessage(e) };
   }
 }
 

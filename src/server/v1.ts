@@ -3,7 +3,7 @@ import type { Inbox } from './agents/inbox';
 import type { AgentRegistry, Role } from './agents/registry';
 import type { ModEvent } from '../shared/activity';
 import { extractToken, type SessionTokens } from './security';
-import { fail, readBody, send } from './http-util';
+import { fail, readBodyOr400, readObjectBody, send } from './http-util';
 import type { QuestionQueue } from './questions/queue';
 
 export type ToolHandler = (slug: string, body: unknown) => Promise<unknown>;
@@ -65,9 +65,9 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
   const path = url.pathname;
 
   if (req.method === 'POST' && path === '/v1/events') {
-    let body: unknown;
     // turn.complete carries the whole final answer: allow well above the 200 KiB the reading store keeps (JSON escaping adds more).
-    try { body = await readBody(req, 2 * 1024 * 1024); } catch { return fail(res, 400, 'bad_request'); }
+    const body = await readBodyOr400(req, res, 2 * 1024 * 1024);
+    if (body === undefined) return;
     const b = (typeof body === 'object' && body !== null ? body : {}) as { type?: unknown; sessionId?: unknown; data?: unknown };
     if (!EVENT_TYPES.includes(b.type as ModEvent['type']) || typeof b.sessionId !== 'string') return fail(res, 400, 'bad_request');
     const data = typeof b.data === 'object' && b.data !== null ? (b.data as Record<string, unknown>) : undefined;
@@ -80,8 +80,8 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
   if (req.method === 'GET' && path === '/v1/inbox') return send(res, 200, { messages: ctx.inbox.pending(slug) });
 
   if (req.method === 'POST' && path === '/v1/guard') {
-    let body: unknown;
-    try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+    const body = await readBodyOr400(req, res);
+    if (body === undefined) return;
     const b = (typeof body === 'object' && body !== null ? body : {}) as { tool?: unknown; input?: unknown };
     if (typeof b.tool !== 'string' || typeof b.input !== 'object' || b.input === null || Array.isArray(b.input)) return fail(res, 400, 'bad_request');
     try { ctx.activity?.(slug); } catch { /* bookkeeping must not change the verdict */ }
@@ -93,8 +93,8 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
   }
 
   if (req.method === 'POST' && path === '/v1/ack') {
-    let body: unknown;
-    try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+    const body = await readBodyOr400(req, res);
+    if (body === undefined) return;
     const id = (body as { id?: unknown } | null)?.id;
     if (typeof id !== 'string' || !ctx.inbox.ack(slug, id)) return fail(res, 404, 'not_found');
     res.writeHead(204);
@@ -118,8 +118,8 @@ export async function handleV1(ctx: V1Context, req: IncomingMessage, res: Server
     if (!role || !allowed.includes(role)) return fail(res, 403, 'forbidden');
     const handler = ctx.tools[name];
     if (!handler) return fail(res, 404, 'not_found');
-    let body: unknown;
-    try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+    const body = await readBodyOr400(req, res);
+    if (body === undefined) return;
     try { ctx.activity?.(slug); } catch { /* bookkeeping must not change the answer */ }
     try {
       const result = await handler(slug, body);

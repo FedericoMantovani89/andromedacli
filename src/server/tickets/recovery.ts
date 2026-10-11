@@ -4,6 +4,8 @@ import { git } from '../git/git';
 import { canMove } from './flow';
 import type { Ticket, TicketStore } from './store';
 import { runDirect, type TestRunner } from './test-queue';
+import { KeyedQueue } from '../keyed-queue';
+import { errorMessage } from '../../shared/guards';
 
 export const MAX_RECOVERIES = 2;
 export const REMEDIES = ['split', 'exclude_paths', 'change_model', 'remove_obstacle', 'raise_budget'] as const;
@@ -245,23 +247,17 @@ function parseReport(body: unknown): RecoveryReport | undefined {
  * Everything that changes a ticket happens here, one call at a time per ticket.
  */
 export class RecoveryService {
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly queue = new KeyedQueue();
   /** Running recoveries: session name -> the ticket and the status it was stopped in. In memory: a resumed console is Phase 6. */
   private readonly active = new Map<string, { ticket: string; stopStatus: StopStatus }>();
 
   constructor(private readonly d: RecoveryDeps) {}
 
-  private serial<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(slug) ?? Promise.resolve()).then(fn, fn);
-    this.chains.set(slug, run.catch(() => undefined));
-    return run;
-  }
-
   /** The ticket a recovery session works on, or undefined for any other session. */
   ticketOf(recovery: string): string | undefined { return this.active.get(recovery)?.ticket; }
 
   start(ticket: string): Promise<StartRecoveryResult> {
-    return this.serial(ticket, async (): Promise<StartRecoveryResult> => {
+    return this.queue.run(ticket, async (): Promise<StartRecoveryResult> => {
       const t = this.d.tickets.get(ticket);
       if (!t || !STOPPED.includes(t.status)) return { ok: false, code: 'not_stopped' };
       if (t.recoveries >= MAX_RECOVERIES) {
@@ -301,7 +297,7 @@ export class RecoveryService {
     if (!report) return { ok: false, code: 'bad_request' };
     let accepted = false;
     try {
-      return await this.serial(entry.ticket, async (): Promise<RecoveryReportResult> => {
+      return await this.queue.run(entry.ticket, async (): Promise<RecoveryReportResult> => {
         const t = this.d.tickets.get(entry.ticket);
         if (this.active.get(slug) !== entry || !t || t.status !== 'recovering') return { ok: false, code: 'not_recovery' };
         this.active.delete(slug);
@@ -367,7 +363,7 @@ export class RecoveryService {
    * waiting for that answer (recovering, no session) moves.
    */
   private userDecided(ticket: string, answer: string, report: RecoveryReport): Promise<void> {
-    return this.serial(ticket, async () => {
+    return this.queue.run(ticket, async () => {
       const t = this.d.tickets.get(ticket);
       if (!t || t.status !== 'recovering' || [...this.active.values()].some((a) => a.ticket === ticket)) return;
       if (report.remedy === 'change_model') {
@@ -401,7 +397,7 @@ export class RecoveryService {
 
   /** A stopped ticket restarted directly, without a recovery (the user raised its budget): a new agent on the same branch. */
   restart(ticket: string, o: { limit: number }): Promise<RestartResult> {
-    return this.serial(ticket, async (): Promise<RestartResult> => {
+    return this.queue.run(ticket, async (): Promise<RestartResult> => {
       const t = this.d.tickets.get(ticket);
       if (!t || !STOPPED.includes(t.status)) return { ok: false, code: 'not_stopped' };
       return this.replace(ticket, { limit: o.limit });
@@ -431,7 +427,7 @@ export class RecoveryService {
     try {
       started = await this.d.spawnReplacement({ slug: to, profile, goal, from, ...(limit !== undefined ? { budget: limit } : {}) });
     } catch (e) {
-      started = { ok: false, code: 'spawn_failed', detail: e instanceof Error ? e.message : String(e) };
+      started = { ok: false, code: 'spawn_failed', detail: errorMessage(e) };
     }
     if (!started.ok) {
       this.d.tickets.rename(to, from);

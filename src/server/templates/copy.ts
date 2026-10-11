@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_FIELDS, ProjectStore } from '../project-store';
 import { PROFILE_FILE_RE } from '../../shared/slug';
+import { errorMessage } from '../../shared/guards';
 
 
 export type CopyResult = { ok: true } | { ok: false; code: string; detail?: string };
@@ -34,7 +35,7 @@ export function copyProjectSettings(fromRoot: string, toRoot: string, toName: st
     to.setTestsDisabled(source.testsDisabled === true);
     return { ok: true };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
     return { ok: false, code: message.startsWith('project.') ? message.split(':')[0]! : 'project.notFound', detail: message };
   }
 }

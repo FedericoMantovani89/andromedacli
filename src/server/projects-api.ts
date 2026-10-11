@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isAbsolute } from 'node:path';
 import type { ProjectTab } from '../shared/protocol';
 import type { Context, HostContext } from './http';
-import { fail, readBody, send } from './http-util';
+import { fail, readBodyOr400, readObjectBody, send } from './http-util';
 
 /** What `POST /api/projects` accepts (SPEC 5.1): a folder, optionally a name, a template and the project's commands. */
 export interface AddProjectOptions {
@@ -26,6 +26,12 @@ export class ProjectError extends Error {
   }
 }
 
+/** Answers a caught error: a `ProjectError` with its own status and code, anything else as `internal`. */
+export function failProject(res: ServerResponse, e: unknown): void {
+  if (e instanceof ProjectError) return fail(res, e.httpStatus, e.code, e.params);
+  return fail(res, 500, 'internal');
+}
+
 /** The console-wide list of projects, reached from every project's Context (the host owns the runtimes). */
 export interface ProjectsApi {
   list(): ProjectTab[];
@@ -47,10 +53,8 @@ const optString = (v: unknown): string | undefined | null => (v === undefined ? 
 export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | 'ensurePrereq'>, req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
   const projects = host.projects;
   if (req.method === 'POST' && path === '/api/projects') {
-    let body: unknown;
-    try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
-    const b = body as Record<string, unknown>;
+    const b = await readObjectBody(req, res);
+    if (!b) return;
     if (typeof b.root !== 'string' || b.root.trim() === '') return fail(res, 400, 'bad_request');
     const build = optString(b.build), test = optString(b.test), lint = optString(b.lint);
     if (build === null || test === null || lint === null) return fail(res, 400, 'bad_request');
@@ -71,8 +75,7 @@ export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | '
       });
       return send(res, 201, out);
     } catch (e) {
-      if (e instanceof ProjectError) return fail(res, e.httpStatus, e.code, e.params);
-      return fail(res, 500, 'internal');
+      return failProject(res, e);
     }
   }
   const one = /^\/api\/projects\/([^/]+)$/.exec(path);
@@ -83,8 +86,7 @@ export async function handleProjectsRoute(host: Pick<HostContext, 'projects' | '
       await projects.close(name, new URL(req.url ?? '/', 'http://x').searchParams.get('purge') === '1');
       return send(res, 200, { name });
     } catch (e) {
-      if (e instanceof ProjectError) return fail(res, e.httpStatus, e.code, e.params);
-      return fail(res, 500, 'internal');
+      return failProject(res, e);
     }
   }
   return fail(res, 404, 'not_found');

@@ -77,6 +77,7 @@ import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
+import { errorMessage } from '../shared/guards';
 
 export interface StartOptions {
   port: number;
@@ -1289,7 +1290,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       try {
         await purgeProject({ projectRoot: rt.root, project: rt.name, slugs: records.map((a) => a.slug), worktrees: records.flatMap((a) => (a.worktree ? [a.worktree] : [])) });
       } catch (e) {
-        console.warn(`console: the data of the project "${name}" could not be removed completely: ${e instanceof Error ? e.message : String(e)}`);
+        console.warn(`console: the data of the project "${name}" could not be removed completely: ${errorMessage(e)}`);
       }
     }
     ws.closeProject(name);
@@ -1349,7 +1350,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
       if (runtimes.some((r) => r.name === rt.name)) { await rt.close(); continue; }
       runtimes.push(rt);
     } catch (e) {
-      console.warn(`console: the project "${p.name}" could not be opened: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(`console: the project "${p.name}" could not be opened: ${errorMessage(e)}`);
     }
   }
   persistProjects();

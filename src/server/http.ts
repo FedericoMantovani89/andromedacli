@@ -16,7 +16,7 @@ import type { NotificationService } from './notify/service';
 import { describeProfiles, listProfileNames, loadProfile, pickableProfiles, removeUserProfile, restoreShippedProfiles, saveUserProfile, validateProfileInput } from './profiles';
 import type { ModelCatalog } from './catalog/models';
 import type { PluginCatalog } from './catalog/plugins';
-import { fail, readBody, send } from './http-util';
+import { fail, readBodyOr400, readObjectBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
 import { archiveAgent, archiveFinished, unarchiveAgent } from './agents/archive';
 import { spawnAgent } from './agents/spawn';
@@ -45,7 +45,7 @@ import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
 import { handleDictationRoute } from './dictation-api';
 import { typeIntoSession } from './dictation';
-import { handleProjectsRoute, ProjectError, type ProjectsApi } from './projects-api';
+import { failProject, handleProjectsRoute, type ProjectsApi } from './projects-api';
 
 /** Finds the project a request or socket asked for with `?project=<name>`; no name means the first project; undefined when it is not open. */
 export type ProjectResolver = (name?: string) => Context | undefined;
@@ -338,8 +338,7 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
         await host.projects.restart();
         return send(res, 200, {});
       } catch (e) {
-        if (e instanceof ProjectError) return fail(res, e.httpStatus, e.code, e.params);
-        return fail(res, 500, 'internal');
+        return failProject(res, e);
       }
     }
     // What the console knows without any project: the welcome screen asks this before anything else.
@@ -382,8 +381,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
 
     // Types text into the main's input without pressing Enter (the voice dictation's "Send to main"): the user confirms in the terminal.
     if (req.method === 'POST' && path === '/api/main/input') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const text = typeof body === 'object' && body !== null ? (body as { text?: unknown }).text : undefined;
       if (typeof text !== 'string') return fail(res, 400, 'bad_request');
       const typed = typeIntoSession(ctx.ptys, ctx.projectName, text);
@@ -391,8 +390,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     }
 
     if (req.method === 'POST' && path === '/api/agents') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const b = (typeof body === 'object' && body !== null ? body : {}) as { slug?: unknown; profile?: unknown; repo?: unknown };
       // The UI button (a user) and the main's spawn_agent tool share one flow: validation, name reservation, limits.
       const out = await spawnAgent(ctx, { slug: String(b.slug ?? ''), profile: String(b.profile ?? ''), source: 'user', ...(typeof b.repo === 'string' ? { repo: b.repo } : {}) });
@@ -405,8 +404,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
 
     const answer = /^\/api\/queue\/([\w-]+)\/answer$/.exec(path);
     if (req.method === 'POST' && answer) {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const text = (body as { answer?: unknown } | null)?.answer;
       if (typeof text !== 'string') return fail(res, 400, 'bad_request');
       const outcome = ctx.questions.answer(answer[1]!, text);
@@ -458,8 +457,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       return d.code === 'not_found' ? fail(res, 404, 'not_found') : send(res, 200, { unavailable: d.unavailable });
     }
     if (req.method === 'POST' && install) {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const b = (typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
       const out = await ctx.installer.start(install[1]!, b);
       if (!out.ok) return fail(res, out.httpStatus, out.code, out.params);
@@ -467,8 +466,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     }
     // Phase 6B: what the user is looking at (heartbeat of the UI), and the "send a test toast" button.
     if (req.method === 'POST' && path === '/api/presence') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const report = parsePresence(body);
       if (!report) return fail(res, 400, 'bad_request');
       ctx.presence.report(report);
@@ -483,8 +482,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     }
 
     if (req.method === 'PUT' && path === '/api/config') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const b = (typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
       // The language must have a bundle (the file check alone only knows its shape); everything else is validated against the merged file.
       if ('language' in b && (typeof b.language !== 'string' || (b.language !== 'auto' && !ctx.bundles.has(b.language)))) return fail(res, 422, 'config.invalid', { path: 'language' });
@@ -523,8 +522,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     }
     const oneProfile = /^\/api\/profiles\/([a-z0-9-]+)$/.exec(path);
     if (oneProfile && req.method === 'PUT') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const checked = validateProfileInput(body);
       if (!checked.ok) return fail(res, 422, 'profile.fieldInvalid', { field: checked.field });
       if (checked.input.name !== oneProfile[1]) return fail(res, 422, 'profile.fieldInvalid', { field: 'name' });
@@ -552,10 +551,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'POST' && path === '/api/plugins/refresh') return send(res, 200, await ctx.plugins.list(ctx.getPrereq()?.find((r) => r.id === 'claude')?.version, true));
 
     if (req.method === 'PUT' && path === '/api/project') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
-      if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
-      const b = body as Record<string, unknown>;
+      const b = await readObjectBody(req, res);
+      if (!b) return;
       const hasCommand = 'testCommand' in b;
       const hasSquash = 'squash' in b;
       const hasTests = 'testsDisabled' in b;
@@ -589,10 +586,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     }
 
     if (req.method === 'POST' && path === '/api/projects/save-template') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
-      if (typeof body !== 'object' || body === null || Array.isArray(body)) return fail(res, 400, 'bad_request');
-      const b = body as { id?: unknown; name?: unknown; overwrite?: unknown };
+      const b = (await readObjectBody(req, res)) as { id?: unknown; name?: unknown; overwrite?: unknown } | undefined;
+      if (!b) return;
       let project;
       try { project = ctx.store.project; } catch { return fail(res, 422, 'template.invalid'); }
       const saved = saveTemplate({ projectRoot: ctx.projectRoot, project, configDir: dirname(ctx.configPath), id: String(b.id ?? ''), name: b.name, overwrite: b.overwrite === true });
@@ -603,8 +598,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     // Changes the template of the open project: the profiles, main.md and rules.md of the new one replace the files of the same name; the
     // commands already set stay (what the user typed beats the template's).
     if (req.method === 'POST' && path === '/api/projects/apply-template') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       if (typeof body !== 'object' || body === null || Array.isArray(body) || typeof (body as { templateId?: unknown }).templateId !== 'string') return fail(res, 400, 'bad_request');
       let current;
       try { current = ctx.store.project; } catch { return fail(res, 422, 'template.invalid'); }
@@ -620,8 +615,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
 
     // Copies the settings of another open project onto this one (profiles, rules and project.json fields; nothing of its agents or tickets).
     if (req.method === 'POST' && path === '/api/projects/copy-settings') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const from = typeof body === 'object' && body !== null ? (body as { from?: unknown }).from : undefined;
       if (typeof from !== 'string') return fail(res, 400, 'bad_request');
       const source = ctx.projects?.contexts().find((c) => c.projectName === from);
@@ -648,8 +643,8 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     // Makes the project folder a clone of a remote repository (the folder must hold nothing but the console's own files). Refused when it is
     // already a repository, or holds repositories. The address is checked first: https, ssh or git@host:path only.
     if (req.method === 'POST' && path === '/api/projects/git-clone') {
-      let body: unknown;
-      try { body = await readBody(req); } catch { return fail(res, 400, 'bad_request'); }
+      const body = await readBodyOr400(req, res);
+      if (body === undefined) return;
       const url = typeof body === 'object' && body !== null ? (body as { url?: unknown }).url : undefined;
       if (typeof url !== 'string') return fail(res, 400, 'bad_request');
       if (ctx.repos().includes('')) return fail(res, 409, 'git.alreadyRepo');

@@ -5,6 +5,7 @@ import { ProjectStore } from '../project-store';
 import { detectProject } from './detect';
 import { findTemplate } from './load';
 import { PROFILE_FILE_RE, SLUG_RE } from '../../shared/slug';
+import { errorMessage } from '../../shared/guards';
 
 export type ApplyResult = { ok: true } | { ok: false; code: string; detail?: string };
 
@@ -67,7 +68,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
     if (o.create) mkdirSync(root, { recursive: true });
     else if (!existsSync(root) || !statSync(root).isDirectory()) return { ok: false, code: 'project.badRoot' };
   } catch (e) {
-    return { ok: false, code: 'project.badRoot', detail: e instanceof Error ? e.message : String(e) };
+    return { ok: false, code: 'project.badRoot', detail: errorMessage(e) };
   }
 
   if (o.init) {
@@ -108,7 +109,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
     store.setTestCommands({ ticket: data.commands.testTicket ?? '', merge: data.commands.testMerge ?? '', release: data.commands.testRelease ?? '' });
     if (data.git.squash !== undefined) store.setSquash(data.git.squash);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
     return { ok: false, code: message.startsWith('project.') ? message.split(':')[0]! : 'project.badRoot', detail: message };
   }
   return { ok: true };

@@ -1,6 +1,8 @@
 import type { TicketStore } from '../tickets/store';
 import type { LoopDetector, LoopFinding } from './loop-detector';
 import type { TranscriptEvent } from './transcript';
+import { KeyedQueue } from '../keyed-queue';
+import { errorMessage } from '../../shared/guards';
 
 export interface LoopDeps {
   detector: LoopDetector;
@@ -28,7 +30,7 @@ export type LoopLevel = 0 | 1 | 2 | 3;
  */
 export class LoopService {
   private readonly levels = new Map<string, LoopLevel>();
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly queue = new KeyedQueue();
   private readonly toldFailed = new Set<string>();
 
   constructor(private readonly d: LoopDeps) {}
@@ -41,13 +43,6 @@ export class LoopService {
   /** Minutes of silence of an agent that is working (a waiting agent is not silent, SPEC 17.2); undefined otherwise. */
   silentFor(slug: string): number | undefined {
     try { return (this.d.isWorking ? this.d.isWorking(slug) : this.d.workingSlugs().includes(slug)) ? this.d.detector.silentMinutes(slug) : undefined; } catch { return undefined; }
-  }
-
-  /** Calls for one agent run one after the other, so effects never overlap. */
-  private serial<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(slug) ?? Promise.resolve()).then(fn, fn);
-    this.chains.set(slug, run.catch(() => undefined));
-    return run;
   }
 
   private inProgress(slug: string): boolean {
@@ -65,14 +60,14 @@ export class LoopService {
     } catch (err) {
       if (this.toldFailed.has(slug)) return;
       this.toldFailed.add(slug);
-      const detail = err instanceof Error ? err.message : String(err);
+      const detail = errorMessage(err);
       this.tellMainSafe(`Loop handling of "${slug}": the step "${what}" failed (${detail}).`);
     }
   }
 
   /** Never rejects. */
   onEvents(slug: string, events: TranscriptEvent[]): Promise<void> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       if (!this.inProgress(slug)) return;
       const findings = this.d.detector.feed(slug, events);
       const content = findings.filter((f) => !f.warnOnly);
@@ -95,7 +90,7 @@ export class LoopService {
   private reportOnce(slug: string, err: unknown): void {
     if (this.toldFailed.has(slug)) return;
     this.toldFailed.add(slug);
-    this.tellMainSafe(`Loop handling of "${slug}" failed: ${err instanceof Error ? err.message : String(err)}`);
+    this.tellMainSafe(`Loop handling of "${slug}" failed: ${errorMessage(err)}`);
   }
 
   private async correct(slug: string, evidence: string): Promise<void> {
@@ -116,7 +111,7 @@ export class LoopService {
 
   private async stopNow(slug: string, evidence: string): Promise<void> {
     let wip: { ok: true } | { ok: false; detail: string };
-    try { wip = await this.d.wipCommit(slug, 'loop stop'); } catch (err) { wip = { ok: false, detail: err instanceof Error ? err.message : String(err) }; }
+    try { wip = await this.d.wipCommit(slug, 'loop stop'); } catch (err) { wip = { ok: false, detail: errorMessage(err) }; }
     if (!wip.ok) await this.effect(slug, 'tellMain', () => this.d.tellMain(`The final WIP commit of "${slug}" failed (${wip.ok ? '' : wip.detail}); its worktree may hold uncommitted work.`));
     // Only a ticket still being written gets the loop as its cause: one the budget stopped meanwhile keeps its own.
     await this.effect(slug, 'ticket move', () => {
@@ -153,7 +148,7 @@ export class LoopService {
     this.d.detector.forget(slug);
     this.levels.delete(slug);
     this.toldFailed.delete(slug);
-    this.chains.delete(slug);
+    this.queue.forget(slug);
   }
 
   /**

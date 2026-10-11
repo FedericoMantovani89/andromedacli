@@ -1,6 +1,7 @@
 import type { QueueItem } from '../shared/protocol';
 import { api } from './api';
 import { keepFocus, reconcile } from './dom';
+import { createDrawerShell } from './drawer';
 import { bindText, k, setPlaceholder } from './i18n-client';
 import { infoIcon } from './info-icon';
 import { createBudgetEntry, createConfirmEntry, createDecisionEntry, createWeeklyEntry, type Entry } from './console-items';
@@ -114,31 +115,11 @@ function createEntry(item: QueueItem, send: (answer: string) => void): Entry {
 
 /** The question drawer. Entries are created once per question and never rebuilt, so typing survives state updates. */
 export function createQueueDrawer(root: HTMLElement) {
-  const title = document.createElement('h2');
-  bindText(title, 'queue.title');
-  const list = document.createElement('div');
-  list.className = 'queue-list';
-  const empty = document.createElement('div');
-  empty.className = 'queue-empty';
-  bindText(empty, 'queue.empty');
-  const close = document.createElement('button');
-  bindText(close, 'common.close');
-  keepFocus(close);
-  const head = document.createElement('div');
-  head.className = 'drawer-head';
-  head.append(title, close);
-  root.append(head, list, empty);
-
+  const { list, empty, setOpen, ...shell } = createDrawerShell(root, k('queue.title'), k('queue.empty'));
   const entries = new Map<string, Entry>();
-  let open = false;
-  const setOpen = (value: boolean) => { open = value; root.hidden = !value; };
-  close.addEventListener('click', () => setOpen(false));
-  setOpen(false);
 
   return {
-    isOpen: () => open,
-    toggle: () => setOpen(!open),
-    close: (): void => setOpen(false),
+    ...shell,
     /** A notification click: opens the drawer and brings that item into view (scrolling, never focus). */
     openOn(id: string): void {
       setOpen(true);

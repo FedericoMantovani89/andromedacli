@@ -10,6 +10,7 @@ import { checkSpawnable, createAgentWorktree, createReviewWorktree, discardAgent
 import { installPushHook } from '../git/hooks';
 import { repoPathOf, resolveRepo } from '../git/repos';
 import type { SpawnRequest } from './scheduler';
+import { errorMessage } from '../../shared/guards';
 
 export type SpawnOutcome =
   | { ok: true; status: 'started'; slug: string }
@@ -88,7 +89,7 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   try {
     ctx.store.addAgent({ slug: v.slug, profile: r.profile, ...(request.model ? { model: request.model } : {}) }); // reserves the name, also while it waits in the queue
   } catch (e) {
-    return refuse(500, 'agent.spawnFailed', { reason: e instanceof Error ? e.message : String(e) });
+    return refuse(500, 'agent.spawnFailed', { reason: errorMessage(e) });
   }
   ctx.registry.register({ slug: v.slug, role: roleOf(r), profile: r.profile, goal: r.goal, queued: true, readOnly: profile.readOnly });
   // The review and the report check the work against it. A replacement keeps the objective of the ticket it takes over (its goal
@@ -107,7 +108,7 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
     await undoSpawn(ctx, v.slug);
     ctx.broadcastState();
     if (e instanceof GitError && e.code !== 'git.failed') return refuse(422, e.code);
-    return refuse(500, 'agent.spawnFailed', { reason: e instanceof Error ? e.message : String(e) });
+    return refuse(500, 'agent.spawnFailed', { reason: errorMessage(e) });
   }
 }
 
@@ -179,7 +180,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
     try {
       ctx.budget.begin(r.slug, r.budget ?? profile.budgetTokens ?? projectFields.agentTokens ?? ctx.budgetConfig.agentTokens);
     } catch (e) {
-      ctx.inbox.push(ctx.projectName, `The token budget of "${r.slug}" could not be recorded (${e instanceof Error ? e.message : String(e)}); it runs without one.`);
+      ctx.inbox.push(ctx.projectName, `The token budget of "${r.slug}" could not be recorded (${errorMessage(e)}); it runs without one.`);
     }
   }
   // A resumed session keeps its context: no goal again, only the word to go on (an interactive session waits for a turn).

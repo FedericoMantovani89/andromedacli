@@ -7,6 +7,7 @@ import { findMarkers } from '../requests/markers';
 import { validateChecklist, type ChecklistError, type Step } from './checklist';
 import type { TicketStore } from './store';
 import { runDirect, type TestRunner } from './test-queue';
+import { KeyedQueue } from '../keyed-queue';
 
 export type StepRefusal =
   | 'out_of_order' | 'no_checklist' | 'no_worktree' | 'note_required' | 'secrets' | 'index_locked' | 'commit_failed'
@@ -63,20 +64,14 @@ const refuse = (code: StepRefusal, extra: Omit<Extract<StepResult, { status: 're
  * validation and pushes. Calls for one agent are serialised, so a repeated or concurrent `step_done` can never commit twice.
  */
 export class StepService {
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly queue = new KeyedQueue();
   private readonly jobs = new Map<string, StepJob>();
   private readonly unclaimed = new Map<string, { n: number; result: StepResult }>();
 
   constructor(private readonly d: StepDeps) {}
 
-  private serial<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(slug) ?? Promise.resolve()).then(fn, fn);
-    this.chains.set(slug, run.catch(() => undefined));
-    return run;
-  }
-
   checklistSet(slug: string, items: string[]): Promise<ChecklistSetResult> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       const wt = this.d.worktreeOf(slug);
       if (!wt) return { status: 'refused', code: 'no_worktree', detail: 'this agent has no worktree' };
       const ticket = this.d.tickets.get(slug);
@@ -106,7 +101,7 @@ export class StepService {
     let job = this.jobs.get(slug);
     if (!job || job.n !== o.n || opts.waitMs === undefined) { // only a bounded call joins: the unbounded one keeps the serial semantics
       const started: StepJob = { n: o.n, waiters: 0, promise: undefined as unknown as Promise<StepResult> };
-      started.promise = this.serial(slug, () => this.close(slug, o)).then(
+      started.promise = this.queue.run(slug, () => this.close(slug, o)).then(
         (r) => this.finishJob(slug, started, r),
         () => this.finishJob(slug, started, refuse('commit_failed', { detail: 'the step failed unexpectedly: try again' })),
       );
@@ -143,7 +138,7 @@ export class StepService {
 
   /** A question was sent for step `n` (SPEC 10): the step stays open and `step_done` goes past it until the answer arrives. */
   markWaiting(slug: string, n: number, w: { requestId: string; to: string }): Promise<{ ok: true } | { ok: false; detail: string }> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       const ticket = this.d.tickets.get(slug);
       if (!ticket || ticket.steps.length === 0) return { ok: false as const, detail: 'save a checklist first (checklist_set)' };
       const step = ticket.steps.find((s) => s.n === n);
@@ -161,7 +156,7 @@ export class StepService {
 
   /** The answer arrived: the step is workable again. Returns the step it was on; undefined when none waited for that request. */
   clearWaiting(slug: string, requestId: string): Promise<{ n: number; title: string } | undefined> {
-    return this.serial(slug, async () => {
+    return this.queue.run(slug, async () => {
       if (!this.d.tickets.get(slug)) return undefined;
       const r = this.d.tickets.clearWaiting(slug, requestId);
       if (!r) return undefined;

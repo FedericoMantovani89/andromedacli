@@ -1,5 +1,6 @@
 import type { ApiError } from '../shared/protocol';
 import { api } from './api';
+import { checkbox } from './dom';
 import { bindText, k, t } from './i18n-client';
 import { errorText } from './new-agent';
 import { openInstallTerminal } from './install-terminal';
@@ -81,14 +82,9 @@ export function openInstallDialog(id: string, onDone: () => void): void {
       bindText(confirm, 'prereq.install.confirm');
       let script: HTMLInputElement | undefined;
       if (body.secondConfirm) {
-        const row = document.createElement('label');
-        row.className = 'settings-switch';
-        script = document.createElement('input');
-        script.type = 'checkbox';
-        const text = document.createElement('span');
-        bindText(text, 'prereq.install.script');
-        row.append(script, text);
-        dialog.append(row);
+        const scriptBox = checkbox(undefined, 'prereq.install.script');
+        script = scriptBox.input;
+        dialog.append(scriptBox.row);
         confirm.disabled = true;
         script.addEventListener('change', () => { confirm.disabled = !script!.checked; });
       }

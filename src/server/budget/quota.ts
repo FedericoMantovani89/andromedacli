@@ -1,4 +1,5 @@
 import type { BudgetConfig } from '../config';
+import { errorMessage } from '../../shared/guards';
 
 export interface RateLimit { kind: 'five_hour' | 'seven_day' | 'spend_limit'; percentUsed: number; resetsAt?: string }
 
@@ -114,7 +115,7 @@ export class QuotaService {
   private report(key: string, err: unknown): void {
     if (this.toldFailed.has(key)) return;
     this.toldFailed.add(key);
-    try { this.d.tellMain(`Usage limit handling (${key}) failed: ${err instanceof Error ? err.message : String(err)}`); } catch { /* nothing more can be done */ }
+    try { this.d.tellMain(`Usage limit handling (${key}) failed: ${errorMessage(err)}`); } catch { /* nothing more can be done */ }
   }
 
   /** Runs one effect; a failure is told to the main once per name and the next effect still runs. */

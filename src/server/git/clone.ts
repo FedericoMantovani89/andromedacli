@@ -2,6 +2,7 @@ import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './git';
 import { initRepo } from '../templates/apply';
+import { errorMessage } from '../../shared/guards';
 
 /**
  * Only addresses a person would paste from a hosting page: https, ssh or the `git@host:path` form. No userinfo with a password (it would be
@@ -33,7 +34,7 @@ const CLONE_TIMEOUT_MS = 10 * 60_000;
  */
 export async function cloneIntoFolder(root: string, url: string, o: { timeoutMs?: number; allowLocal?: boolean } = {}): Promise<CloneResult> {
   let others: string[];
-  try { others = readdirSync(root).filter((n) => n !== '.andromedacli'); } catch (e) { return { ok: false, code: 'git.cloneFailed', detail: scrub(e instanceof Error ? e.message : String(e)) }; }
+  try { others = readdirSync(root).filter((n) => n !== '.andromedacli'); } catch (e) { return { ok: false, code: 'git.cloneFailed', detail: scrub(errorMessage(e)) }; }
   if (others.length > 0) return { ok: false, code: 'git.cloneFolderNotEmpty' };
 
   const env = { GIT_TERMINAL_PROMPT: '0' };

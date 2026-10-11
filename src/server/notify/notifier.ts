@@ -1,3 +1,4 @@
+import { errorMessage } from '../../shared/guards';
 export interface NotifierMessage { title: string; message: string; open?: string; sound: boolean }
 
 export interface Notifier {
@@ -22,7 +23,7 @@ export class ToastNotifier implements Notifier {
 
   private load(): Promise<NodeNotifier | undefined> {
     this.module ??= import('node-notifier').then((m) => (m.default ?? m) as unknown as NodeNotifier).catch((e: unknown) => {
-      this.lastError = e instanceof Error ? e.message : String(e);
+      this.lastError = errorMessage(e);
       return undefined;
     });
     return this.module;
@@ -42,7 +43,7 @@ export class ToastNotifier implements Notifier {
           done();
         });
       } catch (e) {
-        this.lastError = e instanceof Error ? e.message : String(e);
+        this.lastError = errorMessage(e);
         done();
       }
     });

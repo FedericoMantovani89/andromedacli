@@ -1,5 +1,6 @@
 import type { ApiError, StateMessage } from '../shared/protocol';
 import { api } from './api';
+import { checkbox, showDialog } from './dom';
 import { focusElementFromUser } from './focus';
 import { bindText, k } from './i18n-client';
 import { errorText } from './new-agent';
@@ -29,18 +30,6 @@ function textInput(name: string): HTMLInputElement {
   return input;
 }
 
-function checkbox(name: string, labelKey: string): { row: HTMLLabelElement; input: HTMLInputElement } {
-  const row = document.createElement('label');
-  row.className = 'settings-switch';
-  const input = document.createElement('input');
-  input.type = 'checkbox';
-  input.name = name;
-  const text = document.createElement('span');
-  bindText(text, labelKey);
-  row.append(input, text);
-  return { row, input };
-}
-
 function actions(submitKey: string, onCancel: () => void): { box: HTMLElement; submit: HTMLButtonElement } {
   const box = document.createElement('div');
   box.className = 'form-actions';
@@ -53,16 +42,6 @@ function actions(submitKey: string, onCancel: () => void): { box: HTMLElement; s
   cancel.addEventListener('click', onCancel);
   box.append(submit, cancel);
   return { box, submit };
-}
-
-function showDialog(...children: HTMLElement[]): void {
-  const overlay = document.getElementById('overlay')!;
-  const dialog = document.createElement('div');
-  dialog.className = 'dialog';
-  dialog.dataset.escape = '';
-  dialog.append(...children);
-  overlay.replaceChildren(dialog);
-  overlay.hidden = false;
 }
 
 /**
@@ -162,7 +141,7 @@ export function openNewProjectDialog(getState: () => StateMessage | undefined, o
   folderRow.className = 'folder-row';
   folderRow.append(field(k('projects.new.folder'), folder), browse);
   form.append(title, folderRow, browseNote, nameRow, ...(copyRow ? [copyRow] : []), note, error, box);
-  showDialog(form);
+  showDialog([form]);
   focusElementFromUser(folder, 'user'); // the user just clicked "new project": the cursor may go into the first field
 }
 
@@ -193,6 +172,6 @@ export function openSaveTemplateDialog(_getState: () => StateMessage | undefined
     }).finally(() => { submit.disabled = false; });
   });
   form.append(title, field(k('templates.save.id'), id), field(k('templates.save.name'), name), overwrite.row, done, error, box);
-  showDialog(form);
+  showDialog([form]);
   focusElementFromUser(id, 'user');
 }

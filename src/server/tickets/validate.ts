@@ -1,4 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
+import { errorMessage } from '../../shared/guards';
 
 export interface ValidationResult { ok: boolean; code: number | null; tail: string; timedOut?: boolean; /** Stopped (or never started) because its owner is gone. */ cancelled?: boolean }
 
@@ -30,7 +31,7 @@ export function runValidation(o: { cwd: string; command: string; timeoutMs: numb
     try {
       child = spawn(o.command, { cwd: o.cwd, shell: true, windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     } catch (e) {
-      return resolve({ ok: false, code: null, tail: e instanceof Error ? e.message : String(e) });
+      return resolve({ ok: false, code: null, tail: errorMessage(e) });
     }
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);

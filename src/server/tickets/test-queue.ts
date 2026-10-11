@@ -1,4 +1,5 @@
 import { runValidation, type ValidationResult } from './validate';
+import { errorMessage } from '../../shared/guards';
 
 /** What a test run gives back: a `cancelled` run never started or was stopped because its owner (an agent) is gone. */
 export type TestRun = ValidationResult;
@@ -35,7 +36,7 @@ export interface QueueSnapshot {
 
 interface Entry { job: TestJob; resolve(r: TestRun): void; ctl: AbortController; told?: number }
 
-const FAILED = (e: unknown): TestRun => ({ ok: false, code: null, tail: e instanceof Error ? e.message : String(e) });
+const FAILED = (e: unknown): TestRun => ({ ok: false, code: null, tail: errorMessage(e) });
 
 /**
  * One queue of long test runs for the whole machine: two full suites at once slow each other down and make timing-sensitive tests

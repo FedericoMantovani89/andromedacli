@@ -4,6 +4,7 @@ import { parseCliArgs, projectNameFromDir } from './cli-args';
 import { configDir } from './config';
 import { startServer } from './index';
 import { runDoctor } from './prereq/doctor';
+import { errorMessage } from '../shared/guards';
 
 function openBrowser(url: string): void {
   // `start` is a cmd.exe builtin; the empty string is the window title. Failure to open is not fatal.
@@ -17,7 +18,7 @@ async function main(): Promise<void> {
   try {
     args = parseCliArgs(process.argv.slice(2), process.cwd());
   } catch (e) {
-    console.error(`console: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`console: ${errorMessage(e)}`);
     process.exit(2);
   }
 
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
       console.error(`console: port ${args.port} is already in use (the port is fixed because the token is part of the URL; use --port)`);
       process.exit(2);
     }
-    console.error(`console: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`console: ${errorMessage(e)}`);
     process.exit(1);
   }
 }

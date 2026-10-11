@@ -1,5 +1,6 @@
 import type { RequestRow } from '../shared/requests';
 import { keepFocus, reconcile } from './dom';
+import { createDrawerShell } from './drawer';
 import { bindText, k } from './i18n-client';
 
 const STATE_KEYS: Record<RequestRow['state'], string> = {
@@ -46,31 +47,11 @@ function createEntry(): Entry {
 
 /** The read-only list of the requests between agents (SPEC 10): the user talks to the main, never writes a request. */
 export function createRequestsDrawer(root: HTMLElement) {
-  const title = document.createElement('h2');
-  bindText(title, 'requests.title');
-  const close = document.createElement('button');
-  bindText(close, 'common.close');
-  keepFocus(close);
-  const head = document.createElement('div');
-  head.className = 'drawer-head';
-  head.append(title, close);
-  const list = document.createElement('div');
-  list.className = 'queue-list';
-  const empty = document.createElement('div');
-  empty.className = 'queue-empty';
-  bindText(empty, 'requests.empty');
-  root.append(head, list, empty);
-
+  const { list, empty, ...shell } = createDrawerShell(root, k('requests.title'), k('requests.empty'));
   const entries = new Map<string, Entry>();
-  let open = false;
-  const setOpen = (value: boolean) => { open = value; root.hidden = !value; };
-  close.addEventListener('click', () => setOpen(false));
-  setOpen(false);
 
   return {
-    isOpen: () => open,
-    toggle: () => setOpen(!open),
-    close: (): void => setOpen(false),
+    ...shell,
     update(rows: RequestRow[]): void {
       const ids = new Set(rows.map((r) => r.id));
       for (const id of [...entries.keys()]) if (!ids.has(id)) entries.delete(id);

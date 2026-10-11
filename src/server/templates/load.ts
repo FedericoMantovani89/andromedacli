@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { resourcePath } from '../paths';
 import { isValidProjectField, isValidTestCommand } from '../project-store';
 import { SLUG_RE } from '../../shared/slug';
+import { errorMessage, isObj } from '../../shared/guards';
 
 /** Template ids are folder names: the slug rule (no separators, no traversal). */
 const MAX_JSON_BYTES = 64 * 1024;
@@ -40,7 +41,6 @@ export interface TemplateEntry {
 export const shippedTemplatesDir = (): string => resourcePath('templates');
 export const userTemplatesDir = (configDir: string): string => join(configDir, 'templates');
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const textMap = (v: unknown): Record<string, string> | undefined => {
   if (!isObj(v) || typeof v.en !== 'string' || v.en.trim() === '') return undefined;
   const out: Record<string, string> = {};
@@ -116,7 +116,7 @@ function readTemplate(dir: string, id: string, source: TemplateEntry['source']):
     if (!checked.ok) return { ...base, valid: false, reason: checked.reason };
     return { ...base, valid: true, data: checked.data, name: checked.data.name, description: checked.data.description };
   } catch (e) {
-    return { ...base, valid: false, reason: `template.json cannot be read: ${e instanceof Error ? e.message : String(e)}` };
+    return { ...base, valid: false, reason: `template.json cannot be read: ${errorMessage(e)}` };
   }
 }
 
