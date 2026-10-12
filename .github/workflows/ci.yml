@@ -43,6 +43,9 @@ jobs:
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
+          # The bundled ConPTY (node-pty's conpty.dll) is the suspect of the worker crashes and hangs on this runner: the tests use the system's.
+          # The release workflow's smoke test runs the packaged app, which uses the bundled one.
+          CONSOLE_CONPTY: system
 
   test:
     runs-on: windows-latest
@@ -91,6 +94,9 @@ jobs:
         env:
           TEMP: ${{ runner.temp }}
           TMP: ${{ runner.temp }}
+          # The bundled ConPTY (node-pty's conpty.dll) is the suspect of the worker crashes and hangs on this runner: the tests use the system's.
+          # The release workflow's smoke test runs the packaged app, which uses the bundled one.
+          CONSOLE_CONPTY: system
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
