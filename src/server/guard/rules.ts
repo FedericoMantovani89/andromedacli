@@ -65,6 +65,19 @@ function parseGit(argv: string[]): { sub: string; args: string[]; globalConfig: 
 
 const hasShort = (args: string[], letter: string): boolean => args.some((a) => /^-[A-Za-z]+$/.test(a) && a.includes(letter));
 
+/**
+ * git takes any unambiguous prefix of a long option (`--no-verif` is `--no-verify`), so the guard compares prefixes. At least three
+ * letters: `--no` and `--d` are left alone. An ambiguous prefix is refused too, which is the safe side.
+ */
+export const isLongFlag = (arg: string, name: string): boolean => {
+  if (!arg.startsWith('--')) return false;
+  const body = arg.slice(2).split('=')[0]!;
+  return body.length >= 3 && name.startsWith(body);
+};
+const hasLong = (flags: string[], ...names: string[]): boolean => flags.some((f) => names.some((n) => isLongFlag(f, n)));
+/** A short flag that git lets run together with its value (`-bnew`): true when it holds one of `letters`. */
+const anyShort = (flags: string[], letters: string): boolean => flags.some((f) => /^-[A-Za-z]/.test(f) && [...letters].some((l) => f.includes(l)));
+
 function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
   const { sub, args, globalConfig } = parseGit(argv);
   const flags = args.filter((a) => isFlag(a));
@@ -76,30 +89,30 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
   switch (sub) {
     case 'push': {
       const refspecs = positional.slice(1);
-      if (flags.some((f) => f === '--force' || f.startsWith('--force-with-lease') || f === '--mirror') || hasShort(args.filter((a) => !a.startsWith('--')), 'f') || refspecs.some((r) => r.startsWith('+'))) {
+      if (hasLong(flags, 'force', 'mirror', 'force-with-lease', 'force-if-includes') || hasShort(args.filter((a) => !a.startsWith('--')), 'f') || refspecs.some((r) => r.startsWith('+'))) {
         return deny('git.force', 'a force push is not allowed');
       }
-      if (flags.includes('--delete') || hasShort(args.filter((a) => !a.startsWith('--')), 'd') || refspecs.some((r) => r.startsWith(':'))) {
+      if (hasLong(flags, 'delete') || hasShort(args.filter((a) => !a.startsWith('--')), 'd') || refspecs.some((r) => r.startsWith(':'))) {
         return deny('git.delete-ref', 'deleting a remote branch is not allowed');
       }
-      if (flags.includes('--tags') || flags.includes('--follow-tags') || refspecs.some((r) => r.startsWith('refs/tags/') || isTag(ctx.repo, r))) {
+      if (hasLong(flags, 'tags', 'follow-tags') || refspecs.some((r) => r.startsWith('refs/tags/') || isTag(ctx.repo, r))) {
         return deny('git.tag', 'pushing tags is not allowed');
       }
       // `git push`, `git push origin`, `git push origin HEAD` and `--all` all push the checked-out branch.
       const current = ctx.role === 'main' ? headBranch(ctx.repo) : ctx.branch;
       const target = refspecs.map((r) => r.split(':').pop()!.replace(/^refs\/heads\//, '')).map((r) => (r === 'HEAD' && current ? current : r));
-      if ((refspecs.length === 0 || flags.includes('--all')) && current) target.push(current);
+      if ((refspecs.length === 0 || hasLong(flags, 'all')) && current) target.push(current);
       const bad = target.find((r) => PROTECTED_REF.test(r));
       if (bad !== undefined) return deny('git.protected-ref', `pushing to ${bad} is not allowed`);
       // A wildcard refspec can name main or a tag without saying so: it cannot be checked, so it is refused.
       if (refspecs.some((r) => r.includes('*'))) return deny('git.protected-ref', 'a wildcard refspec could push a protected branch or a tag');
-      if (flags.includes('--no-verify')) return deny('git.no-verify', 'skipping the push hook is not allowed');
+      if (hasLong(flags, 'no-verify')) return deny('git.no-verify', 'skipping the push hook is not allowed');
       return deny('git.commit-push', 'the console pushes the branch at the end of the ticket');
     }
     case 'send-pack': case 'http-push':
       return deny('git.protected-ref', `git ${sub} would push around the console push hook`);
     case 'commit':
-      if (flags.includes('--no-verify') || hasShort(args.filter((a) => !a.startsWith('--')), 'n')) return deny('git.no-verify', 'skipping hooks is not allowed');
+      if (hasLong(flags, 'no-verify') || hasShort(args.filter((a) => !a.startsWith('--')), 'n')) return deny('git.no-verify', 'skipping hooks is not allowed');
       return deny('git.commit-push', 'the console commits after each step: call step_done');
     case 'tag': {
       const readOnly = positional.length === 0 && flags.every((f) => /^(-l|--list|-n\d*|-v|--verify|--contains|--no-contains|--points-at|--sort.*|--format.*|--merged|--no-merged|--column|--no-column)$/.test(f));
@@ -107,10 +120,10 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
       return readOnly || listing ? ALLOW : deny('git.tag', 'creating or deleting tags is not allowed');
     }
     case 'branch': {
-      if (flags.some((f) => f === '--delete' || f === '-D' || f === '-d') || hasShort(args.filter((a) => !a.startsWith('--')), 'd') || hasShort(args.filter((a) => !a.startsWith('--')), 'D')) {
+      if (hasLong(flags, 'delete') || flags.some((f) => f === '-D' || f === '-d') || hasShort(args.filter((a) => !a.startsWith('--')), 'd') || hasShort(args.filter((a) => !a.startsWith('--')), 'D')) {
         return deny('git.delete-ref', 'deleting a branch is not allowed');
       }
-      if (flags.includes('--force') || hasShort(args.filter((a) => !a.startsWith('--')), 'f')) return deny('git.force', 'moving a branch with force is not allowed');
+      if (hasLong(flags, 'force') || hasShort(args.filter((a) => !a.startsWith('--')), 'f')) return deny('git.force', 'moving a branch with force is not allowed');
       const listing = flags.some((f) => /^(-a|-r|-l|--list|--all|--remotes|--show-current|-v|-vv|--verbose|--contains|--merged|--no-merged|--sort.*|--format.*|--points-at)$/.test(f));
       if (positional.length === 0 || listing) return ALLOW;
       return deny('git.worktree-branch-admin', 'creating or renaming branches is the console\'s job');
@@ -124,7 +137,7 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
     case 'switch':
       return deny('git.checkout-switch', 'an agent never changes branch');
     case 'checkout': {
-      if (flags.some((f) => f === '-b' || f === '-B' || f === '--orphan' || f === '--detach' || f === '-d' || f === '-t' || f === '--track')) {
+      if (hasLong(flags, 'orphan', 'detach', 'track') || anyShort(flags, 'bBdt')) {
         return deny('git.checkout-switch', 'an agent never changes branch');
       }
       const sep = args.indexOf('--');
@@ -136,14 +149,19 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
     case 'merge': case 'rebase': case 'pull': case 'cherry-pick': case 'am':
       return deny('git.merge-rebase-reset-hard', `git ${sub} would rewrite the branch`);
     case 'reset':
-      return flags.some((f) => f === '--hard' || f === '--merge' || f === '--keep') ? deny('git.merge-rebase-reset-hard', 'git reset --hard would discard work') : ALLOW;
+      return hasLong(flags, 'hard', 'merge', 'keep') ? deny('git.merge-rebase-reset-hard', 'git reset --hard would discard work') : ALLOW;
     case 'remote':
       // The console pushes the branch to `origin` itself: an agent must not point that name somewhere else.
       return /^(add|set-url|remove|rm|rename|set-head|set-branches)$/i.test(positional[0] ?? '') ? deny('git.config-write', 'changing the remotes is not allowed') : ALLOW;
     case 'config': {
       const read = flags.some((f) => /^(--get|--get-all|--get-regexp|--get-urlmatch|--list|-l|--show-origin|--show-scope|--name-only)$/.test(f));
       const write = flags.some((f) => /^(--unset|--unset-all|--add|--replace-all|--edit|-e|--rename-section|--remove-section)$/.test(f));
-      if (write || (!read && positional.length >= 2)) return deny('git.config-write', 'git config must not be changed by an agent');
+      const changes = write || (!read && positional.length >= 2);
+      // Config outside this repository (global, system, a named file, an include) can hold the alias and hooks path the push hook is
+      // meant to stop: for the main that is a hooks rule, for an agent every config write is refused anyway.
+      const outside = hasLong(flags, 'global', 'system', 'file') || flags.includes('-f') || /^include/i.test(positional[0] ?? '');
+      if (changes && outside) return deny(ctx.role === 'main' ? 'git.hooks-tamper' : 'git.config-write', 'git config outside this repository could undo the console push hook');
+      if (changes) return deny('git.config-write', 'git config must not be changed by an agent');
       return ALLOW;
     }
     default:
