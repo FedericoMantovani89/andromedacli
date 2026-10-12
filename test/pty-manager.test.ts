@@ -31,14 +31,15 @@ it('keeps the process and its scrollback when subscribers come and go', async ()
 it.skipIf(process.platform !== 'win32')('resizes the terminal', async () => {
   const m = new PtyManager();
   m.spawn({ id: 'beta-job', file: 'powershell.exe', args: ['-NoLogo', '-NoProfile'], cwd: process.cwd(), env: process.env as Record<string, string>, cols: 100, rows: 30 });
-  await new Promise((r) => setTimeout(r, 1500));
+  // The first PowerShell of a cold runner takes seconds to show its prompt: a fixed pause lost the typed line there. Wait for the prompt.
+  await until(() => m.snapshot('beta-job').toString().includes('PS '), 20_000);
   m.resize('beta-job', 80, 24);
   await new Promise((r) => setTimeout(r, 500));
   m.write('beta-job', 'Write-Output ("W=" + [Console]::WindowWidth + ";")\r');
-  await until(() => m.snapshot('beta-job').toString().includes('W=80;'));
+  await until(() => m.snapshot('beta-job').toString().includes('W=80;'), 20_000);
   expect(m.size('beta-job')).toEqual({ cols: 80, rows: 24 });
   m.kill('beta-job');
-});
+}, 60_000);
 it('reports exit', async () => {
   const m = new PtyManager();
   const exits: string[] = [];
