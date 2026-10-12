@@ -5,6 +5,7 @@ import { baseName, hasComponent, isInside, realResolve } from './paths';
 import { GIT_BUILTINS, headBranch, isTag } from './gitrefs';
 import { commandName, splitCommand, type Segment, type ShellKind } from './shell';
 import { READONLY_RULE, readOnlyViolation } from './readonly';
+import { firstOutside, isNullDevice, redirectTargets, writeTargets } from './writes';
 
 export interface GuardContext {
   role?: 'main' | 'agent';
@@ -43,7 +44,11 @@ const EXEC_SINKS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'iex', 'invoke-e
 const EXEC_EXT = /\.(exe|bat|cmd|ps1|sh|msi|dll|com|scr|vbs|jar)$/i;
 const DOWNLOAD_RAW = /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile)\b/i;
 
-const CD_COMMANDS = new Set(['cd', 'chdir', 'set-location', 'sl', 'pushd']);
+const CD_COMMANDS = new Set(['cd', 'chdir', 'set-location', 'sl', 'pushd', 'push-location']);
+/** Back to a folder the guard did not follow: the cwd is unknown from here on. */
+const POP_COMMANDS = new Set(['popd', 'pop-location']);
+/** A directory word the guard cannot resolve: a command substitution. (An unset variable is caught by `realResolve`.) */
+const isDynamic = (t: string): boolean => /\$\(|`|<\(/.test(t);
 /** Environment variables that change git's config, hooks or programs: set before a git command they undo the push hook (an alias plus `core.hooksPath`). */
 const DANGEROUS_GIT_ENV = /^GIT_(CONFIG[A-Z0-9_]*|DIR|WORK_TREE|COMMON_DIR|EXEC_PATH|SSH|SSH_COMMAND|EXTERNAL_DIFF|ASKPASS)$/i;
 const envName = (assignment: string): string => assignment.replace(/^\$env:/i, '').replace(/^env:/i, '').split('=')[0]!.trim();
@@ -174,7 +179,7 @@ function isWildcardTarget(t: string): boolean {
   return n === '*' || n === '.*' || n === '.' || n === '..' || n === '' || /^\*+\.?\*?$/.test(n) || n === '/*';
 }
 
-function rmRule(name: string, argv: string[], ctx: GuardContext, cwd: string, piped: boolean): GuardDecision {
+function rmRule(name: string, argv: string[], ctx: GuardContext, cwd: string | null, piped: boolean): GuardDecision {
   const rest = argv.slice(1);
   const flags = rest.filter((t) => isFlag(t) || (name !== 'rm' && /^\/[A-Za-z]$/.test(t)));
   let recursive = false;
@@ -182,6 +187,7 @@ function rmRule(name: string, argv: string[], ctx: GuardContext, cwd: string, pi
   else if (name === 'remove-item' || name === 'ri') recursive = flags.some((f) => /^-r(e(c(u(r(s(e)?)?)?)?)?)?$/i.test(f));
   else recursive = flags.some((f) => /^\/s$/i.test(f) || /^-r(e(c(u(r(s(e)?)?)?)?)?)?$/i.test(f)); // rmdir / rd / del are aliases of Remove-Item in PowerShell
   if (!recursive) return ALLOW;
+  if (cwd === null) return deny('rm.wide', 'a recursive delete after a cd the guard could not follow cannot be checked');
   const targets = rest.filter((t) => !isFlag(t) && !(name !== 'rm' && /^\/[A-Za-z]$/.test(t)));
   if (piped && targets.length === 0) return deny('rm.wide', 'a recursive delete of piped input cannot be checked');
   for (const t of targets) {
@@ -230,11 +236,7 @@ function isHooksPath(p: string): boolean {
 function writtenPaths(argv: string[]): string[] {
   const name = commandName(argv[0] ?? '');
   const rest = argv.slice(1);
-  const candidates: string[] = [];
-  rest.forEach((t, i) => {
-    if (/^\d*>>?$/.test(t) && rest[i + 1] !== undefined) candidates.push(rest[i + 1]!);
-    else if (/^\d*>>?[^&>]/.test(t)) candidates.push(t.replace(/^\d*>>?/, ''));
-  });
+  const candidates: string[] = redirectTargets(argv);
   if (WRITERS.has(name)) candidates.push(...rest.filter((t) => !isFlag(t)));
   return candidates;
 }
@@ -279,14 +281,14 @@ function evaluateShell(call: GuardCall, ctx: GuardContext): GuardDecision {
   const dl = downloadRule(segments);
   if (dl !== undefined) return dl;
   // Where the next command runs: a `cd ..` earlier in the same command moves every relative path after it.
-  let cwd = ctx.worktree;
+  let cwd: string | null = ctx.worktree;
   const driveRoot = win32.parse(ctx.worktree).root;
   for (const s of segments) {
     const name = commandName(s.argv[0]!);
     if (CD_COMMANDS.has(name)) {
       const target = s.argv.slice(1).find((t) => !isFlag(t));
-      cwd = target === undefined ? driveRoot : (realResolve(target, cwd) ?? driveRoot);
-    }
+      cwd = cwd === null ? null : target === undefined ? driveRoot : isDynamic(target) ? null : (realResolve(target, cwd) ?? null);
+    } else if (POP_COMMANDS.has(name)) cwd = null;
     // A variable that rewrites git's config for one command (or for the rest of the session) gets around the push hook.
     const setsGitEnv =
       (name === 'git' && (s.env ?? []).some((e) => DANGEROUS_GIT_ENV.test(envName(e)))) ||
@@ -307,6 +309,11 @@ function evaluateShell(call: GuardCall, ctx: GuardContext): GuardDecision {
     if (ctx.readOnly && ctx.role !== 'main') {
       const why = readOnlyViolation(s);
       if (why) return deny(READONLY_RULE, `this session is read-only: ${why}`);
+    }
+    if (ctx.role !== 'main') {
+      const targets = writeTargets(s.argv);
+      const outside = cwd === null ? targets.find((t) => !isNullDevice(t)) : firstOutside(targets, ctx.worktree, cwd);
+      if (outside !== undefined) return deny('path.outside-worktree', `${outside} is outside the agent's worktree`);
     }
     const secret = secretTargets(s.argv).find((t) => isSecret(t, ctx.secretPatterns));
     if (secret !== undefined) return deny('secret.file', `${baseName(secret)} looks like a secret and must not be touched`);

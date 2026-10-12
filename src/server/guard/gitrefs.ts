@@ -39,4 +39,8 @@ export const GIT_BUILTINS: ReadonlySet<string> = new Set([
   'request-pull', 'reset', 'restore', 'rev-list', 'rev-parse', 'revert', 'rm', 'send-pack', 'shortlog', 'show', 'show-branch',
   'show-ref', 'sparse-checkout', 'stash', 'status', 'stripspace', 'submodule', 'switch', 'symbolic-ref', 'tag', 'unpack-file',
   'update-index', 'update-ref', 'var', 'verify-commit', 'verify-tag', 'version', 'whatchanged', 'worktree', 'write-tree',
+  'annotate', 'bugreport', 'column', 'commit-graph', 'diagnose', 'fetch-pack', 'get-tar-commit-id', 'grep', 'history', 'hook', 'imap-send',
+  'index-pack', 'mailinfo', 'mailsplit', 'merge-file', 'merge-index', 'merge-tree', 'mktag', 'multi-pack-index', 'p4', 'pack-objects',
+  'patch-id', 'receive-pack', 'refs', 'replay', 'repo', 'rerere', 'scalar', 'send-email', 'show-index', 'svn', 'unpack-objects',
+  'update-server-info', 'upload-archive', 'upload-pack', 'verify-pack',
 ]);

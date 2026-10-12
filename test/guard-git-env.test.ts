@@ -17,6 +17,8 @@ describe('git environment that changes config, hooks or programs', () => {
     ['GIT_TERMINAL_PROMPT=0 git fetch', 'ALLOW'],
     ['GIT_PAGER=cat git log', 'ALLOW'],
     ['git lfs pull', 'ALLOW'],
+    ['git grep TODO', 'ALLOW'],
+    ['git merge-tree HEAD HEAD', 'ALLOW'],
     ['git', 'ALLOW'],
   ];
   it.each(bash)('bash: %s -> %s', (c, e) => expect(verdict(c)).toBe(e));
