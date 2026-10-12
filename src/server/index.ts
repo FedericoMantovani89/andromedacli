@@ -31,11 +31,10 @@ import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
 import type { Notifier } from './notify/notifier';
 import type { NotifyClock } from './notify/service';
-import { renderRestartNotice, restoreAgents } from './agents/restore';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { readJsonFile } from './json-file';
 import { errorMessage } from '../shared/guards';
-import { Container } from './runtime/container';
+import { Container, boot } from './runtime/container';
 import type { Services, ProjectContainer } from './runtime/services';
 import { registerState } from './runtime/state';
 import { registerTests } from './runtime/tests';
@@ -43,6 +42,10 @@ import { registerAgents } from './runtime/agents';
 import { registerTicketFlow } from './runtime/ticket-flow';
 import { registerBudget, WAKE_MESSAGE } from './runtime/budget';
 import { registerHttpContext } from './runtime/http-context';
+import { registerLifecycle } from './runtime/lifecycle';
+import { wire } from './runtime/wiring';
+import { BOOT_BEFORE_PREPARE, BOOT_AFTER_PREPARE } from './runtime/boot-order';
+import type { Env } from './runtime/env';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -89,6 +92,8 @@ export interface StartOptions {
   notifier?: Notifier;
   /** A test seam: the clock of the notification grouping and quiet hours. */
   notifyClock?: NotifyClock;
+  /** A test seam: hears each service of a project as the container creates it (the creation order). */
+  containerOnCreate?: (key: string) => void;
 }
 export interface RunningServer {
   port: number;
@@ -122,211 +127,38 @@ export interface RunningServer {
 /** The one message the main gets when a usage limit resets (SPEC 18.4). */
 export { WAKE_MESSAGE };
 
+/** The options and shared parts a project's services read as `env`. */
+function envOf(shared: Shared, o: StartOptions & { projectRoot: string; projectName: string }): Env {
+  const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
+  return { shared, o, configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits };
+}
+
 /** The per-project part of the console: everything bound to one folder (Phase 6C: a project runtime; `startServer` hosts the first one). */
 async function createProjectRuntime(shared: Shared, p: { projectRoot: string; projectName: string }): Promise<ProjectRuntime> {
-  // The old single-project code below reads `o.projectRoot` and `o.projectName`: here they are this project's.
   const o: StartOptions & { projectRoot: string; projectName: string } = { ...shared.o, projectRoot: p.projectRoot, projectName: p.projectName };
-  const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
-  const c: ProjectContainer = new Container<Services>();
-  c.provide('env', () => ({ shared, o, configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits }));
+  const c: ProjectContainer = new Container<Services>(shared.o.containerOnCreate ? { onCreate: (key) => shared.o.containerOnCreate?.(String(key)) } : {});
+  c.provide('env', () => envOf(shared, o));
   registerState(c);
   registerTests(c);
   registerAgents(c);
   registerTicketFlow(c);
   registerBudget(c);
   registerHttpContext(c);
-  const stateProblems = c.get('stateProblems');
-  const store = c.get('store');
-  const previousRunWasClean = c.get('previousRunWasClean');
-  const projectName = c.get('projectName');
-  const ptys = c.get('ptys');
-  const tokens = c.get('tokens');
-  const inbox = c.get('inbox');
-  const registry = c.get('registry');
-  const mainResumeId = c.get('mainResumeId')();
-  const questions = c.get('questions');
-  const permissions = c.get('permissions');
-  const reading = c.get('reading');
-  // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
-  const secretPatterns = c.get('secretPatterns');
-  // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
-  const detectedTestCommand = c.get('detectedTestCommand');
-  const testsDisabled = c.get('testsDisabled');
-  const testCommandAt = c.get('testCommandAt');
-  const testRunnerAt = c.get('testRunnerAt');
-  const sessionGuardMode = c.get('sessionGuardMode');
-  const tickets = c.get('tickets');
-  const launchWatch = c.get('launchWatch');
-  const endTimers = c.get('endTimers');
-  const endReadOnlySession = c.get('endReadOnlySession');
-  const repoOfTicket = c.get('repoOfTicket');
-  const reportLanguage = c.get('reportLanguage');
-  const ticketQueue = c.get('ticketQueue'); // one queue per ticket, shared by every service that changes it
-  const review = c.get('review');
-  const central = c.get('central');
-  const merge = c.get('merge');
-  const release = c.get('release');
-  const finishAgent = c.get('finishAgent');
-  const readHandover = c.get('readHandover');
-  const keepHandover = c.get('keepHandover');
-  // Token budgets (SPEC 16): usage from the Claude Code transcript, recorded in the monthly ledger, steps on the ticket.
-  const restrictions = c.get('restrictions');
-  const turns = c.get('turns');
-  const budget = c.get('budget');
-  const recovery = c.get('recovery');
-  const onBudgetAnswer = c.get('onBudgetAnswer');
-  const loop = c.get('loop');
-  const quotaWaiters = c.get('quotaWaiters');
-  const wakeTimers = c.get('wakeTimers');
-  const wakeMain = c.get('wakeMain');
-  const weeklyNotice = c.get('weeklyNotice');
-  const ticketStatusOf = c.get('ticketStatusOf');
-  const quota = c.get('quota');
-  const resumedAwaitingStart = c.get('resumedAwaitingStart');
-  const resumer = c.get('resumer');
-  const waker = c.get('waker');
-  inbox.onPush((slug) => waker.onWork(slug));
-  // Messages and state kept for the next start (Phase 6A).
-  const persister = c.get('persister');
-  // The state is rebuilt on every push to the UI and discovery spawns git: a few seconds of memory is plenty (a repo made later shows up soon).
-  const repos = c.get('repos');
-  const forgetRepos = c.get('forgetRepos');
-  const prepareRepo = c.get('prepareRepo');
-  const staleChecker = c.get('staleChecker');
-  const guardLog = c.get('guardLog');
-  const steps = c.get('steps');
-  // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
-  const requestStore = c.get('requestStore');
-  const requests = c.get('requests');
-  inbox.onAck((slug, id) => requests.onDelivered(slug, id));
-  const launchLog = c.get('launchLog');
-  const scheduler = c.get('scheduler');
-  const launchMain = c.get('launchMain');
-  // The port, the prerequisite checks and the language are console-wide (see `shared`); any change pushes to every UI socket.
-  const broadcast = c.get('broadcast');
-  for (const rel of repos()) await prepareRepo(repoPathOf(o.projectRoot, rel));
-
-  // Notifications (SPEC 20): the server raises a native toast for what needs the user, also with the browser closed.
-  const notifier = c.get('notifier');
-  const presence = c.get('presence');
-  const notify = c.get('notify');
-
-  const ctx = c.get('ctx');
-
-  // The HTTP and WebSocket servers are console-wide (see `startServer`); a reading entry goes to the sockets of this project only.
-  reading.on((slug, entry) => shared.pushToProject(projectName, { type: 'reading', slug, entry }));
-
-  registry.on(() => broadcast());
-  // A slot freed in this project may start another project's queue (the global limit); the projects are released in the order they were opened.
-  registry.on(() => { for (const r of shared.runtimes) if (r.ctx !== ctx) r.parts.scheduler.release(); });
-  registry.on((slug) => notify.onRegistryChange(registry.get(slug)));
-  questions.onAdd((q) => notify.onItem(q));
-  void notify.checkAvailability();
-  registry.on((slug) => persister.onChange(slug));
-  // A session waits for the user exactly while it has an open question.
-  questions.onChange(() => {
-    for (const a of registry.list()) {
-      // The wait is over: the minutes spent waiting for the user are not a silence.
-      if (a.role !== 'main' && a.state === 'waiting_user' && !questions.hasPending(a.slug)) loop.detector.onModEvent(a.slug);
-      registry.setWaitingUser(a.slug, questions.hasPending(a.slug));
-    }
-    broadcast();
-  });
-  ptys.onExit((id) => {
-    // A reviewer that ends without a verdict (it crashed, or was closed) must not leave its ticket in review for ever.
-    if (registry.get(id)?.role === 'reviewer' && !registry.get(id)?.finishing && review.abandonReview(id)) broadcast();
-    // Nor a recovery that ends without its report, also one the console ended: the ticket waits again in the status it was stopped
-    // in (after an accepted report this is a no-op: the report already forgot the session).
-    if (registry.get(id)?.role === 'recovery' && recovery.abandon(id)) broadcast();
-    // A resumed agent whose process ended before its session reported in never ran: its ticket waits again, and the main is told.
-    if (resumedAwaitingStart.delete(id) && registry.get(id)?.role === 'agent' && ticketStatusOf(id) === 'in_progress') {
-      try { tickets.move(id, 'suspended_limit'); } catch { /* told below anyway */ }
-      inbox.push(projectName, `The resumed agent "${id}" ended before its session started; its ticket is suspended for the limit again. Try resume_agent once more, or tell the user.`);
-    }
-    questions.dropFrom(id);
-    registry.onProcessExit(id);
-    tokens.revoke(id);
-    inbox.clear(id);
-    restrictions.clear(id);
-    loop.forget(id);
-    permissions.forget(id);
-    broadcast();
-  });
-  // The silence chip changes with the clock, not with an event: the state is pushed when what it would show has changed.
-  let silenceShown = '';
-  const refreshSilence = (): void => {
-    const now = registry.list().filter((a) => a.role !== 'main').map((a) => `${a.slug}:${loop.silentFor(a.slug) ?? ''}`).join('|');
-    if (now === silenceShown) return;
-    silenceShown = now;
-    broadcast();
-  };
-  c.provide('refreshSilence', () => refreshSilence);
-  // Only the grace period can move a budget step without a turn: checked on a timer that never keeps the process alive.
-  const budgetTick = setInterval(() => {
-    void budget.tick().catch((err) => budget.reportFailure('all agents', err));
-    try { requests.tick(); } catch { /* a failed tick is tried again at the next one */ } // a question nobody answered in time goes to the main
-    loop.tick(); // never throws: the time signals only warn the main
-    try { refreshSilence(); } catch { /* the chip is only a hint */ }
-  }, o.tickMs ?? 30_000);
-  budgetTick.unref?.();
-  /** One quota reading: a wake-up probe waiting for it judges it once the steps have been applied. */
-  const onQuotaReading = c.get('onQuotaReading');
-  // Phase 6A: runs when the project starts, not when its runtime is created (the sleep saved by an earlier run is restored by the host).
-  let staleTimer: ReturnType<typeof setInterval> | undefined;
-  const startProject = (): void => {
-    // Phase 6A, SPEC 19: the agents of the earlier run come back dormant (no process, no quota spent), or interrupted when their turn
-    // was lost; the main resumes its own session at once and is told which is which.
-    const restored = restoreAgents({
-      records: store.listAgents(), registry, tickets, worktrees: runtime.git.worktrees, cleanStop: previousRunWasClean,
-      worktreeExists: (path) => existsSync(path), abandonReview: (reviewer) => review.abandonReview(reviewer),
-    });
-    // The time the console was off does not count against the requests' timeout.
-    requests.restartClocks();
-    // What an earlier run never delivered stays only for agents that can still read it.
-    for (const slug of inbox.slugs()) {
-      const state = registry.get(slug)?.state;
-      if (slug !== projectName && state !== 'dormant' && state !== 'interrupted') inbox.clear(slug);
-    }
-    launchMain(mainResumeId);
-    try {
-      const notice = renderRestartNotice(restored);
-      if (notice) inbox.push(projectName, notice);
-    } catch { /* the notice is a courtesy: list_agents tells the same */ }
-    staleTimer = setInterval(() => { void staleChecker.check(); }, 24 * 60 * 60_000);
-    staleTimer.unref?.();
-    void staleChecker.check();
-    central.start(); // merges no full run has covered yet (done before this start) get one
-  };
-
+  registerLifecycle(c);
+  boot(c, BOOT_BEFORE_PREPARE);
+  for (const rel of c.get('repos')()) await c.get('prepareRepo')(repoPathOf(o.projectRoot, rel));
+  boot(c, BOOT_AFTER_PREPARE);
+  wire(c);
   return {
-    ctx, name: projectName, root: o.projectRoot,
+    ctx: c.get('ctx'), name: c.get('projectName'), root: o.projectRoot,
     // The prerequisite checks start with the console (background; unknown is null in the state and agent creation waits for it).
-    start: () => { startProject(); },
-    summary: () => ({ name: projectName, root: o.projectRoot, waiting: questions.pending().length, mainStatus: ptys.status(projectName) === 'running' ? 'running' : ptys.status(projectName) === 'exited' ? 'exited' : 'pending' }),
-    onQuota: onQuotaReading,
-    wakeMain,
-    weeklyNotice,
-    parts: { budget, scheduler },
-    close: async () => {
-      clearInterval(budgetTick);
-      notify.close(); // before killing: the exits below must not announce "interrupted"
-      if (staleTimer) clearInterval(staleTimer);
-      // What a restart needs is on disk as it is now: the processes dying below must not rewrite it (their exits would empty the inbox
-      // and mark every agent interrupted).
-      persister.close();
-      inbox.freeze();
-      resumer.close();
-      for (const h of wakeTimers) sleepClock.clearTimeout(h);
-      wakeTimers.clear();
-      quotaWaiters.clear();
-      launchWatch.close();
-      central.cancel();
-      for (const timer of endTimers) clearTimeout(timer);
-      endTimers.clear();
-      scheduler.close(); // before killing: exiting processes would otherwise free slots and start queued agents
-      await ptys.killAll();
-      store.writeCleanStop(true); // the very end of this project: a crash before this line leaves `false`
-    },
+    start: () => { c.get('startProject')(); },
+    summary: c.get('summary'),
+    onQuota: c.get('onQuotaReading'),
+    wakeMain: c.get('wakeMain'),
+    weeklyNotice: c.get('weeklyNotice'),
+    parts: { budget: c.get('budget'), scheduler: c.get('scheduler') },
+    close: c.get('close'),
   };
 }
 

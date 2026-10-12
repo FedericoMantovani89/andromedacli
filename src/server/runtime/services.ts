@@ -36,6 +36,7 @@ import type { GuardLog } from '../guard/log';
 import type { Notifier } from '../notify/notifier';
 import type { Presence } from '../notify/presence';
 import type { NotificationService } from '../notify/service';
+import type { ProjectTab } from '../../shared/protocol';
 import type { Container } from './container';
 import type { Env } from './env';
 
@@ -115,7 +116,13 @@ export interface Services {
   presence: Presence;
   notify: NotificationService;
   ctx: Context;
-  // temporary bridge to a local of createProjectRuntime (removed with the area that takes it over)
+  // lifecycle (runtime/lifecycle.ts)
   refreshSilence: () => void;
+  budgetTick: ReturnType<typeof setInterval>;
+  /** The daily stale-branch check, armed by `startProject` and cleared by `close`. */
+  staleTimerRef: { value: ReturnType<typeof setInterval> | undefined };
+  startProject: () => void;
+  summary: () => ProjectTab;
+  close: () => Promise<void>;
 }
 export type ProjectContainer = Container<Services>;
