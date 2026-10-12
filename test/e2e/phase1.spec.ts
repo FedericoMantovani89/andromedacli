@@ -222,7 +222,7 @@ try {
   {
     let hits = '';
     try {
-      hits = execFileSync('git', ['grep', '--no-index', '-nP', '[àèéìòùÀÈÉÌÒÙ]', '--', 'src', 'scripts', ':!src/i18n/messages_it.properties', ':!*.jpg'], { cwd: root, encoding: 'utf8' });
+      hits = execFileSync('git', ['grep', '--no-index', '-InP', '[àèéìòùÀÈÉÌÒÙ]', '--', 'src', 'scripts', ':!src/i18n/messages_it.properties', ':!*.jpg'], { cwd: root, encoding: 'utf8' });
     } catch { /* git grep exits 1 when nothing matches */ }
     check('no Italian text in code or comments', hits.trim() === '', hits.slice(0, 300));
   }
