@@ -14,7 +14,7 @@
     "dev": "tsx watch src/server/cli.ts serve",
     "build": "tsx scripts/build-ui.ts && tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:ticket": "npm run check && vitest run --changed project/multiconsole --passWithNoTests",
+    "test:ticket": "tsx scripts/test-ticket.ts",
     "test:changed": "npm run check && vitest run --changed origin/main --passWithNoTests",
     "test:smoke": "npm run check && vitest run test/server.test.ts test/merge-ticket.test.ts test/spawn.test.ts test/pty-manager.test.ts test/git-worktree.test.ts test/v1.test.ts test/i18n-checks.test.ts",
     "check": "tsx scripts/check-i18n.ts && tsx scripts/check-ui-literals.ts && tsx scripts/check-mod.ts && tsc -p tsconfig.json --noEmit",
@@ -31,7 +31,7 @@
     "@xterm/xterm": "^6.0.0",
     "dompurify": "^3.4.16",
     "marked": "^18.1.0",
-    "node-notifier": "^10.0.1",
+    "node-notifier": "^11.0.0",
     "node-pty": "^1.1.0",
     "ws": "^8.22.0"
   },

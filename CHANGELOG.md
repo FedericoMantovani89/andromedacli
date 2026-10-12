@@ -10,6 +10,7 @@ change that introduces the behaviour.
 
 ### Changed
 - Internal: the assembly of a project is now a typed container with one file per area (state, tests, agents, tickets, budget, http), instead of one 900-line function; behavior is unchanged.
+- `npm run test:ticket` finds the `project/<name>` branch by itself (`TICKET_BASE` overrides it); `start-console.bat` is now in the repository and uses `--project-root`; `node-notifier` is 11 (no `uuid` advisory); the mod manifest author is `andromedaconsole`.
 - Internal: everything that depends on undocumented Claude Code details (launch flags, transcript files, tested version) now lives in `src/server/claude-code/`; `test/e2e/claude-contract.ts` checks it against the real `claude` (version, flags, mod validation). The mod is type-checked in `npm run check` when Claude Code has written its types beside it.
 - The product is now called AndromedaConsole (it was AndromedaCli, a name already taken): window and page title, splash picture, installer (`AndromedaConsole-Setup-*.exe`), app id, package name, and the `--name` that Remote Control shows. The project folder `.andromedacli/` is now `.andromedaconsole/`, the settings folder `%APPDATA%\andromedacli` is now `%APPDATA%\andromedaconsole`, and `ANDROMEDACLI_TEST_CONCURRENCY` is now `ANDROMEDACONSOLE_TEST_CONCURRENCY`. The first start moves the old folders by itself (state paths and git worktrees are repaired); an installed 0.0.7 does not auto-update across the new app id and needs the new installer once.
 
