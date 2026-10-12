@@ -111,6 +111,10 @@ const DENY_AGENT: [string, () => Call, string][] = [
   ['config unset', () => sh('git config --unset core.hooksPath'), 'git.config-write'],
   ['config global alias', () => sh('git config --global alias.x y'), 'git.config-write'],
   ['hooksPath case', () => sh('git config core.HooksPath x'), 'git.config-write'],
+  ['remote set-url', () => sh('git remote set-url origin https://example.com/x.git'), 'git.config-write'],
+  ['remote add', () => sh('git remote add evil https://example.com/x.git'), 'git.config-write'],
+  ['remote remove', () => sh('git remote remove origin'), 'git.config-write'],
+  ['config remote url', () => sh('git config remote.origin.url https://example.com/x.git'), 'git.config-write'],
   // git.worktree-branch-admin
   ['worktree add', () => sh('git worktree add ../x'), 'git.worktree-branch-admin'],
   ['worktree remove', () => sh('git worktree remove .'), 'git.worktree-branch-admin'],
@@ -207,6 +211,8 @@ const DENY_AGENT: [string, () => Call, string][] = [
 
 const ALLOW_AGENT: [string, () => Call][] = [
   ['git status', () => sh('git status')],
+  ['git remote -v', () => sh('git remote -v')],
+  ['git remote get-url', () => sh('git remote get-url origin')],
   ['git diff', () => sh('git diff')],
   ['git diff --stat', () => sh('git diff --stat HEAD~1')],
   ['git log oneline', () => sh('git log --oneline')],

@@ -134,6 +134,9 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
       return deny('git.merge-rebase-reset-hard', `git ${sub} would rewrite the branch`);
     case 'reset':
       return flags.some((f) => f === '--hard' || f === '--merge' || f === '--keep') ? deny('git.merge-rebase-reset-hard', 'git reset --hard would discard work') : ALLOW;
+    case 'remote':
+      // The console pushes the branch to `origin` itself: an agent must not point that name somewhere else.
+      return /^(add|set-url|remove|rm|rename|set-head|set-branches)$/i.test(positional[0] ?? '') ? deny('git.config-write', 'changing the remotes is not allowed') : ALLOW;
     case 'config': {
       const read = flags.some((f) => /^(--get|--get-all|--get-regexp|--get-urlmatch|--list|-l|--show-origin|--show-scope|--name-only)$/.test(f));
       const write = flags.some((f) => /^(--unset|--unset-all|--add|--replace-all|--edit|-e|--rename-section|--remove-section)$/.test(f));

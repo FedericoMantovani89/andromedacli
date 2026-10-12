@@ -29,6 +29,21 @@ describe('quota item', () => {
   });
 });
 
+describe('bypass chip', () => {
+  it('is shown at all times while bypass is on, and hidden otherwise', () => {
+    const el = document.createElement('div');
+    const settings = (bypassPermissions: boolean) => ({ settings: { bypassPermissions, guardMode: 'enforce', worktrees: true } }) as Partial<StateMessage>;
+    renderStatusBar(el, make(settings(false)));
+    const chip = byKey(el, 'statusbar.bypass')!;
+    expect(chip.hidden).toBe(true);
+    renderStatusBar(el, make(settings(true)));
+    expect(chip.hidden).toBe(false);
+    expect(chip.dataset.i18nTitle).toBe('settings.bypass.warning');
+    renderStatusBar(el, make(settings(false)));
+    expect(chip.hidden).toBe(true);
+  });
+});
+
 describe('project budget', () => {
   it('reads as unlimited, not n/a, while the project has no budget', () => {
     const el = document.createElement('div');

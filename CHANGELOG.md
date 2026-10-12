@@ -12,7 +12,11 @@ introduces the behaviour.
 - Agent panels have a Compact button, the counterpart of the bar's Expand: the panel folds into a bar and the next agent takes its slot.
 - Archived agents can be deleted from the list, one by one or all at once (after a question): the record, the session and the terminal history go; worktree, branch, ticket, report and ledger stay (`DELETE /api/agents/<slug>`, `POST /api/agents/delete-archived`).
 
+- Status bar: a red "Bypass on" chip is shown at all times while agents run without permission prompts.
+- `SECURITY.md`: the layers, what the guard guarantees and what it does not, what bypass changes, and what leaves the machine. The README now mentions the desktop app, the delete of archived agents and Compact, and says that dictation audio goes to Groq.
+
 ### Fixed
+- Guard: an agent can no longer change the git remotes (`git remote add`, `set-url`, `remove`, `rename`, `set-head`, `set-branches`); listing them still works.
 - App: voice dictation failed with "the browser has no permission to use the microphone" because the window refused every permission but clipboard and notifications; it now grants audio-only `media` to the console's own address.
 
 ### Changed

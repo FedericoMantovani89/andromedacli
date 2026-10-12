@@ -50,11 +50,24 @@ Useful options:
 | `npm run console -- serve --port N --no-open` | Another port; do not open the browser |
 | `npm run console -- doctor [--json]` | Prerequisite and security self-test |
 
+### Desktop app
+
+The same console also ships as a Windows x64 desktop app (Electron): one window instead of a browser tab, with the server running inside the app. It is the same code and the same `%APPDATA%\andromedacli` settings, so nothing changes in how you use it; closing the window asks first when agents are running, then stops everything. Like the console, it only uses the PATH it was started with.
+
+| Command | What it does |
+|---|---|
+| `npm run build:app` | Bundles the UI, the server and the shipped folders into `out/` |
+| `npm run dist:dir` | An unpacked app in `release/win-unpacked` |
+| `npm run dist` | The same, plus the NSIS installer |
+| `npm run smoke:app` | Starts the unpacked app with the fake agent and checks the window, a terminal, Options and that nothing is left after closing (run `dist:dir` first) |
+
+Pushing a tag `v<version>` runs `.github/workflows/release.yml`, which builds the installer and publishes it as a GitHub release. The installer is not code-signed, so Windows SmartScreen may warn. Update checks look at the GitHub releases; while the repository is private they find nothing, and updating means running the new installer over the old one (settings and projects stay).
+
 ## Using it
 
 1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.andromedacli/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and commands, detected from `pom.xml`, Gradle or `package.json`; or start from the settings of a project that is already open. A folder that is not a git repository can be initialised, or cloned from an address, in *Options → Git*. A project with no tests can switch them off (*Inhibit the tests for this project*): reports then say "not run", never "passed".
 2. **Talk to the main.** The left panel is a normal Claude Code session that knows the console's tools. Describe what you want; the main decides which jobs to start.
-3. **Agents appear on the right.** The main starts one agent per job (profile `developer` by default, any you add in *Options → Profiles*, plus the read-only `reviewer` and `recovery` that the console starts itself), or you press *new agent* yourself. Four panels fit; more collapse into bars. Agents above the active limit wait in a queue and start by themselves. An agent that has ended for good (its ticket merged, its review done) leaves the column by itself and moves to the *Archived (N)* list in the status bar, where you can bring it back; nothing is deleted. The *Archive all finished* button in that list clears every closed agent still in the column in one go, after asking.
+3. **Agents appear on the right.** The main starts one agent per job (profile `developer` by default, any you add in *Options → Profiles*, plus the read-only `reviewer` and `recovery` that the console starts itself), or you press *new agent* yourself. Four panels fit; more collapse into bars, and *Compact* folds any panel into a bar (*Expand* brings it back). Agents above the active limit wait in a queue and start by themselves. An agent that has ended for good (its ticket merged, its review done) leaves the column by itself and moves to the *Archived (N)* list in the status bar, where you can bring it back, or delete it from the list (one by one, or *Delete all* after asking; its worktree, branch, ticket and report are kept). The *Archive all finished* button in that list clears every closed agent still in the column in one go, after asking.
 4. **Answer.** An agent never asks you directly: it asks the main, which shows you the question (and its options) exactly as written with its own dialog, and passes your answer back; with Remote Control on, that dialog is answerable from the Claude app. The *Queue* (bell) button (`Alt+Q`) opens the drawer with what the console itself asks: merge conflicts, budget decisions, the release confirmation and, for reviewer and recovery sessions, their questions.
 5. **Review and merge.** When an agent delivers a ticket the console reruns your tests on exactly that commit (long test runs share one queue per machine, one at a time; after the merges settle it also runs the full `release` command once on `project/<name>` and, if that turns red, works out which merged ticket broke it and tells its author or asks you), a read-only reviewer reads the diff, and the main merges approved tickets one at a time into `project/<name>`. Reaching your real `main` takes one confirmation from you; the console then merges and pushes with a one-time token that the repository's pre-push hook checks.
 
@@ -88,7 +101,8 @@ Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read pane
 - The **guard** denies force pushes, deleting remote branches, pushing tags, writing outside the agent's worktree, reading or writing files that look like secrets, tampering with the push hook or `.git`, wide `rm`, and download-and-execute. The main is bound by the git and secret rules; the main is also refused Claude Code's built-in subagents (other than read-only lookups), so file-changing work always goes through visible console agents.
 - Reviewers and recovery agents are **read-only**, enforced by the guard.
 - `agents.bypassPermissions` is **off by default**. When you turn it on in Options, the guard is the only brake. With it off, an agent's tool permission prompts go to the queue drawer, where only the console shows them (not Remote Control); with it on there are none to answer. The guard states its limits: it does not try to stop obfuscated commands.
-- Telemetry is off. Nothing leaves your machine except what Claude Code itself sends.
+- Telemetry is off. Nothing leaves your machine except what Claude Code itself sends and, only if you use voice dictation, the audio you record, which is sent to Groq for transcription.
+- What the guard guarantees, what it does not, and what changes with bypass on: see [SECURITY.md](SECURITY.md). With bypass on, a red chip in the status bar says so at all times.
 
 ## Configuration
 

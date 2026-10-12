@@ -2,9 +2,11 @@ import type { StateMessage } from '../shared/protocol';
 import { runningAgents } from '../shared/stats';
 import { api } from './api';
 import { openArchiveDialog, refreshArchiveDialog, archivedAgents, archivableAgents, visibleAgents } from './archive';
-import { bindText, k, t } from './i18n-client';
+import { bindText, k, setTitle, t } from './i18n-client';
 
 interface Bar {
+  /** Shown while agents run without permission prompts (bypass). */
+  bypass: HTMLElement;
   budget: HTMLElement;
   quota: HTMLElement;
   /** A newer version of the desktop app (SPEC 33.4): the text and the one button of the phase (download, or restart). */
@@ -31,6 +33,12 @@ const gap = (): HTMLElement => { const s = span(); s.textContent = ' '; return s
 
 function build(el: HTMLElement): Bar {
   const label = (key: string): HTMLElement => { const l = span(); bindText(l, key); return l; };
+  // With bypass on the guard is the only brake: the bar says so at all times, not only inside Options.
+  const bypass = span();
+  bypass.className = 'statusbar-bypass';
+  bypass.hidden = true;
+  bindText(bypass, k('statusbar.bypass'));
+  setTitle(bypass, k('settings.bypass.warning'));
   const budget = span();
   // The project has no budget of its own (only agents and tickets do): no limit is set, which reads as infinite, not as "n/a".
   budget.append(label(k('statusbar.budget')), gap(), label(k('statusbar.budgetUnlimited')));
@@ -60,14 +68,14 @@ function build(el: HTMLElement): Bar {
   archived.className = 'statusbar-archived';
   archived.hidden = true;
   archived.addEventListener('mousedown', (ev) => ev.preventDefault());
-  const bar: Bar = { budget, quota, update, updateBtn, sleep, resume, agents, archived, suspended };
+  const bar: Bar = { bypass, budget, quota, update, updateBtn, sleep, resume, agents, archived, suspended };
   archived.addEventListener('click', () => openArchiveDialog(() => bar.latest));
   updateBtn.addEventListener('click', () => {
     if (bar.updateAction) void api(`/api/update/${bar.updateAction}`, { method: 'POST' }).catch(() => undefined);
   });
   // The update chip is the last thing in the bar, at its far right edge (margin-left: auto on the text in styles.css).
   update.className = 'statusbar-update-text';
-  el.replaceChildren(budget, quota, sleep, resume, agents, archived, suspended, update, updateBtn);
+  el.replaceChildren(bypass, budget, quota, sleep, resume, agents, archived, suspended, update, updateBtn);
   return bar;
 }
 
@@ -132,6 +140,7 @@ function paintSleep(bar: Bar): void {
 export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
   const bar = bars.get(el) ?? build(el);
   bars.set(el, bar);
+  bar.bypass.hidden = !state.settings?.bypassPermissions;
   // The quota percent is absent when unknown: n/a, never zero.
   bar.quota.replaceChildren();
   if (state.quota && Number.isFinite(state.quota.percent)) {
