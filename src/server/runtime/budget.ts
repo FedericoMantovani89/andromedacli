@@ -11,8 +11,8 @@ import { LoopService } from '../budget/loop-service';
 import { QuotaService } from '../budget/quota';
 import { Restrictions } from '../budget/restrictions';
 import { defaultProjectsDir, pickTranscript, TranscriptReader } from '../budget/transcript';
-import { commitWip } from '../git/commit';
 import { CONSOLE_FROM } from '../questions/queue';
+import { wipCommitFor } from './helpers';
 import type { ProjectContainer } from './services';
 
 /** The one message the main gets when a usage limit resets (SPEC 18.4). */
@@ -34,7 +34,6 @@ export function registerBudget(c: ProjectContainer): void {
     const reader = k.get('reader');
     const projectName = k.get('projectName');
     const registry = k.get('registry');
-    const secretPatterns = k.get('secretPatterns');
     const inbox = k.get('inbox');
     const restrictions = k.get('restrictions');
     const keepHandover = k.get('keepHandover');
@@ -52,12 +51,7 @@ export function registerBudget(c: ProjectContainer): void {
         return a?.sessionId ? pickTranscript(projectsDir, [a.git?.worktree, a.cwd], a.sessionId) : undefined;
       },
       isLive: (slug) => registry.get(slug)?.role === 'agent',
-      wipCommit: async (slug, reason) => {
-        const worktree = registry.get(slug)?.git?.worktree;
-        if (!worktree) return { ok: false, detail: 'no worktree' };
-        const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
-        return r.ok ? { ok: true, sha: r.sha } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
-      },
+      wipCommit: wipCommitFor(k),
       tellAgent: (slug, text) => { inbox.push(slug, text); },
       tellMain: (text) => { inbox.push(projectName, text); },
       restrict: (slug, why) => { restrictions.set(slug, { reason: why }); },
@@ -79,7 +73,6 @@ export function registerBudget(c: ProjectContainer): void {
     const projectName = k.get('projectName');
     const restrictions = k.get('restrictions');
     const registry = k.get('registry');
-    const secretPatterns = k.get('secretPatterns');
     const keepHandover = k.get('keepHandover');
     const ptys = k.get('ptys');
     return new LoopService({
@@ -91,12 +84,7 @@ export function registerBudget(c: ProjectContainer): void {
       restrict: (slug, r) => { restrictions.set(slug, r); },
       // Only a loop restriction goes when a step closes: one held for the budget or the usage limit stays.
       clearRestriction: (slug) => { if (restrictions.get(slug)?.reason === 'loop') restrictions.clear(slug); },
-      wipCommit: async (slug, reason) => {
-        const worktree = registry.get(slug)?.git?.worktree;
-        if (!worktree) return { ok: false, detail: 'no worktree' };
-        const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
-        return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
-      },
+      wipCommit: (slug, reason) => wipCommitFor(k)(slug, reason).then((r) => (r.ok ? { ok: true as const } : r)),
       stop: (slug) => { keepHandover(slug); return k.get('finishAgent')(slug, { stopped: true }); },
       workingSlugs: () => registry.list().filter((a) => a.role === 'agent' && a.state === 'working').map((a) => a.slug),
       isWorking: (slug) => { const a = registry.get(slug); return a !== undefined && a.role !== 'main' && a.state === 'working'; },
@@ -177,7 +165,6 @@ export function registerBudget(c: ProjectContainer): void {
     const projectName = k.get('projectName');
     const registry = k.get('registry');
     const ticketStatusOf = k.get('ticketStatusOf');
-    const secretPatterns = k.get('secretPatterns');
     const restrictions = k.get('restrictions');
     const tickets = k.get('tickets');
     const quotaStepRef = k.get('quotaStepRef'); // read by the scheduler on every decision
@@ -190,14 +177,7 @@ export function registerBudget(c: ProjectContainer): void {
         const live = registry.list().filter((a) => a.state !== 'finished' && a.state !== 'interrupted' && a.state !== 'queued' && a.state !== 'dormant');
         return live.map((a, i) => ({ slug: a.slug, role: a.role, priority: live.length - i }));
       },
-      wipCommit: async (slug, reason) => {
-        // Only a ticket being written: a delivered or in-review author's branch must not move under its review.
-        if (ticketStatusOf(slug) !== 'in_progress') return { ok: true };
-        const worktree = registry.get(slug)?.git?.worktree;
-        if (!worktree) return { ok: false, detail: 'no worktree' };
-        const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
-        return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
-      },
+      wipCommit: wipCommitFor(k, { onlyInProgress: true }),
       restrict: (slug, r) => { restrictions.set(slug, r); },
       clearRestriction: (slug) => { if (restrictions.get(slug)?.reason === 'limit') restrictions.clear(slug); },
       suspendForLimit: async (slug) => {

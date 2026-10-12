@@ -2,7 +2,6 @@ import { rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnAgent } from '../agents/spawn';
 import { budgetAnswerHandler } from '../budget/answers';
-import { commitWip } from '../git/commit';
 import { commonDir, removeWorktree } from '../git/worktree';
 import { KeyedQueue } from '../keyed-queue';
 import { CONSOLE_FROM } from '../questions/queue';
@@ -14,6 +13,7 @@ import { RecoveryService, replacementCheckout } from '../tickets/recovery';
 import { ReleaseService } from '../tickets/release';
 import { ReviewService } from '../tickets/review';
 import { StepService } from '../tickets/steps';
+import { authorActive, authorRunning, spawnResult, wipCommitFor } from './helpers';
 import type { ProjectContainer } from './services';
 
 /** How long after the last merge the central full run waits for another one: merges that follow each other share one run. */
@@ -34,7 +34,6 @@ export function registerTicketFlow(c: ProjectContainer): void {
     const reportLanguage = k.get('reportLanguage');
     const repoOfTicket = k.get('repoOfTicket');
     const store = k.get('store');
-    const ptys = k.get('ptys');
     const inbox = k.get('inbox');
     const questions = k.get('questions');
     const endReadOnlySession = k.get('endReadOnlySession');
@@ -50,10 +49,10 @@ export function registerTicketFlow(c: ProjectContainer): void {
       language: reportLanguage,
       spawnReviewer: async (r) => {
         const out = await spawnAgent(k.get('ctx'), { slug: r.slug, profile: 'reviewer', goal: r.goal, model: r.model, source: 'main', review: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
-        return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
+        return spawnResult(out);
       },
       existingSlugs: () => [projectName, ...store.listAgents().map((a) => a.slug)],
-      authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && ptys.status(slug) === 'running',
+      authorAlive: authorRunning(k),
       notifyMain: (text) => { inbox.push(projectName, text); },
       notifyAuthor: (slug, text) => { inbox.push(slug, text); },
       askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
@@ -67,8 +66,6 @@ export function registerTicketFlow(c: ProjectContainer): void {
     const projectName = k.get('projectName');
     const stateProblems = k.get('stateProblems');
     const testCommandAt = k.get('testCommandAt');
-    const registry = k.get('registry');
-    const ptys = k.get('ptys');
     const inbox = k.get('inbox');
     const questions = k.get('questions');
     return new CentralRun({
@@ -80,7 +77,7 @@ export function registerTicketFlow(c: ProjectContainer): void {
       merging: () => k.get('merge').inFlight(),
       git: createCentralGit({ root: o.projectRoot, project: projectName, runTests: (job) => shared.testQueue.run(job), timeoutMs: () => runtime.git.testTimeoutMinutes * 60_000 }),
       runTests: (job) => shared.testQueue.run({ ...job, onWait: () => shared.broadcastAll() }),
-      authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && registry.get(slug)?.state !== 'finished' && ptys.status(slug) === 'running',
+      authorAlive: authorActive(k),
       notifyAuthor: (slug, text) => { inbox.push(slug, text); },
       notifyMain: (text) => { inbox.push(projectName, text); },
       askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
@@ -97,7 +94,6 @@ export function registerTicketFlow(c: ProjectContainer): void {
     const testsDisabled = k.get('testsDisabled');
     const store = k.get('store');
     const reportLanguage = k.get('reportLanguage');
-    const ptys = k.get('ptys');
     const inbox = k.get('inbox');
     const finishAgent = k.get('finishAgent');
     return new MergeService({
@@ -109,7 +105,7 @@ export function registerTicketFlow(c: ProjectContainer): void {
       testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
       squash: () => store.project.squash !== false,
       language: reportLanguage,
-      authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && registry.get(slug)?.state !== 'finished' && ptys.status(slug) === 'running',
+      authorAlive: authorActive(k),
       notifyMain: (text) => { inbox.push(projectName, text); },
       notifyAuthor: (slug, text) => { inbox.push(slug, text); },
       needsUser: (slug, reason) => { k.get('review').askUserAboutTicket(slug, reason); },
@@ -151,7 +147,6 @@ export function registerTicketFlow(c: ProjectContainer): void {
     const restrictions = k.get('restrictions');
     const ptys = k.get('ptys');
     const finishAgent = k.get('finishAgent');
-    const secretPatterns = k.get('secretPatterns');
     const store = k.get('store');
     const inbox = k.get('inbox');
     const questions = k.get('questions');
@@ -167,7 +162,7 @@ export function registerTicketFlow(c: ProjectContainer): void {
       testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
       spawnRecovery: async (r) => {
         const out = await spawnAgent(k.get('ctx'), { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
-        return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
+        return spawnResult(out);
       },
       spawnReplacement: async (r) => {
         // The stopped agent's restriction goes with its session; the new name never inherits one.
@@ -179,8 +174,8 @@ export function registerTicketFlow(c: ProjectContainer): void {
         if (!checkout.ok) return { ok: false, code: checkout.code, detail: `the worktree of ${r.from} is not known` };
         if (old) {
           // Whatever is still uncommitted is kept on the branch before the folder goes (git refuses a branch checked out twice).
-          const wip = await commitWip({ worktree: old.worktree, slug: r.from, project: projectName, reason: 'handover', secretPatterns: secretPatterns() });
-          if (!wip.ok) return { ok: false, code: 'wip_failed', detail: `${wip.code}${wip.files ? `: ${wip.files.join(', ')}` : wip.detail ? `: ${wip.detail}` : ''}` };
+          const wip = await wipCommitFor(k)(r.from, 'handover');
+          if (!wip.ok) return { ok: false, code: 'wip_failed', detail: wip.detail };
           const oldRepo = old.repo ?? o.projectRoot;
           await removeWorktree(oldRepo, old.worktree);
           rmSync(join(await commonDir(oldRepo), 'console-hooks', r.from), { recursive: true, force: true });
@@ -190,7 +185,7 @@ export function registerTicketFlow(c: ProjectContainer): void {
           slug: r.slug, profile: r.profile, goal: r.goal, model: r.model, source: 'main',
           ...(r.budget !== undefined ? { budget: r.budget } : {}), ...(old ? { resumeBranch: old.branch } : {}), ...repoOfTicket(r.slug),
         });
-        return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
+        return spawnResult(out);
       },
       existingSlugs: () => [projectName, ...store.listAgents().map((a) => a.slug)],
       notifyMain: (text) => { inbox.push(projectName, text); },
