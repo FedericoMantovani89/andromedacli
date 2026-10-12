@@ -8,6 +8,12 @@ import type { PermissionMemory } from '../questions/permission-memory';
 import type { QuestionQueue } from '../questions/queue';
 import type { ReadingStore } from '../reading/store';
 import type { RequestStore } from '../requests/store';
+import type { LaunchWatch } from '../agents/launch-watch';
+import type { Scheduler } from '../agents/scheduler';
+import type { QuotaStep } from '../budget/quota';
+import type { Context } from '../http';
+import type { StaleChecker } from '../git/stale';
+import type { RequestService } from '../requests/service';
 import type { SessionTokens } from '../security';
 import type { StateProblems } from '../state-problems';
 import type { TicketStore } from '../tickets/store';
@@ -45,5 +51,19 @@ export interface Services {
   repos: () => string[];
   forgetRepos: () => void;
   prepareRepo: (path: string) => Promise<void>;
+  launchWatch: LaunchWatch;
+  endTimers: Set<ReturnType<typeof setTimeout>>;
+  finishAgent: (slug: string, opts?: { stopped?: boolean }) => Promise<void>;
+  endReadOnlySession: (slug: string) => void;
+  readHandover: (slug: string) => string | undefined;
+  keepHandover: (slug: string) => void;
+  repoOfTicket: (slug: string) => { repo?: string };
+  quotaStepRef: { value: QuotaStep };
+  scheduler: Scheduler;
+  launchMain: (resumeId: string | undefined) => void;
+  staleChecker: StaleChecker;
+  // temporary bridges to locals of createProjectRuntime (removed with the areas that take them over)
+  requests: RequestService;
+  ctx: Context;
 }
 export type ProjectContainer = Container<Services>;

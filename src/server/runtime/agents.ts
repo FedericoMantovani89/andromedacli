@@ -1,10 +1,20 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { LaunchWatch } from '../agents/launch-watch';
 import { AgentRegistry } from '../agents/registry';
+import { Scheduler } from '../agents/scheduler';
+import { failQueuedStart, launchAgent } from '../agents/spawn';
 import { defaultProjectsDir, transcriptPath } from '../budget/transcript';
-import { discoverRepos } from '../git/repos';
-import { excludeConsoleFolder } from '../git/worktree';
+import type { QuotaStep } from '../budget/quota';
+import { discoverRepos, repoPathOf } from '../git/repos';
+import { GitignoreAsked, hasGitignore } from '../git/gitignore';
+import { StaleChecker, latestCommitMs } from '../git/stale';
+import { commonDir, excludeConsoleFolder, removeWorktree } from '../git/worktree';
 import { installReleaseHook } from '../git/release-hook';
-import { SESSION_ID_RE } from '../pty/claude-launch';
+import { helperToolsText } from '../helper-tools';
+import { languageName, listProfileNames, pickableProfiles, renderMainPrompt } from '../profiles';
+import { buildClaudeLaunch, SESSION_ID_RE } from '../pty/claude-launch';
+import { readHandoverNote } from '../tickets/handover';
 import { PtyManager } from '../pty/pty-manager';
 import { SessionTokens } from '../security';
 import type { ProjectContainer } from './services';
@@ -57,5 +67,150 @@ export function registerAgents(c: ProjectContainer): void {
     // The console's own folder never shows in git status; nobody pushes main from here except the console, after the user approves a release (SPEC 9.1, 15.5).
     await excludeConsoleFolder(path).catch(() => { /* cosmetic: the first worktree tries again */ });
     await installReleaseHook(path).catch(() => 'skipped_existing');
+  });
+
+  c.provide('launchWatch', (k) => {
+    const { o, shared } = k.get('env');
+    const registry = k.get('registry');
+    const inbox = k.get('inbox');
+    const projectName = k.get('projectName');
+    return new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); shared.broadcastAll(); } });
+  });
+  c.provide('endTimers', () => new Set<ReturnType<typeof setTimeout>>()); // reviewers about to be ended; cancelled at shutdown
+  /**
+   * Ends a session on purpose: its state becomes "finished", not "interrupted". By default it ended for good (a merged ticket, a
+   * finished review) and its own requests are cancelled; `stopped` (a budget or loop stop, a limit suspension, a replacement) means
+   * its work goes on later, so its requests and their waiting steps stay for the resume or the replacement.
+   */
+  c.provide('finishAgent', (k) => {
+    const registry = k.get('registry');
+    const ptys = k.get('ptys');
+    return async (slug: string, opts: { stopped?: boolean } = {}): Promise<void> => {
+      const requests = k.get('requests');
+      if (opts.stopped) requests.agentStopped(slug);
+      else requests.agentGone(slug);
+      registry.markFinished(slug, { stopped: opts.stopped === true });
+      await ptys.killTree(slug);
+    };
+  });
+  /**
+   * A reviewer's or a recovery's work is done once it has spoken: end it a moment later (its tool answer still has to reach it) and
+   * remove its checkout and its hook folder.
+   */
+  c.provide('endReadOnlySession', (k) => {
+    const { o } = k.get('env');
+    const registry = k.get('registry');
+    const endTimers = k.get('endTimers');
+    return (slug: string): void => {
+      const git = registry.get(slug)?.git;
+      const repo = git?.repo ?? o.projectRoot;
+      const timer = setTimeout(() => {
+        endTimers.delete(timer);
+        void k.get('finishAgent')(slug).then(() => (git ? removeWorktree(repo, git.worktree) : undefined)).then(async () => { rmSync(join(await commonDir(repo), 'console-hooks', slug), { recursive: true, force: true }); }).catch(() => undefined);
+      }, 3000);
+      timer.unref?.();
+      endTimers.add(timer);
+    };
+  });
+  /** The handover note an agent wrote in its worktree (`.andromedaconsole/handover.md`), at most 4000 characters; undefined when none. */
+  c.provide('readHandover', (k) => {
+    const registry = k.get('registry');
+    return (slug: string): string | undefined => {
+      const worktree = registry.get(slug)?.git?.worktree;
+      if (!worktree) return undefined;
+      return readHandoverNote(worktree);
+    };
+  });
+  /** At a stop the note goes into the ticket while the worktree is still there (a recovery reads it, a replacement gets it). */
+  c.provide('keepHandover', (k) => {
+    const tickets = k.get('tickets');
+    const readHandover = k.get('readHandover');
+    return (slug: string): void => {
+      const text = readHandover(slug);
+      if (!text) return;
+      try { tickets.setHandover(slug, text); } catch { /* no ticket: nothing to keep it in */ }
+    };
+  });
+  /** The repository a ticket belongs to, as a spawn request field (nothing for a project folder that is itself the repository). */
+  c.provide('repoOfTicket', (k) => {
+    const tickets = k.get('tickets');
+    return (slug: string): { repo?: string } => { const repo = tickets.get(slug)?.repo; return repo === undefined ? {} : { repo }; };
+  });
+  // The quota step the scheduler reads on every decision; the quota service writes it (applyLimits).
+  c.provide('quotaStepRef', () => ({ value: 'none' as QuotaStep }));
+  // The scheduler's callbacks reach `ctx` lazily, only once the server is running.
+  c.provide('scheduler', (k) => {
+    const { shared, limits } = k.get('env');
+    const registry = k.get('registry');
+    const store = k.get('store');
+    const ref = k.get('quotaStepRef');
+    return new Scheduler({
+      registry, limits: () => ({ global: limits.global, perProject: store.fields().maxActive ?? limits.perProject }), multiplier: () => ref.value,
+      // The global limit counts the active agents of every open project.
+      globalActive: () => shared.runtimes.reduce((n, r) => n + r.parts.scheduler.activeCount(), 0),
+      start: (r) => launchAgent(k.get('ctx'), r),
+      onStartError: (r) => failQueuedStart(k.get('ctx'), r),
+    });
+  });
+  /**
+   * Starts the main session: at startup, and again at a wake-up when its process had ended (`resumeId`: its last session, so it keeps
+   * its context). A start after the first one is a new launch: it gets a new token and the settings of this moment.
+   */
+  c.provide('launchMain', (k) => {
+    const { o, shared, config, runtime } = k.get('env');
+    const ptys = k.get('ptys');
+    const registry = k.get('registry');
+    const projectName = k.get('projectName');
+    const sessionGuardMode = k.get('sessionGuardMode');
+    const tokens = k.get('tokens');
+    const launchLog = k.get('launchLog');
+    const repos = k.get('repos');
+    const store = k.get('store');
+    return (resumeId: string | undefined): void => {
+      const ctx = k.get('ctx');
+      if (ptys.status(projectName) !== 'unknown') {
+        // Its last session id is kept: a relaunch that fails before reporting in is followed by a `--resume` on the next probe.
+        const sessionId = registry.get(projectName)?.sessionId;
+        registry.register({ slug: projectName, role: 'main', profile: 'main', ...(sessionId !== undefined ? { sessionId } : {}) });
+        sessionGuardMode.set(projectName, runtime.guardMode);
+      }
+      const launch = buildClaudeLaunch({
+        command: ctx.claudeCommand, role: 'main', slug: projectName, project: projectName,
+        url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
+        pluginDir: ctx.modDir, displayName: `${projectName} AndromedaConsole`,
+        allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__send_message', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup', ...(config.notifications.mainPush ? ['PushNotification'] : [])] : undefined,
+        appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), profiles: pickableProfiles(store.fields().profiles, listProfileNames(o.projectRoot, join(o.configDir, 'profiles'))), helpers: helperToolsText(shared.getPrereq()), mainPush: config.notifications.mainPush,
+          noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedaconsole', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
+        ...(resumeId !== undefined ? { resumeId } : {}),
+      });
+      ptys.spawn({ id: projectName, ...launch, cwd: resolve(o.projectRoot), cols: 120, rows: 30 });
+      launchLog.set(projectName, launch.args);
+    };
+  });
+  c.provide('staleChecker', (k) => {
+    const { shared, runtime } = k.get('env');
+    const repos = k.get('repos');
+    const store = k.get('store');
+    const registry = k.get('registry');
+    const ptys = k.get('ptys');
+    const tickets = k.get('tickets');
+    const inbox = k.get('inbox');
+    const projectName = k.get('projectName');
+    const ticketStatusOf = (slug: string) => { try { return tickets.get(slug)?.status; } catch { return undefined; } };
+    return new StaleChecker({
+      enabled: () => repos().length > 0 && runtime.git.worktrees && runtime.git.staleCheck,
+      days: () => runtime.git.staleWorktreeDays,
+      now: () => Date.now(),
+      candidates: () => {
+        const records = new Map(store.listAgents().map((a) => [a.slug, a]));
+        return registry.list()
+          .filter((a) => a.role === 'agent' && a.git !== undefined && ptys.status(a.slug) !== 'running' && a.state !== 'queued' && ticketStatusOf(a.slug) !== 'merged' && ticketStatusOf(a.slug) !== 'released')
+          .map((a) => ({ slug: a.slug, worktree: a.git!.worktree, ...(records.get(a.slug)?.lastActiveAt ? { lastActiveAt: records.get(a.slug)!.lastActiveAt } : {}), ...(records.get(a.slug)?.stale ? { stale: true } : {}) }));
+      },
+      latestCommitMs,
+      setStale: (slug, stale) => { store.updateAgent(slug, { stale: stale ? true : undefined }); },
+      tellMain: (text) => { inbox.push(projectName, text); },
+      changed: () => shared.broadcastAll(),
+    });
   });
 }

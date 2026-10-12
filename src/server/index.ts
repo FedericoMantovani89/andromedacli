@@ -12,18 +12,17 @@ import { ModelCatalog } from './catalog/models';
 import { PluginCatalog } from './catalog/plugins';
 import { ProjectStore } from './project-store';
 import { PtyManager } from './pty/pty-manager';
-import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
+import { SESSION_ID_RE } from './pty/claude-launch';
 import { hardenExecutableSearch } from './exe-search';
 import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
 import { createToken, LoginCodes } from './security';
-import { Scheduler } from './agents/scheduler';
 import { CONSOLE_FROM } from './questions/queue';
 import { describeKey } from './questions/describe';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
-import { failQueuedStart, launchAgent, launchResume, spawnAgent } from './agents/spawn';
+import { launchResume, spawnAgent } from './agents/spawn';
 import { ResumeService, type WakeResult } from './agents/resume';
 import { StepService } from './tickets/steps';
 import { RequestService } from './requests/service';
@@ -36,27 +35,22 @@ import { CentralRun } from './tickets/central';
 import { createCentralGit } from './tickets/central-git';
 import { commonDir, removeWorktree } from './git/worktree';
 import { createTranslator } from '../shared/i18n';
-import { LaunchWatch } from './agents/launch-watch';
 import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
 import { repoPathOf } from './git/repos';
-import { GitignoreAsked, hasGitignore } from './git/gitignore';
 import { GuardLog } from './guard/log';
 import { HelperUsage, type HelperUse } from './helper-usage';
-import { helperToolsText } from './helper-tools';
-import { languageName, listProfileNames, pickableProfiles, renderMainPrompt } from './profiles';
 import { runChecks, type Runner } from './prereq/checks';
 import type { ProjectTab, PrereqResult } from '../shared/protocol';
 import { Ledger } from './budget/ledger';
 import { defaultProjectsDir, pickTranscript, TranscriptReader } from './budget/transcript';
 import { BudgetService } from './budget/service';
-import { readHandoverNote } from './tickets/handover';
 import { Restrictions } from './budget/restrictions';
 import { budgetAnswerHandler } from './budget/answers';
 import { commitWip } from './git/commit';
 import { LoopDetector } from './budget/loop-detector';
 import { LoopService } from './budget/loop-service';
-import { QuotaService, QuotaState, type QuotaStep } from './budget/quota';
+import { QuotaService, QuotaState } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
@@ -67,7 +61,6 @@ import { AgentPersister } from './agents/persist';
 import { renderRestartNotice, restoreAgents } from './agents/restore';
 import { WakeService } from './agents/wake';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
-import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
 import { KeyedQueue } from './keyed-queue';
@@ -195,24 +188,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const testRunnerAt = c.get('testRunnerAt');
   const sessionGuardMode = c.get('sessionGuardMode');
   const tickets = c.get('tickets');
-  const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
-  const endTimers = new Set<ReturnType<typeof setTimeout>>(); // reviewers about to be ended; cancelled at shutdown
-  /**
-   * A reviewer's or a recovery's work is done once it has spoken: end it a moment later (its tool answer still has to reach it) and
-   * remove its checkout and its hook folder.
-   */
-  const endReadOnlySession = (slug: string): void => {
-    const git = registry.get(slug)?.git;
-    const repo = git?.repo ?? o.projectRoot;
-    const timer = setTimeout(() => {
-      endTimers.delete(timer);
-      void finishAgent(slug).then(() => (git ? removeWorktree(repo, git.worktree) : undefined)).then(async () => { rmSync(join(await commonDir(repo), 'console-hooks', slug), { recursive: true, force: true }); }).catch(() => undefined);
-    }, 3000);
-    timer.unref?.();
-    endTimers.add(timer);
-  };
-  /** The repository a ticket belongs to, as a spawn request field (nothing for a project folder that is itself the repository). */
-  const repoOfTicket = (slug: string): { repo?: string } => { const repo = tickets.get(slug)?.repo; return repo === undefined ? {} : { repo }; };
+  const launchWatch = c.get('launchWatch');
+  const endTimers = c.get('endTimers');
+  const endReadOnlySession = c.get('endReadOnlySession');
+  const repoOfTicket = c.get('repoOfTicket');
   const reportLanguage = c.get('reportLanguage');
   const ticketQueue = new KeyedQueue(); // one queue per ticket, shared by every service that changes it
   const review = new ReviewService({
@@ -279,29 +258,9 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     askConfirm: (q, onAnswer) => questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'confirm', payload: q.payload }, onAnswer).id,
     changed: () => broadcast(),
   });
-  /**
-   * Ends a session on purpose: its state becomes "finished", not "interrupted". By default it ended for good (a merged ticket, a
-   * finished review) and its own requests are cancelled; `stopped` (a budget or loop stop, a limit suspension, a replacement) means
-   * its work goes on later, so its requests and their waiting steps stay for the resume or the replacement.
-   */
-  const finishAgent = async (slug: string, o: { stopped?: boolean } = {}): Promise<void> => {
-    if (o.stopped) requests.agentStopped(slug);
-    else requests.agentGone(slug);
-    registry.markFinished(slug, { stopped: o.stopped === true });
-    await ptys.killTree(slug);
-  };
-  /** The handover note an agent wrote in its worktree (`.andromedaconsole/handover.md`), at most 4000 characters; undefined when none. */
-  const readHandover = (slug: string): string | undefined => {
-    const worktree = registry.get(slug)?.git?.worktree;
-    if (!worktree) return undefined;
-    return readHandoverNote(worktree);
-  };
-  /** At a stop the note goes into the ticket while the worktree is still there (a recovery reads it, a replacement gets it). */
-  const keepHandover = (slug: string): void => {
-    const text = readHandover(slug);
-    if (!text) return;
-    try { tickets.setHandover(slug, text); } catch { /* no ticket: nothing to keep it in */ }
-  };
+  const finishAgent = c.get('finishAgent');
+  const readHandover = c.get('readHandover');
+  const keepHandover = c.get('keepHandover');
   // Token budgets (SPEC 16): usage from the Claude Code transcript, recorded in the monthly ledger, steps on the ticket.
   const projectsDir = o.projectsDir ?? defaultProjectsDir();
   const reader = new TranscriptReader();
@@ -407,7 +366,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   });
   // Usage limits of the subscription (SPEC 18): the mod reports them, the service decides the step.
   // The quota state, the sleep timer and its clock are console-wide (the limits belong to the account): see `shared`.
-  let quotaStep: QuotaStep = 'none'; // read by the scheduler on every decision
+  const quotaStepRef = c.get('quotaStepRef'); // read by the scheduler on every decision
   // The probe of a wake-up waits for the next quota reading (the main's next turn reports it), at most WAKE_WAIT_MS.
   const quotaWaiters = new Set<() => void>();
   const wakeTimers = new Set<unknown>();
@@ -423,7 +382,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     if (ptys.status(projectName) !== 'running') {
       const sid = registry.get(projectName)?.sessionId;
       const resumeId = sid !== undefined && SESSION_ID_RE.test(sid) ? sid : undefined;
-      launchMain(resumeId);
+      c.get('launchMain')(resumeId);
       if (!resumeId) note = ' Your earlier session had ended and could not be resumed (its id was unknown), so this is a new session: look at the project with list_agents before deciding anything.';
     }
     const result = new Promise<WakeResult>((done) => {
@@ -486,7 +445,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       else if (role === 'recovery') recovery.abandon(slug);
     },
     // A step back to 'none' must start the queue by itself: the scheduler only looks again when told.
-    applyLimits: (s) => { quotaStep = s; scheduler.release(); broadcast(); },
+    applyLimits: (s) => { quotaStepRef.value = s; scheduler.release(); broadcast(); },
     onLimitReached: (resetsAt, kind) => sleep.sleepUntil(resetsAt, kind),
     changed: () => broadcast(),
   });
@@ -523,21 +482,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const repos = c.get('repos');
   const forgetRepos = c.get('forgetRepos');
   const prepareRepo = c.get('prepareRepo');
-  const staleChecker = new StaleChecker({
-    enabled: () => repos().length > 0 && runtime.git.worktrees && runtime.git.staleCheck,
-    days: () => runtime.git.staleWorktreeDays,
-    now: () => Date.now(),
-    candidates: () => {
-      const records = new Map(store.listAgents().map((a) => [a.slug, a]));
-      return registry.list()
-        .filter((a) => a.role === 'agent' && a.git !== undefined && ptys.status(a.slug) !== 'running' && a.state !== 'queued' && ticketStatusOf(a.slug) !== 'merged' && ticketStatusOf(a.slug) !== 'released')
-        .map((a) => ({ slug: a.slug, worktree: a.git!.worktree, ...(records.get(a.slug)?.lastActiveAt ? { lastActiveAt: records.get(a.slug)!.lastActiveAt } : {}), ...(records.get(a.slug)?.stale ? { stale: true } : {}) }));
-    },
-    latestCommitMs,
-    setStale: (slug, stale) => { store.updateAgent(slug, { stale: stale ? true : undefined }); },
-    tellMain: (text) => { inbox.push(projectName, text); },
-    changed: () => broadcast(),
-  });
+  const staleChecker = c.get('staleChecker');
   const guardLog = new GuardLog(join(o.projectRoot, '.andromedaconsole', 'state', 'guard.jsonl'));
   const steps: StepService = new StepService({
     queue: ticketQueue,
@@ -571,38 +516,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     changed: () => broadcast(),
   });
   inbox.onAck((slug, id) => requests.onDelivered(slug, id));
+  c.provide('requests', () => requests);
   const launchLog = c.get('launchLog');
-  // The scheduler's callbacks reach `ctx` (defined below) lazily, only once the server is running.
-  const scheduler = new Scheduler({
-    registry, limits: () => ({ global: limits.global, perProject: store.fields().maxActive ?? limits.perProject }), multiplier: () => quotaStep,
-    // The global limit counts the active agents of every open project.
-    globalActive: () => shared.runtimes.reduce((n, r) => n + r.parts.scheduler.activeCount(), 0),
-    start: (r) => launchAgent(ctx, r),
-    onStartError: (r) => failQueuedStart(ctx, r),
-  });
-  /**
-   * Starts the main session: at startup, and again at a wake-up when its process had ended (`resumeId`: its last session, so it keeps
-   * its context). A start after the first one is a new launch: it gets a new token and the settings of this moment.
-   */
-  function launchMain(resumeId: string | undefined): void {
-    if (ptys.status(projectName) !== 'unknown') {
-      // Its last session id is kept: a relaunch that fails before reporting in is followed by a `--resume` on the next probe.
-      const sessionId = registry.get(projectName)?.sessionId;
-      registry.register({ slug: projectName, role: 'main', profile: 'main', ...(sessionId !== undefined ? { sessionId } : {}) });
-      sessionGuardMode.set(projectName, runtime.guardMode);
-    }
-    const launch = buildClaudeLaunch({
-      command: ctx.claudeCommand, role: 'main', slug: projectName, project: projectName,
-      url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
-      pluginDir: ctx.modDir, displayName: `${projectName} AndromedaConsole`,
-      allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__send_message', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup', ...(config.notifications.mainPush ? ['PushNotification'] : [])] : undefined,
-      appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), profiles: pickableProfiles(store.fields().profiles, listProfileNames(o.projectRoot, join(o.configDir, 'profiles'))), helpers: helperToolsText(shared.getPrereq()), mainPush: config.notifications.mainPush,
-        noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedaconsole', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
-      ...(resumeId !== undefined ? { resumeId } : {}),
-    });
-    ptys.spawn({ id: projectName, ...launch, cwd: resolve(o.projectRoot), cols: 120, rows: 30 });
-    launchLog.set(projectName, launch.args);
-  }
+  const scheduler = c.get('scheduler');
+  const launchMain = c.get('launchMain');
   // The port, the prerequisite checks and the language are console-wide (see `shared`); any change pushes to every UI socket.
   const broadcast = (): void => shared.broadcastAll();
   for (const rel of repos()) await prepareRepo(repoPathOf(o.projectRoot, rel));
@@ -886,6 +803,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
       if (isPlain(applied.plugins)) Object.assign(config.plugins, next.plugins);
     },
   };
+  c.provide('ctx', () => ctx);
 
   // The HTTP and WebSocket servers are console-wide (see `startServer`); a reading entry goes to the sockets of this project only.
   reading.on((slug, entry) => shared.pushToProject(projectName, { type: 'reading', slug, entry }));
