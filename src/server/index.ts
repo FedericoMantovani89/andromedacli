@@ -82,6 +82,10 @@ import { readJsonFile } from './json-file';
 import { StateProblems } from './state-problems';
 import { KeyedQueue } from './keyed-queue';
 import { errorMessage } from '../shared/guards';
+import { Container } from './runtime/container';
+import type { Services, ProjectContainer } from './runtime/services';
+import type { Shared, ProjectRuntime } from './runtime/types';
+export type { ProjectRuntime } from './runtime/types';
 
 export interface StartOptions {
   port: number;
@@ -167,71 +171,13 @@ const STEP_DONE_WAIT_MS = 15_000;
 /** How long after the last merge the central full run waits for another one: merges that follow each other share one run. */
 const CENTRAL_SETTLE_MS = 120_000;
 
-/** What is one per console, shared by reference by every project's runtime (Phase 6C). */
-interface Shared {
-  /** The options the console was started with (the project-bound ones are overridden per project). */
-  o: StartOptions;
-  configPath: string;
-  config: Config;
-  token: string;
-  /** A new single-use code for an address that opens the page (a notification click). */
-  loginCode(): string;
-  bundles: Bundles;
-  ledger: Ledger;
-  /** The account's limits: one reading for every project. */
-  quotaState: QuotaState;
-  /** The machine's one queue of long test runs: two full suites at once slow each other down and fail timing-sensitive tests. */
-  testQueue: TestQueue;
-  /** One sleep timer; at the reset it wakes the main of every project. */
-  sleep: SleepTimer;
-  sleepClock: SleepClock;
-  /** The settings and limits read at each launch (Settings dialog), one set for the whole console. */
-  runtime: { bypass: boolean; guardMode: 'enforce' | 'shadow'; git: Config['git'] };
-  limits: { global: number; perProject: number };
-  /** Every open project, in the order they were opened. */
-  runtimes: ProjectRuntime[];
-  projectsApi: ProjectsApi;
-  getPort(): number;
-  /** Any change in any project pushes the state to every UI socket (the tab dots need it). */
-  broadcastAll(): void;
-  /** Pushes a message about one project to that project's sockets only. */
-  pushToProject(project: string, payload: unknown): void;
-  language(): string;
-  setLanguage(l: string): void;
-  getPrereq(): PrereqResult[] | null;
-  ensurePrereq(): Promise<PrereqResult[]>;
-  refreshPrereq(): Promise<PrereqResult[]>;
-  /** How often the shell commands of every session used each optional helper: one count for the whole console. */
-  helperUsage: HelperUsage;
-  /** Terminals that are not agent sessions (assisted installs): one set and one installer for the whole console. */
-  utilityPtys: PtyManager;
-  installer: InstallService;
-}
-
-/** One project: its own folder, sessions, agents, tickets and queue (a Context), started and closed on its own. */
-export interface ProjectRuntime {
-  ctx: Context;
-  name: string;
-  root: string;
-  /** Starts the main session (the server is already listening). */
-  start(): void;
-  close(): Promise<void>;
-  summary(): ProjectTab;
-  /** A quota reading some project reported: this project's service applies its steps to its own agents. */
-  onQuota(rateLimits: unknown): void;
-  /** The one check at a reset: wakes this project's main only. */
-  wakeMain(): Promise<WakeResult>;
-  /** The weekly limit's notice for this project's main and queue. */
-  weeklyNotice(resetsAt: string | undefined): void;
-  /** A test seam of the host (`RunningServer.setBudgetLimit`) and the launch log. */
-  parts: { budget: BudgetService; scheduler: Scheduler };
-}
-
 /** The per-project part of the console: everything bound to one folder (Phase 6C: a project runtime; `startServer` hosts the first one). */
 async function createProjectRuntime(shared: Shared, p: { projectRoot: string; projectName: string }): Promise<ProjectRuntime> {
   // The old single-project code below reads `o.projectRoot` and `o.projectName`: here they are this project's.
   const o: StartOptions & { projectRoot: string; projectName: string } = { ...shared.o, projectRoot: p.projectRoot, projectName: p.projectName };
   const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
+  const c: ProjectContainer = new Container<Services>();
+  c.provide('env', () => ({ shared, o, configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits }));
   // State files the console could not read are set aside and listed here; the page shows them until the user dismisses them.
   const stateProblems = new StateProblems(o.projectRoot, () => shared.broadcastAll());
   const store = new ProjectStore(o.projectRoot, stateProblems.add);
