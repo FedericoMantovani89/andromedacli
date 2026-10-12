@@ -16,8 +16,7 @@ import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
 import { hardenExecutableSearch } from './exe-search';
 import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
-import { createToken, LoginCodes, SessionTokens } from './security';
-import { AgentRegistry } from './agents/registry';
+import { createToken, LoginCodes } from './security';
 import { Scheduler } from './agents/scheduler';
 import { CONSOLE_FROM } from './questions/queue';
 import { describeKey } from './questions/describe';
@@ -35,14 +34,12 @@ import { ReleaseService } from './tickets/release';
 import { TestQueue } from './tickets/test-queue';
 import { CentralRun } from './tickets/central';
 import { createCentralGit } from './tickets/central-git';
-import { installReleaseHook } from './git/release-hook';
 import { commonDir, removeWorktree } from './git/worktree';
 import { createTranslator } from '../shared/i18n';
 import { LaunchWatch } from './agents/launch-watch';
 import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
-import { excludeConsoleFolder } from './git/worktree';
-import { discoverRepos, repoPathOf } from './git/repos';
+import { repoPathOf } from './git/repos';
 import { GitignoreAsked, hasGitignore } from './git/gitignore';
 import { GuardLog } from './guard/log';
 import { HelperUsage, type HelperUse } from './helper-usage';
@@ -51,7 +48,7 @@ import { languageName, listProfileNames, pickableProfiles, renderMainPrompt } fr
 import { runChecks, type Runner } from './prereq/checks';
 import type { ProjectTab, PrereqResult } from '../shared/protocol';
 import { Ledger } from './budget/ledger';
-import { defaultProjectsDir, pickTranscript, TranscriptReader, transcriptPath } from './budget/transcript';
+import { defaultProjectsDir, pickTranscript, TranscriptReader } from './budget/transcript';
 import { BudgetService } from './budget/service';
 import { readHandoverNote } from './tickets/handover';
 import { Restrictions } from './budget/restrictions';
@@ -79,6 +76,7 @@ import { Container } from './runtime/container';
 import type { Services, ProjectContainer } from './runtime/services';
 import { registerState } from './runtime/state';
 import { registerTests } from './runtime/tests';
+import { registerAgents } from './runtime/agents';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -175,22 +173,16 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   c.provide('env', () => ({ shared, o, configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits }));
   registerState(c);
   registerTests(c);
+  registerAgents(c);
   const stateProblems = c.get('stateProblems');
   const store = c.get('store');
   const previousRunWasClean = c.get('previousRunWasClean');
   const projectName = c.get('projectName');
-  const ptys = new PtyManager();
-  c.provide('ptys', () => ptys);
-  const tokens = new SessionTokens();
+  const ptys = c.get('ptys');
+  const tokens = c.get('tokens');
   const inbox = c.get('inbox');
-  const registry = new AgentRegistry();
-  c.provide('registry', () => registry);
-  // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
-  const savedMainSession = store.readMainSession();
-  // Claude Code keeps no transcript for a session that never got a prompt: resuming that id fails with "No conversation found", so such an id starts fresh.
-  const hasMainTranscript = (id: string): boolean => existsSync(transcriptPath(o.projectsDir ?? defaultProjectsDir(), o.projectRoot, id));
-  const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) && hasMainTranscript(savedMainSession) ? savedMainSession : undefined;
-  registry.register({ slug: projectName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
+  const registry = c.get('registry');
+  const mainResumeId = c.get('mainResumeId')();
   const questions = c.get('questions');
   const permissions = c.get('permissions');
   const reading = c.get('reading');
@@ -201,7 +193,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const testsDisabled = c.get('testsDisabled');
   const testCommandAt = c.get('testCommandAt');
   const testRunnerAt = c.get('testRunnerAt');
-  const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
+  const sessionGuardMode = c.get('sessionGuardMode');
   const tickets = c.get('tickets');
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
   const endTimers = new Set<ReturnType<typeof setTimeout>>(); // reviewers about to be ended; cancelled at shutdown
@@ -528,22 +520,9 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   // Messages and state kept for the next start (Phase 6A).
   const persister = new AgentPersister({ registry, updateAgent: (slug, patch) => store.updateAgent(slug, patch), writeMainSession: (id) => store.writeMainSession(id), mainSlug: projectName });
   // The state is rebuilt on every push to the UI and discovery spawns git: a few seconds of memory is plenty (a repo made later shows up soon).
-  let repoCache: { at: number; list: string[] } | undefined;
-  const repos = (): string[] => {
-    const now = Date.now();
-    if (!repoCache || now - repoCache.at > 5000) repoCache = { at: now, list: discoverRepos(o.projectRoot) };
-    return repoCache.list;
-  };
-  const forgetRepos = (): void => { repoCache = undefined; };
-  const preparedRepos = new Set<string>();
-  const prepareRepo = async (path: string): Promise<void> => {
-    const key = path.replace(/\\/g, '/').toLowerCase();
-    if (preparedRepos.has(key)) return;
-    preparedRepos.add(key);
-    // The console's own folder never shows in git status; nobody pushes main from here except the console, after the user approves a release (SPEC 9.1, 15.5).
-    await excludeConsoleFolder(path).catch(() => { /* cosmetic: the first worktree tries again */ });
-    await installReleaseHook(path).catch(() => 'skipped_existing');
-  };
+  const repos = c.get('repos');
+  const forgetRepos = c.get('forgetRepos');
+  const prepareRepo = c.get('prepareRepo');
   const staleChecker = new StaleChecker({
     enabled: () => repos().length > 0 && runtime.git.worktrees && runtime.git.staleCheck,
     days: () => runtime.git.staleWorktreeDays,
@@ -592,7 +571,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     changed: () => broadcast(),
   });
   inbox.onAck((slug, id) => requests.onDelivered(slug, id));
-  const launchLog = new Map<string, string[]>();
+  const launchLog = c.get('launchLog');
   // The scheduler's callbacks reach `ctx` (defined below) lazily, only once the server is running.
   const scheduler = new Scheduler({
     registry, limits: () => ({ global: limits.global, perProject: store.fields().maxActive ?? limits.perProject }), multiplier: () => quotaStep,

@@ -8,6 +8,7 @@ import type { PermissionMemory } from '../questions/permission-memory';
 import type { QuestionQueue } from '../questions/queue';
 import type { ReadingStore } from '../reading/store';
 import type { RequestStore } from '../requests/store';
+import type { SessionTokens } from '../security';
 import type { StateProblems } from '../state-problems';
 import type { TicketStore } from '../tickets/store';
 import type { Container } from './container';
@@ -34,8 +35,15 @@ export interface Services {
   testCommandAt: (moment: TestMoment) => () => string | undefined;
   testRunnerAt: (moment: TestMoment) => TestRunner;
   reportLanguage: () => { lang: string; t: ReturnType<typeof createTranslator> };
-  // temporary bridges to locals of createProjectRuntime (removed when the agents area owns them)
-  registry: AgentRegistry;
+  // agents (runtime/agents.ts)
   ptys: PtyManager;
+  tokens: SessionTokens;
+  mainResumeId: () => string | undefined;
+  registry: AgentRegistry;
+  sessionGuardMode: Map<string, 'enforce' | 'shadow'>;
+  launchLog: Map<string, string[]>;
+  repos: () => string[];
+  forgetRepos: () => void;
+  prepareRepo: (path: string) => Promise<void>;
 }
 export type ProjectContainer = Container<Services>;
