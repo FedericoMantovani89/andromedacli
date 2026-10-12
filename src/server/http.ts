@@ -5,7 +5,7 @@ import { buildClaudeLaunch } from './pty/claude-launch';
 import { PtyManager } from './pty/pty-manager';
 import { ProjectStore } from './project-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
-import { extractToken, isAllowedHost, tokensEqual } from './security';
+import { extractToken, isAllowedHost, isAllowedOrigin, tokensEqual, type LoginCodes } from './security';
 import { validateSlug } from '../shared/slug';
 import { type HostInfo, type ProjectTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
 import { applyConfigPatch, loadConfig } from './config';
@@ -267,6 +267,8 @@ export function buildState(ctx: Context): StateMessage {
 export interface HostContext {
   getPort(): number;
   token: string;
+  /** The single-use codes the page swaps for the token (`POST /api/session`). */
+  loginCodes: LoginCodes;
   /** The built UI files (SPEC 33.2). */
   assets: UiAssets;
   /** The user's config folder (templates live under it). */
@@ -322,6 +324,15 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const t = extractToken(req.headers, url);
       const owner = t ? host.projects.contexts().find((c) => c.tokens.slugFor(t) !== undefined) : undefined;
       return owner ? handleV1(owner, req, res, url) : fail(res, 401, 'unauthorized');
+    }
+
+    // The page swaps the single-use code of its opening address for the token. Only a request of the console's own page (a browser always
+    // sends Origin on a POST) may ask; nothing else is accepted here, so another site cannot make the page's code be spent.
+    if (req.method === 'POST' && path === '/api/session') {
+      if (!isAllowedOrigin(req.headers.origin, host.getPort())) return fail(res, 403, 'forbidden');
+      const body = await readObjectBody(req, res);
+      if (body === undefined) return;
+      return typeof body.code === 'string' && host.loginCodes.redeem(body.code) ? send(res, 200, { token: host.token }) : fail(res, 401, 'unauthorized');
     }
 
     const token = extractToken(req.headers, url);

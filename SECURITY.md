@@ -9,7 +9,7 @@ AndromedaCli runs several Claude Code sessions on your machine, each one a norma
 3. **The guard** checks each file and shell tool call against explicit rules before it runs (see below).
 4. **Roles.** Only the console and the main merge and push. Reviewer and recovery sessions are read-only.
 5. **One confirmation for `main`.** Reaching your real `main` always asks you; the console then merges and pushes with a one-time token that the pre-push hook checks.
-6. **A local server only.** It listens on `127.0.0.1`, with a per-start token and Host/Origin checks. Each launched session has its own token and can only call `/v1`; the UI token does not work there.
+6. **A local server only.** It listens on `127.0.0.1`, with a per-start token and Host/Origin checks. Each launched session has its own token and can only call `/v1`; the UI token does not work there. The address the console prints, the app window and a notification click carry a single-use code, not the token: the page swaps it for the token once (only from the console's own origin) and removes it from the address, so an address left in a history or a log opens nothing. The page keeps the token in the tab's `sessionStorage`, which is isolated per address, and the terminal sockets pass it in their query string (never in the visible address).
 
 ## What the guard guarantees
 
@@ -46,4 +46,4 @@ Use bypass only on a project where the worktree, the pre-push hook and a protect
 
 ## Reporting a problem
 
-The repository is private for now. Tell the maintainer directly (Federico Mantovani) with the version (shown in the title bar), the guard rule or tool call involved and, if you can, the output of `npm run console -- doctor --json`.
+Please do not open a public issue for a vulnerability. Use GitHub's "Report a vulnerability" on the repository's Security tab if it is offered, or tell the maintainer directly (Federico Mantovani). Include the version (shown in the title bar), the guard rule or tool call involved and, if you can, the output of `npm run console -- doctor --json`.

@@ -115,8 +115,9 @@ try {
       });
     });
   }
-  await page.goto(`${server.url}/?token=${server.token}`);
+  await page.goto(server.loginUrl()); // the real way in: a single-use code the page swaps for the token
   await page.waitForSelector('#splash', { state: 'hidden', timeout: 40_000 });
+  console.log(`address after load: ${page.url()}`);
   const NAMES = ['fix-login-timeout', 'add-export-csv', 'refactor-billing-api', 'update-readme-docs', 'speed-up-search-index', 'migrate-user-table', 'cleanup-old-jobs', 'add-dark-mode', 'harden-upload-limits'];
   for (const slug of NAMES.slice(0, agentCount)) {
     const r = await fetch(`${server.url}/api/agents`, { method: 'POST', headers: { authorization: `Bearer ${server.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ slug, profile: 'developer' }) });

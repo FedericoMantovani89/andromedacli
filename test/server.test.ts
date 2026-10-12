@@ -42,9 +42,10 @@ async function boot(runner: Runner = goodRunner, seed: { configJson?: string; ag
 }
 
 interface Res { status: number; body: any }
-function request(s: Running, path: string, o: { method?: string; token?: string | null; host?: string; body?: unknown } = {}): Promise<Res> {
+function request(s: Running, path: string, o: { method?: string; token?: string | null; host?: string; origin?: string; body?: unknown } = {}): Promise<Res> {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { host: o.host ?? `127.0.0.1:${s.port}` };
+    if (o.origin) headers.origin = o.origin;
     if (o.token !== null) headers.authorization = `Bearer ${o.token ?? s.token}`;
     let payload: string | undefined;
     if (o.body !== undefined) { payload = JSON.stringify(o.body); headers['content-type'] = 'application/json'; }
@@ -96,6 +97,22 @@ it('refuses requests without the token', async () => {
 it('refuses a wrong token', async () => {
   const s = await boot();
   expect((await request(s, '/api/state', { token: 'nope' })).status).toBe(401);
+});
+it('POST /api/session swaps a single-use code for the token, from the own page only', async () => {
+  const s = await boot();
+  const own = `http://127.0.0.1:${s.port}`;
+  const ask = (code: unknown, origin?: string) => request(s, '/api/session', { method: 'POST', token: null, body: { code }, ...(origin ? { origin } : {}) });
+  const url = new URL(s.loginUrl());
+  expect(url.searchParams.get('token')).toBeNull(); // the printed address never carries the token
+  const code = url.searchParams.get('code')!;
+  expect((await ask(code)).status).toBe(403); // no Origin: not the page
+  expect((await ask(code, 'https://evil.example')).status).toBe(403); // another site cannot spend the code either
+  expect((await ask('not-a-code', own)).status).toBe(401);
+  const ok = await ask(code, own);
+  expect(ok.status).toBe(200);
+  expect(ok.body).toEqual({ token: s.token });
+  expect((await ask(code, own)).status).toBe(401); // used
+  expect((await ask(new URL(s.loginUrl()).searchParams.get('code'), own)).status).toBe(200); // a new address gets a new code
 });
 it('refuses a foreign Host header (DNS rebinding)', async () => {
   const s = await boot();

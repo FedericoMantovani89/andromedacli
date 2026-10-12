@@ -56,7 +56,13 @@ it('a question from an agent raises a toast whose click opens the queue on that 
   const { id } = (await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { question: 'Which color?' })).body;
   await until(() => r.sent.length === 1, 6000);
   expect(r.sent[0]!.message).toBe('fix-login: Which color?');
-  expect(r.sent[0]!.open).toBe(`http://127.0.0.1:${s.port}/?token=${s.token}&project=shop-api#queue=${id}`);
+  // The click opens the page with a single-use code, never the token.
+  const open = new URL(r.sent[0]!.open!);
+  expect(open.origin).toBe(`http://127.0.0.1:${s.port}`);
+  expect(open.searchParams.get('token')).toBeNull();
+  expect(open.searchParams.get('code')).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+  expect(open.searchParams.get('project')).toBe('shop-api');
+  expect(open.hash).toBe(`#queue=${id}`);
 });
 
 it('PUT /api/config saves the notification settings, applies them at once and refuses bad values', async () => {

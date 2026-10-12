@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     const server = await startServer({
       port: args.port, configDir: configDir(), ...(projectRoot ? { projectRoot, projectName: projectNameFromDir(projectRoot) } : {}),
     });
-    const link = `${server.url}/?token=${server.token}`;
+    const link = server.loginUrl(); // a single-use code, not the token: the address is useless once the page has opened
     console.log(`Console: ${link}`);
     if (projectRoot) console.log(`Project folder: ${projectRoot} (state in ${join(projectRoot, '.andromedacli')})`);
     if (!args.noOpen) openBrowser(link);
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     process.on('SIGTERM', stop);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-      console.error(`console: port ${args.port} is already in use (the port is fixed because the token is part of the URL; use --port)`);
+      console.error(`console: port ${args.port} is already in use (the port is fixed on purpose, a page keeps its login per address; use --port)`);
       process.exit(2);
     }
     console.error(`console: ${errorMessage(e)}`);

@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { createToken, tokensEqual, isAllowedHost, isAllowedOrigin, extractToken } from '../src/server/security';
+import { createToken, tokensEqual, isAllowedHost, isAllowedOrigin, extractToken, LoginCodes } from '../src/server/security';
 
 it('creates distinct url-safe tokens of at least 32 chars', () => {
   const a = createToken(), b = createToken();
@@ -29,4 +29,24 @@ it('extracts the token from Authorization or the query string', () => {
   expect(extractToken({ authorization: 'Bearer T1' }, new URL('http://x/y'))).toBe('T1');
   expect(extractToken({}, new URL('http://x/y?token=T2'))).toBe('T2');
   expect(extractToken({}, new URL('http://x/y'))).toBeUndefined();
+});
+
+it('a login code works once, and an unknown or expired one never', () => {
+  let now = 1_000;
+  const codes = new LoginCodes(() => now, 10_000, 3);
+  const a = codes.issue();
+  expect(a).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+  expect(codes.redeem('not-a-code')).toBe(false);
+  expect(codes.redeem(a)).toBe(true);
+  expect(codes.redeem(a)).toBe(false);
+  const b = codes.issue();
+  now += 10_001;
+  expect(codes.redeem(b)).toBe(false);
+});
+it('keeps at most `max` login codes alive: the oldest goes first', () => {
+  const codes = new LoginCodes(Date.now, 60_000, 2);
+  const [a, b, c] = [codes.issue(), codes.issue(), codes.issue()];
+  expect(codes.redeem(a)).toBe(false);
+  expect(codes.redeem(b)).toBe(true);
+  expect(codes.redeem(c)).toBe(true);
 });

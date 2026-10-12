@@ -31,6 +31,34 @@ export class SessionTokens {
 
 export const createToken = (): string => randomBytes(32).toString('base64url');
 
+/**
+ * Single-use codes for opening the page: the address the console prints, the app window and a notification click carry a code, never the
+ * token. The page swaps the code for the token once (`POST /api/session`), so an address left in a history or a log opens nothing.
+ * A code lives for `ttlMs` and at most `max` are alive at once (the oldest goes first).
+ */
+export class LoginCodes {
+  private readonly live = new Map<string, number>();
+
+  constructor(private readonly now: () => number = Date.now, private readonly ttlMs = 12 * 60 * 60_000, private readonly max = 64) {}
+
+  issue(): string {
+    const code = createToken();
+    this.live.set(code, this.now() + this.ttlMs);
+    while (this.live.size > this.max) this.live.delete(this.live.keys().next().value as string);
+    return code;
+  }
+
+  /** True once per code; an unknown, used or expired one is refused. */
+  redeem(code: string): boolean {
+    for (const [known, until] of this.live) {
+      if (!tokensEqual(known, code)) continue;
+      this.live.delete(known);
+      return until > this.now();
+    }
+    return false;
+  }
+}
+
 export function tokensEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a), bb = Buffer.from(b);
   return ab.length === bb.length && timingSafeEqual(ab, bb);

@@ -123,7 +123,7 @@ async function start(): Promise<void> {
     app.exit(1);
     return;
   }
-  win = createWindow(`${server.url}/?token=${server.token}`, server.port);
+  win = createWindow(server.loginUrl(), server.port);
 }
 
 if (!app.requestSingleInstanceLock()) {

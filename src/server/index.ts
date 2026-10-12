@@ -15,7 +15,7 @@ import { testCommandFor } from './test-commands';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
 import { detectProject } from './templates/detect';
-import { createToken, SessionTokens } from './security';
+import { createToken, LoginCodes, SessionTokens } from './security';
 import { AgentRegistry } from './agents/registry';
 import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
@@ -128,6 +128,8 @@ export interface RunningServer {
   address: string;
   token: string;
   url: string;
+  /** The address that opens the page: it carries a new single-use code, never the token. */
+  loginUrl(): string;
   /** Token a launched session uses on /v1 (tests and in-process callers). */
   sessionTokenFor(slug: string): string | undefined;
   /** Queues a message for a session; the mod delivers it as a new turn. Returns the message id. */
@@ -168,6 +170,8 @@ interface Shared {
   configPath: string;
   config: Config;
   token: string;
+  /** A new single-use code for an address that opens the page (a notification click). */
+  loginCode(): string;
   bundles: Bundles;
   ledger: Ledger;
   /** The account's limits: one reading for every project. */
@@ -705,7 +709,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const notify = new NotificationService({
     config: () => config.notifications, notifier, presence, clock: notifyClock,
     translate: () => reportLanguage().t,
-    clickUrl: (itemId) => `http://127.0.0.1:${shared.getPort()}/?token=${shared.token}&project=${encodeURIComponent(projectName)}${itemId ? `#queue=${encodeURIComponent(itemId)}` : ''}`,
+    clickUrl: (itemId) => `http://127.0.0.1:${shared.getPort()}/?code=${shared.loginCode()}&project=${encodeURIComponent(projectName)}${itemId ? `#queue=${encodeURIComponent(itemId)}` : ''}`,
     isPending: (id) => questions.pending().some((q) => q.id === id),
     pushBrowser: (m) => shared.pushToProject(projectName, m),
     changed: () => broadcast(),
@@ -1121,6 +1125,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   const configPath = join(o.configDir, 'config.json');
   const { config } = loadConfig(configPath);
   const token = createToken();
+  const loginCodes = new LoginCodes();
   const sleepFile = join(o.configDir, 'state', 'sleep.json');
   const sleepClock: SleepClock = o.sleepClock ?? {
     now: () => Date.now(),
@@ -1143,7 +1148,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   // What the request handler needs from the console itself: it answers even when no project is open.
   const host: HostContext = {
-    getPort: () => port, token, assets: new UiAssets(resourcePath('dist', 'ui'), process.env.CONSOLE_APP_ROOT === undefined), configDir: o.configDir,
+    getPort: () => port, token, loginCodes, assets: new UiAssets(resourcePath('dist', 'ui'), process.env.CONSOLE_APP_ROOT === undefined), configDir: o.configDir,
     version: o.version ?? resolveVersion(appRoot()),
     get bundles() { return shared.bundles; },
     get projects() { return shared.projectsApi; },
@@ -1188,7 +1193,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
 
   const shared: Shared = {
     utilityPtys, installer,
-    o, configPath, config, token, bundles: loadBundles(o.i18nDir),
+    o, configPath, config, token, loginCode: () => loginCodes.issue(), bundles: loadBundles(o.i18nDir),
     ledger: new Ledger(join(o.configDir, 'ledger')),
     quotaState: new QuotaState(),
     // Heavy runs go one at a time; `ANDROMEDACLI_TEST_CONCURRENCY` raises the limit on a machine with cores to spare.
@@ -1368,7 +1373,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
   if (savedSleep) shared.sleep.restore(savedSleep);
 
   return {
-    port, address: addr.address, token, url,
+    port, address: addr.address, token, url, loginUrl: () => `${url}/?code=${loginCodes.issue()}`,
     // The members below are bound to the first project (the one a request with no `?project=` gets).
     sessionTokenFor: (slug) => runtimes[0]?.ctx.tokens.tokenFor(slug),
     sendMessage: (slug, text) => runtimes[0]!.ctx.inbox.push(slug, text),

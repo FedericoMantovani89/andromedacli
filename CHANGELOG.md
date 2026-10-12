@@ -14,6 +14,7 @@ introduces the behaviour.
 
 - Status bar: a red "Bypass on" chip is shown at all times while agents run without permission prompts.
 - `SECURITY.md`: the layers, what the guard guarantees and what it does not, what bypass changes, and what leaves the machine. The README now mentions the desktop app, the delete of archived agents and Compact, and says that dictation audio goes to Groq.
+- The address that opens the page (printed by `serve`, the app window, a notification click) carries a single-use code (`?code=`) instead of the token. The page swaps it once for the token (`POST /api/session`, only with the console's own `Origin`) and removes it from the address; a used or expired (12 h) code opens nothing. The token is still accepted as `Authorization: Bearer` and `?token=` for tools that hold it.
 
 ### Fixed
 - Guard: an agent can no longer change the git remotes (`git remote add`, `set-url`, `remove`, `rename`, `set-head`, `set-branches`); listing them still works.
