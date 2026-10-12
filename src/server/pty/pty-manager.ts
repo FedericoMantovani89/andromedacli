@@ -19,11 +19,10 @@ type PtyOptions = { name: string; cols: number; rows: number; cwd: string; env: 
 /**
  * On Windows the ConPTY that comes with node-pty (OpenConsole) instead of the one in the system: the old one (Windows 10) drops the
  * alternate-screen and mouse requests of an application, so Claude Code in fullscreen mode never got the mouse wheel. If the bundled
- * one cannot start, the system's is used as before. `CONSOLE_CONPTY=system` asks for the system's from the start (the test runs on GitHub
- * set it: the bundled one is the suspect of crashes and hangs on the runner, and the tests do not need its mouse support).
+ * one cannot start, the system's is used as before.
  */
-export function spawnPty(file: string, args: string[], o: PtyOptions, spawn: typeof nodePty.spawn = nodePty.spawn, platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): nodePty.IPty {
-  if (platform === 'win32' && env.CONSOLE_CONPTY !== 'system') {
+export function spawnPty(file: string, args: string[], o: PtyOptions, spawn: typeof nodePty.spawn = nodePty.spawn, platform: string = process.platform): nodePty.IPty {
+  if (platform === 'win32') {
     try { return spawn(file, args, { ...o, useConptyDll: true }); } catch { /* the bundled ConPTY is missing or failed: use the system's */ }
   }
   return spawn(file, args, o);

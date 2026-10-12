@@ -13,7 +13,7 @@ change that introduces the behaviour.
 - CI: when a vitest worker crashes natively, its minidump is kept (Windows Error Reporting) and uploaded as the `crash-dumps` artifact.
 
 ### Changed
-- `CONSOLE_CONPTY=system` makes the terminals use the system ConPTY instead of the one bundled with node-pty. The CI test jobs set it: the bundled one is the suspect of the native worker crashes and the hangs on the GitHub runner (the packaged app, and the release smoke test, keep the bundled one).
+- CI: the full suite runs with two vitest workers (`--maxWorkers=2`; `CI_TESTS_WORKERS` changes it), to see whether fewer terminals starting and closing together stop the native worker crashes and the 20 s hangs. The system ConPTY instead of the bundled one for the tests did not help and was taken out again.
 - `npm run shot` with `--agents`, `--states` or `--many` makes the project folder a git repository by default (a plain folder answered `422 git.notRepo`).
 
 ## [0.0.7] - 2026-10-12

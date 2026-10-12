@@ -21,9 +21,3 @@ it('elsewhere the option is not passed', () => {
   spawnPty('claude', [], base, spawn, 'linux');
   expect((spawn as any).mock.calls[0][2]).not.toHaveProperty('useConptyDll');
 });
-it('CONSOLE_CONPTY=system asks for the system ConPTY from the start', () => {
-  const spawn = fake(() => ({ pid: 4 }));
-  spawnPty('claude', [], base, spawn, 'win32', { CONSOLE_CONPTY: 'system' });
-  expect((spawn as any).mock.calls).toHaveLength(1);
-  expect((spawn as any).mock.calls[0][2]).not.toHaveProperty('useConptyDll');
-});
