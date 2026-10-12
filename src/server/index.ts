@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { canonicalFolder } from './canonical-path';
 import type { AddressInfo } from 'node:net';
 import { createRequestHandler, type Context, type HostContext } from './http';
 import { attachWebSockets } from './ws';
@@ -135,7 +136,7 @@ function envOf(shared: Shared, o: StartOptions & { projectRoot: string; projectN
 
 /** The per-project part of the console: everything bound to one folder (Phase 6C: a project runtime; `startServer` hosts the first one). */
 async function createProjectRuntime(shared: Shared, p: { projectRoot: string; projectName: string }): Promise<ProjectRuntime> {
-  const o: StartOptions & { projectRoot: string; projectName: string } = { ...shared.o, projectRoot: p.projectRoot, projectName: p.projectName };
+  const o: StartOptions & { projectRoot: string; projectName: string } = { ...shared.o, projectRoot: canonicalFolder(p.projectRoot), projectName: p.projectName };
   const c: ProjectContainer = new Container<Services>(shared.o.containerOnCreate ? { onCreate: (key) => shared.o.containerOnCreate?.(String(key)) } : {});
   c.provide('env', () => envOf(shared, o));
   registerState(c);

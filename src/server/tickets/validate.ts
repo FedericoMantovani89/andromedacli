@@ -31,7 +31,7 @@ export function runValidation(o: { cwd: string; command: string; timeoutMs: numb
 
     let child;
     try {
-      child = spawn(o.command, { cwd: o.cwd, shell: true, windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+      child = spawn(o.command, { cwd: o.cwd, shell: true, windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       return resolve({ ok: false, code: null, tail: errorMessage(e) });
     }
@@ -50,8 +50,5 @@ export function runValidation(o: { cwd: string; command: string; timeoutMs: numb
 }
 
 function killTree(pid: number): void {
-  if (process.platform === 'win32') execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => {});
-  else {
-    try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone */ }
-  }
+  execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => {});
 }

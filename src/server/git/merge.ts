@@ -6,9 +6,10 @@ import { KeyedQueue } from '../keyed-queue';
 import { commonDir, ensureProjectBranch, withRepoLock } from './worktree';
 import type { ChangedFile } from '../tickets/report';
 import { errorMessage } from '../../shared/guards';
+import { canonicalFolder } from '../canonical-path';
 
 const fwd = (p: string): string => p.replace(/\\/g, '/');
-const same = (a: string, b: string): boolean => fwd(a).toLowerCase() === fwd(b).toLowerCase();
+const same = (a: string, b: string): boolean => fwd(canonicalFolder(a)).toLowerCase() === fwd(canonicalFolder(b)).toLowerCase();
 
 /**
  * What a branch changed since it left its base (`base...head`, three dots: the merge base, not the base tip), with line counts;
