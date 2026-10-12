@@ -20,6 +20,7 @@ change that introduces the behaviour.
 - CI: a `smoke` job (the checks and the seven smoke files) runs next to the full suite, so a break in the basics shows early.
 
 ### Changed
+- CI: when vitest workers crash with no test failing (a native crash on the Windows runner), only the crashed files run again, up to three more times, instead of the whole suite once; a failing test still fails the job at once, and so does a file that keeps crashing.
 - The README is a short front page (tagline, why, quick start, safety, links); the rest moved to `guide/` (using, architecture, configuration, desktop app, development). The repository was renamed to `andromedacli` (old links and the desktop app's update check follow the redirect). The changelog follows Keep a Changelog with the released versions.
 - Shipped model catalog: added Fable 5.1 and Haiku 5.5.
 - Status bar: the project budget reads "∞" (no limit is set) instead of "n/a", and "Resume now" is shown only while the console sleeps for a usage limit.
