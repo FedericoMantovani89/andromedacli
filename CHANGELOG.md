@@ -8,6 +8,8 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-10-12
+
 ### Added
 - Agent panels have a Compact button, the counterpart of the bar's Expand: the panel folds into a bar and the next agent takes its slot.
 - Archived agents can be deleted from the list, one by one or all at once (after a question): the record, the session and the terminal history go; worktree, branch, ticket, report and ledger stay (`DELETE /api/agents/<slug>`, `POST /api/agents/delete-archived`).
@@ -416,7 +418,8 @@ Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` wi
 of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.
 
-[Unreleased]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.3...v0.0.4
