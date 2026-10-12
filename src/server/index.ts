@@ -12,18 +12,15 @@ import { ModelCatalog } from './catalog/models';
 import { PluginCatalog } from './catalog/plugins';
 import { ProjectStore } from './project-store';
 import { PtyManager } from './pty/pty-manager';
-import { SESSION_ID_RE } from './pty/claude-launch';
 import { hardenExecutableSearch } from './exe-search';
 import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
 import { createToken, LoginCodes } from './security';
-import { CONSOLE_FROM } from './questions/queue';
 import { describeKey } from './questions/describe';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
-import { launchResume, spawnAgent } from './agents/spawn';
-import { ResumeService, type WakeResult } from './agents/resume';
+import { spawnAgent } from './agents/spawn';
 import { TestQueue } from './tickets/test-queue';
 import { createTranslator } from '../shared/i18n';
 import { resolveVersion } from './version';
@@ -34,22 +31,14 @@ import { HelperUsage, type HelperUse } from './helper-usage';
 import { runChecks, type Runner } from './prereq/checks';
 import type { ProjectTab, PrereqResult } from '../shared/protocol';
 import { Ledger } from './budget/ledger';
-import { defaultProjectsDir, pickTranscript, TranscriptReader } from './budget/transcript';
-import { BudgetService } from './budget/service';
-import { Restrictions } from './budget/restrictions';
-import { commitWip } from './git/commit';
-import { LoopDetector } from './budget/loop-detector';
-import { LoopService } from './budget/loop-service';
-import { QuotaService, QuotaState } from './budget/quota';
+import { QuotaState } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
 import { NullNotifier, ToastNotifier, type Notifier } from './notify/notifier';
 import { Presence } from './notify/presence';
 import { NotificationService, realNotifyClock, type NotifyClock } from './notify/service';
-import { AgentPersister } from './agents/persist';
 import { renderRestartNotice, restoreAgents } from './agents/restore';
-import { WakeService } from './agents/wake';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
@@ -60,6 +49,7 @@ import { registerState } from './runtime/state';
 import { registerTests } from './runtime/tests';
 import { registerAgents } from './runtime/agents';
 import { registerTicketFlow } from './runtime/ticket-flow';
+import { registerBudget, WAKE_MESSAGE } from './runtime/budget';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -139,9 +129,7 @@ export interface RunningServer {
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The one message the main gets when a usage limit resets (SPEC 18.4). */
-export const WAKE_MESSAGE = 'The subscription limit was reset. Check the suspended tickets with list_agents and resume them with mcp__console-mod__resume_agent.';
-/** How long a wake-up probe waits for the next quota reading before it counts as still limited. */
-const WAKE_WAIT_MS = 60_000;
+export { WAKE_MESSAGE };
 /** How long one step_done request waits for the step (the validation can take tens of minutes): the host cuts a request that stays open for about a minute. */
 const STEP_DONE_WAIT_MS = 15_000;
 
@@ -156,6 +144,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   registerTests(c);
   registerAgents(c);
   registerTicketFlow(c);
+  registerBudget(c);
   const stateProblems = c.get('stateProblems');
   const store = c.get('store');
   const previousRunWasClean = c.get('previousRunWasClean');
@@ -191,180 +180,24 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const readHandover = c.get('readHandover');
   const keepHandover = c.get('keepHandover');
   // Token budgets (SPEC 16): usage from the Claude Code transcript, recorded in the monthly ledger, steps on the ticket.
-  const projectsDir = o.projectsDir ?? defaultProjectsDir();
-  const reader = new TranscriptReader();
-  const restrictions = new Restrictions();
-  const turns = new Map<string, number>(); // turns started per session: the ledger's `turn`
-  const budget: BudgetService = new BudgetService({
-    queue: ticketQueue,
-    tickets, ledger, reader, project: projectName, root: resolve(o.projectRoot),
-    // The loaded object, read on every call. The Options dialog edits `budget` in place (applyConfig below), so a change is seen here
-    // at once and applies to the sessions launched afterwards (a running agent keeps the limit it began with).
-    config: () => config.budget,
-    now: () => Date.now(),
-    transcriptOf: (slug) => {
-      const a = registry.get(slug);
-      // Claude Code files the transcript under the session's folder: the worktree (where it was started), then the folder it reported.
-      return a?.sessionId ? pickTranscript(projectsDir, [a.git?.worktree, a.cwd], a.sessionId) : undefined;
-    },
-    isLive: (slug) => registry.get(slug)?.role === 'agent',
-    wipCommit: async (slug, reason) => {
-      const worktree = registry.get(slug)?.git?.worktree;
-      if (!worktree) return { ok: false, detail: 'no worktree' };
-      const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
-      return r.ok ? { ok: true, sha: r.sha } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
-    },
-    tellAgent: (slug, text) => { inbox.push(slug, text); },
-    tellMain: (text) => { inbox.push(projectName, text); },
-    restrict: (slug, why) => { restrictions.set(slug, { reason: why }); },
-    stop: (slug) => { keepHandover(slug); return finishAgent(slug, { stopped: true }); },
-    // The answer handler lives in budget/answers.ts; the service only asks.
-    askUser: (q) => {
-      questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, (answer) => { void onBudgetAnswer(answer, q.payload as { ticket: string }).catch((err) => budget.reportFailure('the budget answer', err)); });
-    },
-    changed: () => broadcast(),
-  });
-  c.provide('budget', () => budget);
-  c.provide('restrictions', () => restrictions);
+  const restrictions = c.get('restrictions');
+  const turns = c.get('turns');
+  const budget = c.get('budget');
   const recovery = c.get('recovery');
   const onBudgetAnswer = c.get('onBudgetAnswer');
-  // Loops and blocks (SPEC 17): found in the transcript events, handled in three steps; time signals only warn the main.
-  const loop = new LoopService({
-    queue: ticketQueue,
-    detector: new LoopDetector(() => config.budget.loop, () => Date.now()),
-    tickets,
-    tellAgent: (slug, text) => { inbox.push(slug, text); },
-    tellMain: (text) => { inbox.push(projectName, text); },
-    restrict: (slug, r) => { restrictions.set(slug, r); },
-    // Only a loop restriction goes when a step closes: one held for the budget or the usage limit stays.
-    clearRestriction: (slug) => { if (restrictions.get(slug)?.reason === 'loop') restrictions.clear(slug); },
-    wipCommit: async (slug, reason) => {
-      const worktree = registry.get(slug)?.git?.worktree;
-      if (!worktree) return { ok: false, detail: 'no worktree' };
-      const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
-      return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
-    },
-    stop: (slug) => { keepHandover(slug); return finishAgent(slug, { stopped: true }); },
-    workingSlugs: () => registry.list().filter((a) => a.role === 'agent' && a.state === 'working').map((a) => a.slug),
-    isWorking: (slug) => { const a = registry.get(slug); return a !== undefined && a.role !== 'main' && a.state === 'working'; },
-    processAlive: (slug) => ptys.status(slug) === 'running',
-    changed: () => broadcast(),
-  });
-  c.provide('loop', () => loop);
-  // Usage limits of the subscription (SPEC 18): the mod reports them, the service decides the step.
-  // The quota state, the sleep timer and its clock are console-wide (the limits belong to the account): see `shared`.
-  const quotaStepRef = c.get('quotaStepRef'); // read by the scheduler on every decision
-  // The probe of a wake-up waits for the next quota reading (the main's next turn reports it), at most WAKE_WAIT_MS.
-  const quotaWaiters = new Set<() => void>();
-  const wakeTimers = new Set<unknown>();
-  /**
-   * The one check at the reset (SPEC 18.4): only the main wakes, with one message, never one per agent. A main whose process is gone
-   * is started again with `--resume` of its last session. The result is "running" only if the next quota reading, within a minute,
-   * is below the freeze threshold (the one resume_agent uses); anything else (no reading, still high) is "limited" and the sleep
-   * timer backs off.
-   * Not async on purpose: the wait timer is set synchronously, inside the sleep timer's own call.
-   */
-  const wakeMain = (): Promise<WakeResult> => {
-    let note = '';
-    if (ptys.status(projectName) !== 'running') {
-      const sid = registry.get(projectName)?.sessionId;
-      const resumeId = sid !== undefined && SESSION_ID_RE.test(sid) ? sid : undefined;
-      c.get('launchMain')(resumeId);
-      if (!resumeId) note = ' Your earlier session had ended and could not be resumed (its id was unknown), so this is a new session: look at the project with list_agents before deciding anything.';
-    }
-    const result = new Promise<WakeResult>((done) => {
-      let settled = false;
-      let timer: unknown;
-      const finish = (r: WakeResult): void => {
-        if (settled) return;
-        settled = true;
-        quotaWaiters.delete(onQuota);
-        sleepClock.clearTimeout(timer);
-        wakeTimers.delete(timer);
-        done(r);
-      };
-      const onQuota = (): void => {
-        const worst = quotaState.worst();
-        finish(worst !== undefined && worst.percent < config.budget.quota.freezePercent ? 'running' : 'limited');
-      };
-      quotaWaiters.add(onQuota);
-      timer = sleepClock.setTimeout(() => finish('limited'), WAKE_WAIT_MS);
-      wakeTimers.add(timer);
-    });
-    inbox.push(projectName, `${WAKE_MESSAGE}${note}`);
-    broadcast();
-    return result;
-  };
-  // The sleep timer is console-wide (see `shared`); it calls this project's `wakeMain` and `weeklyNotice` through the runtime.
-  const weeklyNotice = (resetsAt: string | undefined): void => {
-    inbox.push(projectName, `The weekly usage limit is almost used up or reached${resetsAt ? ` (it resets at ${resetsAt})` : ''}: the agents were paused and nothing restarts by itself. The user was asked in the queue; the choices are to wait until the reset, to go on with fewer agents or a cheaper model (set in the configuration), or to stop the projects.`);
-    // SPEC 18.5: the USER gets the choice (the main may not be able to run at all): one item to acknowledge, its text lists the choices.
-    questions.ask({ from: CONSOLE_FROM, text: 'The weekly usage limit is almost used up or reached: nothing restarts by itself.', kind: 'decision', options: ['ok'], payload: { kind: 'weekly_limit', ...(resetsAt ? { resetsAt } : {}) } });
-  };
-  const ticketStatusOf = (slug: string) => { try { return tickets.get(slug)?.status; } catch { return undefined; } };
-  const quota = new QuotaService({
-    state: quotaState, config: () => config.budget.quota,
-    tellMain: (text) => { inbox.push(projectName, text); },
-    tellAgent: (slug, text) => { inbox.push(slug, text); },
-    // Priority = creation order of the registry (a Map keeps registration order): the oldest session has the highest number and is stopped last.
-    agents: () => {
-      const live = registry.list().filter((a) => a.state !== 'finished' && a.state !== 'interrupted' && a.state !== 'queued' && a.state !== 'dormant');
-      return live.map((a, i) => ({ slug: a.slug, role: a.role, priority: live.length - i }));
-    },
-    wipCommit: async (slug, reason) => {
-      // Only a ticket being written: a delivered or in-review author's branch must not move under its review.
-      if (ticketStatusOf(slug) !== 'in_progress') return { ok: true };
-      const worktree = registry.get(slug)?.git?.worktree;
-      if (!worktree) return { ok: false, detail: 'no worktree' };
-      const r = await commitWip({ worktree, slug, project: projectName, reason, secretPatterns: secretPatterns() });
-      return r.ok ? { ok: true } : { ok: false, detail: `${r.code}${r.files ? `: ${r.files.join(', ')}` : r.detail ? `: ${r.detail}` : ''}` };
-    },
-    restrict: (slug, r) => { restrictions.set(slug, r); },
-    clearRestriction: (slug) => { if (restrictions.get(slug)?.reason === 'limit') restrictions.clear(slug); },
-    suspendForLimit: async (slug) => {
-      // Only a ticket being written is suspended. A reviewer or a recovery is ended and its ticket given back (delivered, or the
-      // status it was stopped in): it is ended on purpose, so its exit alone would not give it back.
-      const role = registry.get(slug)?.role;
-      if (role === 'agent' && ticketStatusOf(slug) === 'in_progress') tickets.move(slug, 'suspended_limit');
-      // An agent is resumed later and keeps its requests; a reviewer or a recovery ends for good.
-      await finishAgent(slug, { stopped: role === 'agent' });
-      if (role === 'reviewer') review.abandonReview(slug);
-      else if (role === 'recovery') recovery.abandon(slug);
-    },
-    // A step back to 'none' must start the queue by itself: the scheduler only looks again when told.
-    applyLimits: (s) => { quotaStepRef.value = s; scheduler.release(); broadcast(); },
-    onLimitReached: (resetsAt, kind) => sleep.sleepUntil(resetsAt, kind),
-    changed: () => broadcast(),
-  });
-  // Resumed agents whose session has not reported in yet: one whose process ends first is suspended again (it never ran).
-  const resumedAwaitingStart = new Set<string>();
-  // Resuming suspended agents after a limit (SPEC 18.4): the main asks with resume_agent, the console staggers and checks the quota.
-  const resumer = new ResumeService({
-    tickets, registry,
-    config: () => config.budget.quota,
-    quotaWorst: () => quotaState.worst(),
-    clock: sleepClock,
-    launch: (slug, sessionId) => { resumedAwaitingStart.add(slug); return launchResume(ctx, slug, sessionId); },
-    suspendedTickets: () => tickets.list().filter((t) => t.status === 'suspended_limit').map((t) => t.slug),
-    // With worktrees off the agents share the project folder: there is always somewhere to resume in.
-    hasWorktree: (slug) => { if (!runtime.git.worktrees) return true; const w = registry.get(slug)?.git?.worktree; return w !== undefined && existsSync(w); },
-    // Phase 6A: the main also wakes dormant and interrupted agents with resume_agent.
-    wakeable: (slug) => { const s = registry.get(slug); return s?.role === 'agent' && (s.state === 'dormant' || s.state === 'interrupted'); },
-    wake: async (slug, sessionId) => { const r = await launchResume(ctx, slug, sessionId, 'main'); return r; },
-    tellMain: (text) => { inbox.push(projectName, text); },
-    changed: () => broadcast(),
-  });
-  // Waking a dormant agent (Phase 6A): the user opens it, work arrives for it, or the main asks (resume_agent, above).
-  const waker = new WakeService({
-    registry,
-    launch: (slug, sessionId, reason) => launchResume(ctx, slug, sessionId, reason),
-    hasWorktree: (slug) => { if (!runtime.git.worktrees) return true; const w = registry.get(slug)?.git?.worktree; return w !== undefined && existsSync(w); },
-    quotaHigh: () => { const w = quotaState.worst(); return w !== undefined && w.percent >= config.budget.quota.freezePercent; },
-    changed: () => broadcast(),
-  });
+  const loop = c.get('loop');
+  const quotaWaiters = c.get('quotaWaiters');
+  const wakeTimers = c.get('wakeTimers');
+  const wakeMain = c.get('wakeMain');
+  const weeklyNotice = c.get('weeklyNotice');
+  const ticketStatusOf = c.get('ticketStatusOf');
+  const quota = c.get('quota');
+  const resumedAwaitingStart = c.get('resumedAwaitingStart');
+  const resumer = c.get('resumer');
+  const waker = c.get('waker');
   inbox.onPush((slug) => waker.onWork(slug));
   // Messages and state kept for the next start (Phase 6A).
-  const persister = new AgentPersister({ registry, updateAgent: (slug, patch) => store.updateAgent(slug, patch), writeMainSession: (id) => store.writeMainSession(id), mainSlug: projectName });
+  const persister = c.get('persister');
   // The state is rebuilt on every push to the UI and discovery spawns git: a few seconds of memory is plenty (a repo made later shows up soon).
   const repos = c.get('repos');
   const forgetRepos = c.get('forgetRepos');
@@ -720,14 +553,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   }, o.tickMs ?? 30_000);
   budgetTick.unref?.();
   /** One quota reading: a wake-up probe waiting for it judges it once the steps have been applied. */
-  const onQuotaReading = (rateLimits: unknown): void => {
-    void quota.onQuota(rateLimits).then(() => {
-      for (const w of [...quotaWaiters]) w();
-      // A low reading ends a sleep even when no probe is waiting (a probe that timed out, a main that reported by itself).
-      const worst = quotaState.worst();
-      if (worst !== undefined && worst.percent < config.budget.quota.freezePercent) sleep.lifted();
-    });
-  };
+  const onQuotaReading = c.get('onQuotaReading');
   // Phase 6A: runs when the project starts, not when its runtime is created (the sleep saved by an earlier run is restored by the host).
   let staleTimer: ReturnType<typeof setInterval> | undefined;
   const startProject = (): void => {

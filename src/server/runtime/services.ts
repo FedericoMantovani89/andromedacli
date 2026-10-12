@@ -10,7 +10,12 @@ import type { ReadingStore } from '../reading/store';
 import type { RequestStore } from '../requests/store';
 import type { LaunchWatch } from '../agents/launch-watch';
 import type { Scheduler } from '../agents/scheduler';
-import type { QuotaStep } from '../budget/quota';
+import type { QuotaService, QuotaStep } from '../budget/quota';
+import type { TranscriptReader } from '../budget/transcript';
+import type { ResumeService, WakeResult } from '../agents/resume';
+import type { WakeService } from '../agents/wake';
+import type { AgentPersister } from '../agents/persist';
+import type { TicketStatus } from '../tickets/flow';
 import type { Context } from '../http';
 import type { StaleChecker } from '../git/stale';
 import type { RequestService } from '../requests/service';
@@ -82,10 +87,24 @@ export interface Services {
   onBudgetAnswer: (answer: string, payload: { ticket: string }) => Promise<void>;
   steps: StepService;
   requests: RequestService;
-  // temporary bridges to locals of createProjectRuntime (removed with the areas that take them over)
-  budget: BudgetService;
+  // budget (runtime/budget.ts)
+  reader: TranscriptReader;
   restrictions: Restrictions;
+  turns: Map<string, number>;
+  budget: BudgetService;
   loop: LoopService;
+  quota: QuotaService;
+  quotaWaiters: Set<() => void>;
+  wakeTimers: Set<unknown>;
+  resumedAwaitingStart: Set<string>;
+  wakeMain: () => Promise<WakeResult>;
+  weeklyNotice: (resetsAt: string | undefined) => void;
+  resumer: ResumeService;
+  waker: WakeService;
+  persister: AgentPersister;
+  ticketStatusOf: (slug: string) => TicketStatus | undefined;
+  onQuotaReading: (rateLimits: unknown) => void;
+  // temporary bridge to a local of createProjectRuntime (removed with the area that takes it over)
   ctx: Context;
 }
 export type ProjectContainer = Container<Services>;
