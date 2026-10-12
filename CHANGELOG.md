@@ -8,6 +8,13 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+### Added
+- `npm run test:changed`: the checks, then the tests related to the diff against `origin/main`. `test:ticket` (diff against `project/<name>`, what the console runs for a ticket) selects every file in a plain checkout where that branch is far behind.
+- CI: when a vitest worker crashes natively, its minidump is kept (Windows Error Reporting) and uploaded as the `crash-dumps` artifact.
+
+### Changed
+- `npm run shot` with `--agents`, `--states` or `--many` makes the project folder a git repository by default (a plain folder answered `422 git.notRepo`).
+
 ## [0.0.7] - 2026-10-12
 
 ### Added

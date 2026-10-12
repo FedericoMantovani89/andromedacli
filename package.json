@@ -15,6 +15,7 @@
     "build": "tsx scripts/build-ui.ts && tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:ticket": "npm run check && vitest run --changed project/multiconsole --passWithNoTests",
+    "test:changed": "npm run check && vitest run --changed origin/main --passWithNoTests",
     "test:smoke": "npm run check && vitest run test/server.test.ts test/merge-ticket.test.ts test/spawn.test.ts test/pty-manager.test.ts test/git-worktree.test.ts test/v1.test.ts test/i18n-checks.test.ts",
     "check": "tsx scripts/check-i18n.ts && tsx scripts/check-ui-literals.ts && tsc -p tsconfig.json --noEmit",
     "hooks": "tsx scripts/install-hooks.ts",

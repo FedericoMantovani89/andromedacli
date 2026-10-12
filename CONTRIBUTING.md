@@ -21,7 +21,7 @@ Thanks for looking. This is a small project with a few firm rules; they keep the
 ```bash
 npm run check                          # texts, literals, focus, then tsc: the build gate
 npx vitest run test/<file>.test.ts     # the tests of what you changed
-npm run test:ticket                    # the tests related to your diff
+npm run test:changed                   # the tests related to your diff against origin/main
 npm run test:smoke                     # a fixed set of seven files
 npm run hooks                          # installs the pre-commit hook (check, and a CHANGELOG line)
 ```

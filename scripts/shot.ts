@@ -1,7 +1,7 @@
 // `npm run shot -- <options>`: a screenshot of the real UI in Edge, from a throw-away console (fake agent, a temporary config and project).
 //   --tab <name>      open the Options dialog on that tab (models, profiles, budget, guard, notifications, language, prerequisites, plugins, projects, git)
 //   --lang <code>     interface language (default en)
-//   --folder <kind>   the project folder: plain (not a repository, default), repo (a repository with one commit), mixed (not a repository, holds one)
+//   --folder <kind>   the project folder: plain (not a repository, default), repo (a repository with one commit; the default with --states, --many or --agents), mixed (not a repository, holds one)
 //   --split <pct>     the main column's share of the width (what dragging the divider remembers), for example 30 or 75
 //   --states          one agent per state (the page's state messages are rewritten: starting, working, waiting, idle with a merged ticket, studying, blocked,
 //                     interrupted, finished, suspended, dormant, queued), to see every button and chip; four are real panels, the rest bars
@@ -31,7 +31,9 @@ const one = (name: string, fallback?: string): string | undefined => { const i =
 const many = (name: string): string[] => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] ? [args[i + 1]!] : []));
 const tab = one('tab');
 const lang = one('lang', 'en')!;
-const kind = one('folder', 'plain')!;
+// Agents need a git repository to start in (a plain folder answers 422 git.notRepo), so asking for agents makes the folder one.
+const wantsAgents = args.includes('--states') || Number(one('many', '0')) > 0 || Number(one('agents', '0')) > 0;
+const kind = one('folder', wantsAgents ? 'repo' : 'plain')!;
 const split = one('split');
 const manyCount = Number(one('many', '0'));
 const states = args.includes('--states') || manyCount > 0;
