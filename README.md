@@ -31,7 +31,7 @@ One coding agent can handle a task. Several at once create a different job: who 
 
 ## What you need
 
-- **Windows 10 or 11.** The terminals use ConPTY, notifications are native Windows toasts and the folder picker is a native window. Other systems are not supported yet.
+- **Windows 10 or 11, and only Windows.** AndromedaCli is built for Windows on purpose: the terminals use ConPTY, the guard understands Windows and PowerShell commands and paths, notifications are native Windows toasts and the folder picker is a native window. There is no support for macOS or Linux, and none is planned.
 - **Node.js 22 or newer** and **git**.
 - **Claude Code** (`claude`) installed and logged in. Open the folder you will work on once with `claude` so you have accepted its workspace-trust dialog.
 
