@@ -1,5 +1,5 @@
 import { writeJsonAtomic } from '../fs-atomic';
-import { readJsonFile } from '../json-file';
+import { readJsonState, setAside, type StateReport } from '../json-file';
 import type { EscalationReason, RequestState } from '../../shared/requests';
 
 export interface RequestRecord {
@@ -33,14 +33,15 @@ const isRecord = (v: unknown): v is RequestRecord => {
 export class RequestStore {
   private readonly items = new Map<string, RequestRecord>();
 
-  constructor(private readonly file?: string) {}
+  constructor(private readonly file?: string, private readonly report?: StateReport) {}
 
   /** Reads the saved file (before anything is added). A missing or damaged file means no requests; a damaged record is skipped. */
   load(): void {
     if (!this.file) return;
-    const parsed = readJsonFile(this.file);
-    if (!Array.isArray(parsed)) return;
-    for (const r of parsed) if (isRecord(r)) this.items.set(r.id, r);
+    const s = readJsonState(this.file, this.report);
+    if (s.status !== 'ok') return;
+    if (!Array.isArray(s.value)) { setAside(this.file, this.report); return; }
+    for (const r of s.value) if (isRecord(r)) this.items.set(r.id, r);
   }
 
   get(id: string): RequestRecord | undefined { return this.items.get(id); }

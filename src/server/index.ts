@@ -78,6 +78,7 @@ import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
+import { StateProblems } from './state-problems';
 import { errorMessage } from '../shared/guards';
 
 export interface StartOptions {
@@ -229,7 +230,9 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   // The old single-project code below reads `o.projectRoot` and `o.projectName`: here they are this project's.
   const o: StartOptions & { projectRoot: string; projectName: string } = { ...shared.o, projectRoot: p.projectRoot, projectName: p.projectName };
   const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
-  const store = new ProjectStore(o.projectRoot);
+  // State files the console could not read are set aside and listed here; the page shows them until the user dismisses them.
+  const stateProblems = new StateProblems(o.projectRoot, () => shared.broadcastAll());
+  const store = new ProjectStore(o.projectRoot, stateProblems.add);
   store.init(o.projectName);
   // Phase 6A: did the last run end through close()? A crash leaves `false`. This run is "not clean" until its own close() says so.
   const previousRunWasClean = store.readCleanStop();
@@ -239,7 +242,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const ptys = new PtyManager();
   const tokens = new SessionTokens();
   // What was not delivered before a stop is delivered after the restart (messages for dormant agents wait for their wake-up).
-  const inbox = new Inbox(join(o.projectRoot, '.andromedaconsole', 'state', 'inbox.json'));
+  const inbox = new Inbox(join(o.projectRoot, '.andromedaconsole', 'state', 'inbox.json'), stateProblems.add);
   inbox.load();
   const registry = new AgentRegistry();
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
@@ -278,7 +281,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     ...(r.watchOwner && r.owner !== undefined ? { ownerAlive: () => registry.get(r.owner!)?.state !== 'finished' && ptys.status(r.owner!) === 'running' } : {}),
   });
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
-  const tickets = new TicketStore(o.projectRoot);
+  const tickets = new TicketStore(o.projectRoot, stateProblems.add);
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
   const endTimers = new Set<ReturnType<typeof setTimeout>>(); // reviewers about to be ended; cancelled at shutdown
   /**
@@ -324,7 +327,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   });
   // The full run on the merged project branch: after the merges settle, one run for the whole batch, through the queue.
   const central: CentralRun = new CentralRun({
-    root: o.projectRoot, project: projectName, tickets,
+    root: o.projectRoot, project: projectName, tickets, report: stateProblems.add,
     command: testCommandAt('release'),
     mergeCommand: testCommandAt('merge'),
     timeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
@@ -652,7 +655,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     requestIds: (slug) => requests.idsFrom(slug),
   });
   // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
-  const requestStore = new RequestStore(join(o.projectRoot, '.andromedaconsole', 'state', 'requests.json'));
+  const requestStore = new RequestStore(join(o.projectRoot, '.andromedaconsole', 'state', 'requests.json'), stateProblems.add);
   requestStore.load();
   const requests: RequestService = new RequestService({
     store: requestStore, mainSlug: projectName,

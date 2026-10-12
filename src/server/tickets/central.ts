@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
-import { readJsonFile } from '../json-file';
+import { readJsonState, setAside, type StateReport } from '../json-file';
 import { attribute, failingTestFiles, type Attribution, type BatchItem } from './attribution';
 import type { CentralMark } from './store';
 import type { TestJob, TestRun } from './test-queue';
@@ -45,6 +45,8 @@ export interface CentralGit {
 export interface CentralDeps {
   root: string;
   project: string;
+  /** Told when the record file could not be read and was set aside. */
+  report?: StateReport;
   tickets: { list(): CentralTicket[]; setCentral(slug: string, mark: CentralMark): unknown };
   /** The `release` (full) command, or none when the tests are off. */
   command(): string | undefined;
@@ -106,7 +108,7 @@ export class CentralRun {
 
   /** The last full run on one repository's project branch. */
   record(rel: string): CentralRecord | undefined {
-    const all = readJsonFile(this.file) as { repos?: Record<string, CentralRecord> } | undefined;
+    const all = this.readAll();
     const r = all?.repos?.[rel];
     return r && typeof r.tip === 'string' ? r : undefined;
   }
@@ -123,8 +125,15 @@ export class CentralRun {
     return run;
   }
 
+  private readAll(): { repos?: Record<string, CentralRecord> } | undefined {
+    const s = readJsonState(this.file, this.d.report);
+    if (s.status !== 'ok') return undefined;
+    if (typeof s.value !== 'object' || s.value === null || Array.isArray(s.value)) { setAside(this.file, this.d.report); return undefined; }
+    return s.value as { repos?: Record<string, CentralRecord> };
+  }
+
   private save(rel: string, rec: CentralRecord): void {
-    const all = (readJsonFile(this.file) as { repos?: Record<string, CentralRecord> } | undefined) ?? {};
+    const all = this.readAll() ?? {};
     writeJsonAtomic(this.file, { ...all, repos: { ...(all.repos ?? {}), [rel]: rec } });
   }
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { writeJsonAtomic } from '../fs-atomic';
-import { readJsonFile } from '../json-file';
+import { readJsonState, setAside, type StateReport } from '../json-file';
 
 export interface InboxMessage { id: string; text: string }
 
@@ -17,13 +17,15 @@ export class Inbox {
   private readonly ackListeners: ((slug: string, id: string) => void)[] = [];
   private frozen = false;
 
-  constructor(private readonly file?: string) {}
+  constructor(private readonly file?: string, private readonly report?: StateReport) {}
 
   /** Reads the saved boxes (before anything is pushed). A missing or damaged file means no messages. */
   load(): void {
     if (!this.file) return;
-    const parsed = readJsonFile(this.file);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return; // missing or damaged: no messages
+    const s = readJsonState(this.file, this.report);
+    if (s.status !== 'ok') return; // missing or damaged (set aside): no messages
+    const parsed = s.value;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) { setAside(this.file, this.report); return; } // wrong shape: set aside
     for (const [slug, list] of Object.entries(parsed)) {
       if (!Array.isArray(list)) continue;
       const box = list.filter((m): m is InboxMessage => typeof m === 'object' && m !== null && typeof (m as InboxMessage).id === 'string' && typeof (m as InboxMessage).text === 'string')

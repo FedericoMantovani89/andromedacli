@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
+import { readJsonState, setAside, type StateReport } from '../json-file';
 import type { Step } from './checklist';
 import { canMove, type TicketStatus } from './flow';
 import { SLUG_RE } from '../../shared/slug';
@@ -49,7 +50,7 @@ const REOPEN_FROM: TicketStatus[] = ['changes_requested', 'conflict', 'needs_use
 export class TicketStore {
   private readonly dir: string;
 
-  constructor(root: string) {
+  constructor(root: string, private readonly report?: StateReport) {
     this.dir = join(root, '.andromedaconsole', 'state', 'tickets');
   }
 
@@ -60,15 +61,12 @@ export class TicketStore {
 
   get(slug: string): Ticket | undefined {
     const file = this.file(slug);
-    if (!existsSync(file)) return undefined;
-    try {
-      const t = JSON.parse(readFileSync(file, 'utf8')) as Ticket;
-      if (!Array.isArray(t.steps)) return undefined; // a damaged file must not take the console down
-      // Phase 3 files have no pipeline fields.
-      return { ...t, round: typeof t.round === 'number' ? t.round : 0, recoveries: typeof t.recoveries === 'number' ? t.recoveries : 0, verdicts: Array.isArray(t.verdicts) ? t.verdicts : [] };
-    } catch {
-      return undefined;
-    }
+    const s = readJsonState(file, this.report);
+    if (s.status !== 'ok') return undefined;
+    const t = s.value as Ticket | null;
+    if (typeof t !== 'object' || t === null || !Array.isArray(t.steps)) { setAside(file, this.report); return undefined; } // a damaged file must not take the console down
+    // Phase 3 files have no pipeline fields.
+    return { ...t, round: typeof t.round === 'number' ? t.round : 0, recoveries: typeof t.recoveries === 'number' ? t.recoveries : 0, verdicts: Array.isArray(t.verdicts) ? t.verdicts : [] };
   }
 
   /** Every ticket on disk (damaged files and files that are not tickets are skipped). */

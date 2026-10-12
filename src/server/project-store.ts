@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
-import { readJsonFile } from './json-file';
+import { readJsonFile, readJsonState, setAside, type StateReport } from './json-file';
 import { migrateProjectFolder } from './legacy-names';
 
 export const TEST_MOMENTS = ['ticket', 'merge', 'release'] as const;
@@ -98,7 +98,7 @@ export class ProjectStore {
   private readonly agentsFile: string;
   private readonly stateDir: string;
 
-  constructor(root: string) {
+  constructor(root: string, private readonly report?: StateReport) {
     migrateProjectFolder(root);
     this.stateDir = join(root, '.andromedaconsole', 'state');
     this.projectFile = join(root, '.andromedaconsole', 'project.json');
@@ -176,8 +176,10 @@ export class ProjectStore {
   }
 
   listAgents(): AgentRecord[] {
-    const parsed = readJsonFile(this.agentsFile); // missing or damaged: no agents
-    return Array.isArray(parsed) ? (parsed as AgentRecord[]) : [];
+    const s = readJsonState(this.agentsFile, this.report); // damaged: set aside and reported, then no agents
+    if (s.status !== 'ok') return [];
+    if (!Array.isArray(s.value)) { setAside(this.agentsFile, this.report); return []; }
+    return s.value as AgentRecord[];
   }
 
   /** Forgets an agent whose creation failed (a normal agent stays on record: the name stays reserved). */
