@@ -15,6 +15,7 @@ import { testCommandFor } from './test-commands';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
 import { hardenExecutableSearch } from './exe-search';
+import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
 import { createToken, LoginCodes, SessionTokens } from './security';
 import { AgentRegistry } from './agents/registry';
@@ -1135,6 +1136,7 @@ const sameFolder = (a: string, b: string): boolean => (process.platform === 'win
  */
 export async function startServer(o: StartOptions): Promise<RunningServer> {
   hardenExecutableSearch(); // before the first git or claude is started
+  installProcessGuards(join(o.configDir, 'errors.log')); // an unhandled rejection is logged there and does not stop the console
   const configPath = join(o.configDir, 'config.json');
   const { config } = loadConfig(configPath);
   const token = createToken();
