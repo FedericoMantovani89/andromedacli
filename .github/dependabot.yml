@@ -1,0 +1,23 @@
+# Weekly, grouped, so a week of updates is one pull request per ecosystem and not a stream of them.
+# CI (windows-latest, the whole suite) runs on each pull request: nothing merges on its own.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (native) has no stable compiler API, which the literal/focus lint uses (see guide/development.md).
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

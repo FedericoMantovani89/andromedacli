@@ -1,12 +1,14 @@
 # AndromedaCli
 
-**One browser tab to run, watch and steer several Claude Code sessions at once.**
+**Run several Claude Code agents safely: isolated worktrees, budgets, review and controlled merges.**
 
-AndromedaCli is a local web console for [Claude Code](https://docs.claude.com/en/docs/claude-code). On the left it shows a fixed **main** session you talk to. On the right it shows the **agents** the main starts for you: each one a real `claude` terminal, working in its own git worktree on its own branch, with a ticket, a token budget and a review before anything is merged.
+AndromedaCli is a local web console for [Claude Code](https://docs.claude.com/en/docs/claude-code). On the left it shows a fixed **main** session you talk to. On the right it shows the **agents** the main starts for you: each one a real `claude` terminal, working in its own git worktree on its own branch, with a ticket, a token budget and a review before anything is merged. You stay in charge: agents never push to `main`, never touch each other's files, and anything that needs a human decision lands in one queue.
 
-You stay in charge: agents never push to `main`, never touch each other's files, and anything that needs a human decision lands in one queue.
+> The repository used to be called `multiconsole` (the old links redirect); your local folder may still carry that name.
 
-> The repository and package are called `multiconsole`; **AndromedaCli** is the product name.
+![The console: the main on the left, four agents on the right, each in its own state](assets/screenshots/console.png)
+
+*A demo project (an Android dice app). The agents' screens in the pictures are staged, not a real run.*
 
 ## Why
 
@@ -14,10 +16,18 @@ One coding agent can handle a task. Several at once create a different job: who 
 
 - **See everything.** Real terminals (xterm.js) side by side, with a state dot for each agent (working, waiting for you, idle, blocked, dormant...).
 - **Isolation by default.** Every agent gets `<project>/.andromedacli/worktrees/<name>` on the branch `agent/<project>/<name>`; the console commits each checklist step, runs your tests and pushes only that branch.
-- **One place to answer.** Questions from agents reach you through the main, as its own dialog, so you can answer from the Claude app over Remote Control when you are away. Merge decisions, budget decisions and the release confirmation arrive in the console's queue drawer, with desktop notifications.
+- **One place to answer.** Questions from agents reach you through the main, so you can answer from the Claude app over Remote Control when you are away. Merge decisions, budget decisions and the release confirmation arrive in the console's queue drawer, with desktop notifications.
 - **A brake that is not the model's good intentions.** A guard checks every file and shell tool call against explicit rules before it runs.
 - **Cost under control.** Per-agent token budgets, loop detection and subscription-limit handling (sleep until the window resets, wake only the main).
 - **Closing the tab is safe.** The server owns every process; the browser only displays. A restart brings the main and the agents back.
+
+![The queue drawer with a question from an agent and its answers](assets/screenshots/queue.png)
+
+### Why not just open several terminals, or use Claude Code's own features?
+
+- **A terminal does not know about the others.** Here an agent has its own worktree and branch, so two agents cannot overwrite each other, and only the console commits, tests and pushes. With plain terminals that discipline is yours to keep.
+- **Nothing merges on a hope.** A ticket is delivered, its tests are re-run on that exact commit, a read-only reviewer reads the diff, and only then is it merged; reaching your real `main` takes one confirmation from you.
+- **Money and stuck agents are watched.** Token budgets per agent, loop detection and the subscription limit are handled for you, and every question lands in one queue instead of a tab you forgot to look at.
 
 ## What you need
 
@@ -25,118 +35,39 @@ One coding agent can handle a task. Several at once create a different job: who 
 - **Node.js 22 or newer** and **git**.
 - **Claude Code** (`claude`) installed and logged in. Open the folder you will work on once with `claude` so you have accepted its workspace-trust dialog.
 
-Run `npm run console -- doctor` at any time to check these prerequisites and the security setup. In the app, *Options → Prerequisites* shows the same table (required tools first, then optional helpers such as Python, ripgrep, fd, jq, ctags, uv and ShellCheck) and can install what is missing after you approve each command. The console never reads the system PATH, only the one it was started with: after installing a program, start the console again from a new terminal. Installed helpers are named in the prompt of the main and of every agent, and the tab shows how often they were used.
+`npm run console -- doctor` checks these prerequisites and the security setup, and warns about a Claude Code newer than the last one tried.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/FedericoMantovani89/multiconsole.git
-cd multiconsole
+git clone https://github.com/FedericoMantovani89/andromedacli.git
+cd andromedacli
 npm ci
 npm run build
 npm run console -- serve
 ```
 
-On Windows you can double-click `start-console.bat` instead; it installs and builds on first run. Pass a folder (`start-console.bat D:\work\my-project`) to open that project directly.
+On Windows you can double-click `start-console.bat` instead; it installs and builds on first run. The command prints a URL with a single-use code, for example `http://127.0.0.1:7391/?code=...`, and opens it in your browser: the page swaps the code for its login and removes it from the address, so the printed URL opens nothing a second time. The port is fixed on purpose (7391); use `--port` to change it.
 
-The command prints a URL with a one-time token, for example `http://127.0.0.1:7391/?token=...`, and opens it in your browser. The port is fixed on purpose (7391); use `--port` to change it.
-
-Useful options:
-
-| Command | What it does |
-|---|---|
-| `npm run console -- serve` | Opens the projects it remembers, or shows a welcome screen asking for a project |
-| `npm run console -- serve --project-root DIR` | Opens the project in `DIR` |
-| `npm run console -- serve --port N --no-open` | Another port; do not open the browser |
-| `npm run console -- doctor [--json]` | Prerequisite and security self-test |
-
-### Desktop app
-
-The same console also ships as a Windows x64 desktop app (Electron): one window instead of a browser tab, with the server running inside the app. It is the same code and the same `%APPDATA%\andromedacli` settings, so nothing changes in how you use it; closing the window asks first when agents are running, then stops everything. Like the console, it only uses the PATH it was started with.
-
-| Command | What it does |
-|---|---|
-| `npm run build:app` | Bundles the UI, the server and the shipped folders into `out/` |
-| `npm run dist:dir` | An unpacked app in `release/win-unpacked` |
-| `npm run dist` | The same, plus the NSIS installer |
-| `npm run smoke:app` | Starts the unpacked app with the fake agent and checks the window, a terminal, Options and that nothing is left after closing (run `dist:dir` first) |
-
-Pushing a tag `v<version>` runs `.github/workflows/release.yml`, which builds the installer and publishes it as a GitHub release. The installer is not code-signed, so Windows SmartScreen may warn. Update checks look at the GitHub releases; while the repository is private they find nothing, and updating means running the new installer over the old one (settings and projects stay).
-
-## Using it
-
-1. **Open a project.** On the welcome screen pick a folder (Browse opens the Windows folder window). A *project* is one folder; the console keeps its state in `<project>/.andromedacli/`. You can open several projects as tabs. New projects can start from a **template** (`generic`, `backend-java`, `frontend-web`, or your own) that sets profiles, rules and commands, detected from `pom.xml`, Gradle or `package.json`; or start from the settings of a project that is already open. A folder that is not a git repository can be initialised, or cloned from an address, in *Options → Git*. A project with no tests can switch them off (*Inhibit the tests for this project*): reports then say "not run", never "passed".
-2. **Talk to the main.** The left panel is a normal Claude Code session that knows the console's tools. Describe what you want; the main decides which jobs to start.
-3. **Agents appear on the right.** The main starts one agent per job (profile `developer` by default, any you add in *Options → Profiles*, plus the read-only `reviewer` and `recovery` that the console starts itself), or you press *new agent* yourself. Four panels fit; more collapse into bars, and *Compact* folds any panel into a bar (*Expand* brings it back). Agents above the active limit wait in a queue and start by themselves. An agent that has ended for good (its ticket merged, its review done) leaves the column by itself and moves to the *Archived (N)* list in the status bar, where you can bring it back, or delete it from the list (one by one, or *Delete all* after asking; its worktree, branch, ticket and report are kept). The *Archive all finished* button in that list clears every closed agent still in the column in one go, after asking.
-4. **Answer.** An agent never asks you directly: it asks the main, which shows you the question (and its options) exactly as written with its own dialog, and passes your answer back; with Remote Control on, that dialog is answerable from the Claude app. The *Queue* (bell) button (`Alt+Q`) opens the drawer with what the console itself asks: merge conflicts, budget decisions, the release confirmation and, for reviewer and recovery sessions, their questions.
-5. **Review and merge.** When an agent delivers a ticket the console reruns your tests on exactly that commit (long test runs share one queue per machine, one at a time; after the merges settle it also runs the full `release` command once on `project/<name>` and, if that turns red, works out which merged ticket broke it and tells its author or asks you), a read-only reviewer reads the diff, and the main merges approved tickets one at a time into `project/<name>`. Reaching your real `main` takes one confirmation from you; the console then merges and pushes with a one-time token that the repository's pre-push hook checks.
-
-**Voice dictation.** The microphone button in the main's panel header records from your browser microphone, transcribes with Groq Whisper (the audio is sent to Groq; add your key in *Options → Secrets*, it stays on this computer and is never shown again) and, with *Send to main*, types the text into the main's input without pressing Enter: you confirm in the terminal. The text is typed as plain text, so a transcript starting with `/` or `!` is seen by the main as typed.
-
-Keyboard: `Alt+1` main, `Alt+2…9` agents, `Alt+Q` queue, `Alt+L` the read panel (a readable view of an agent's turns), `Alt+←/→` switch projects. Focus never moves on its own: only your clicks and these shortcuts move it. `Esc` closes the Options, new-project and close-project dialogs.
-
-## How it works
-
-```
- Browser (vanilla TypeScript, xterm.js)
-        │  /ws/term/<agent>  raw terminal bytes        /ws/ui  state pushes (JSON)
-        ▼
- Node process (src/server) ── owns every `claude` process through node-pty
-        │   projects · scheduler · ticket flow · guard · budget · queue · notifications
-        │   HTTP /api (UI token)        HTTP /v1 (one token per session)
-        ▼
- claude sessions ── each loads the console mod (mod/), a thin Claude Code plugin
-                    that reports events and asks the guard before each tool call
-```
-
-- **The server decides, the mod only reports.** Agent state comes from structured events sent by the mod (turn started, turn complete, tool calls), never from reading the terminal.
-- **The main coordinates through tools** such as `spawn_agent`, `ticket_report`, `request_review`, `merge_ticket` and `propose_release`. The agents report with `checklist_set`, `step_done` and `report_blocked`.
-- **Git belongs to the console.** The console, not the agent, commits each step, runs the project's test command, pushes the agent's branch, and merges through its own `.project` worktree. A per-worktree pre-push hook refuses every other ref.
-- **Budget and limits.** An agent gets a token budget: alert at 80% (a WIP commit and a handover note), restriction at 100%, an orderly stop after a grace period. Repeated calls, repeated errors and compaction storms escalate from a correction to a stop. When the subscription window is nearly used, new work is halved, frozen, then stopped; the console sleeps until the window resets and wakes only the main.
-- **Resume.** After a restart the main resumes its own session and the other agents are dormant (no process, no quota) until you open them, work arrives for them, or the main wakes them.
+There is also a **desktop app** for Windows x64 (an installer on the GitHub releases): the same console in its own window, which checks the releases for a newer version. See [guide/desktop-app.md](guide/desktop-app.md).
 
 ## Safety
 
-- The server listens on **127.0.0.1 only**, with a per-start token and Host/Origin checks. Each launched session has its own token and can only call `/v1`.
-- The **guard** denies force pushes, deleting remote branches, pushing tags, writing outside the agent's worktree, reading or writing files that look like secrets, tampering with the push hook or `.git`, wide `rm`, and download-and-execute. The main is bound by the git and secret rules; the main is also refused Claude Code's built-in subagents (other than read-only lookups), so file-changing work always goes through visible console agents.
-- Reviewers and recovery agents are **read-only**, enforced by the guard.
-- `agents.bypassPermissions` is **off by default**. When you turn it on in Options, the guard is the only brake. With it off, an agent's tool permission prompts go to the queue drawer, where only the console shows them (not Remote Control); with it on there are none to answer. The guard states its limits: it does not try to stop obfuscated commands.
-- Telemetry is off. Nothing leaves your machine except what Claude Code itself sends and, only if you use voice dictation, the audio you record, which is sent to Groq for transcription.
-- What the guard guarantees, what it does not, and what changes with bypass on: see [SECURITY.md](SECURITY.md). With bypass on, a red chip in the status bar says so at all times.
+The server listens on `127.0.0.1` only. A guard denies force pushes, writes outside the agent's worktree, secrets, tampering with the push hook and remotes, and wide `rm`, among others; reviewers and recovery agents are read-only. `agents.bypassPermissions` is **off by default**, and with it on the guard is the only brake (a red chip in the status bar says so). The guard reads command text: it does not stop obfuscated commands, and there is no operating-system sandbox. Telemetry is off; nothing leaves your machine except what Claude Code itself sends and, only if you use voice dictation, the audio you record, which goes to Groq for transcription. Read [SECURITY.md](SECURITY.md) for what is and is not guaranteed.
 
-## Configuration
+![Options, Guard: the bypass switch and its warning, and the red chip in the status bar](assets/screenshots/guard.png)
 
-Settings live in `%APPDATA%\andromedacli\config.json` (or `CONSOLE_CONFIG_DIR`) and are edited in the **Options** dialog, which has two groups. *Global*: models, profiles, budget and limits, guard, notifications, language, prerequisites, plugins and secrets (the values here are the defaults for new projects). *This project*: the project's own settings (test command, optional test commands per moment — ticket, merge, release —, model, limits, template, copy from another open project) and git (initialise or clone). One **Save** applies every change, after checking all of them: if one is refused, nothing is saved and every refusal is listed with the limits. An invalid entry in the file never blocks the console: the default is used and the problem is shown.
+## Documentation
 
-The interface is translated through `src/i18n/messages_<lang>.properties` (English and Italian today; a new language is just a new file).
-
-## Project layout
-
-| Path | Contents |
+| | |
 |---|---|
-| `src/server` | HTTP/WebSocket transport, projects, agents and scheduler, tickets (review, merge, release), git, guard, budget, notifications, templates, prerequisites |
-| `src/ui` | The browser UI (vanilla TypeScript, no framework) |
-| `src/shared` | Wire types and rules shared by server and UI |
-| `mod/` | The Claude Code plugin that every session loads |
-| `prompts/` | Text sent to agents: the main's prompt and the shipped profiles |
-| `templates/`, `catalog/` | Project templates; the shipped model list and plugin catalog |
-| `test/` | Unit and integration tests (real node-pty children, a fake agent instead of Claude) and the browser acceptance specs in `test/e2e` |
-
-## Development
-
-```bash
-npx vitest run test/slug.test.ts   # locally run only the tests of what you changed
-npm run test:ticket           # check, then the tests related to your diff against project/<name>
-npm run test:smoke            # check, then a fixed set of seven files (server, merge, spawn, pty, worktree, v1, i18n)
-npm test                      # the full suite (10-15 minutes): it runs on GitHub (.github/workflows/ci.yml) on every push to main and pull request
-npm run check                 # i18n parity, no literal UI text, no stray .focus(), then tsc
-npm run build                 # bundles the UI into dist/ui
-npm run shot -- --tab git     # a screenshot of the real UI from a throw-away console
-npm run hooks                 # installs the pre-commit hook (check, and a CHANGELOG line for a product change)
-npx tsx test/e2e/phase6.spec.ts   # browser acceptance in Edge (fake agents, no quota used)
-```
-
-Rules worth knowing before a change: all code, comments and docs are in English; UI code contains only translation keys; missing data is shown as "n/a", never as zero; `.focus()` may only be called in `src/ui/focus.ts`. Changes to behaviour get a line in [CHANGELOG.md](CHANGELOG.md).
+| [guide/using.md](guide/using.md) | Opening a project, the main, agents, answering, review and merge, voice dictation, keyboard shortcuts |
+| [guide/architecture.md](guide/architecture.md) | How it works and the project layout |
+| [guide/configuration.md](guide/configuration.md) | The Options dialog and the config file |
+| [guide/desktop-app.md](guide/desktop-app.md) | The Windows app and its releases |
+| [guide/development.md](guide/development.md) | Tests, checks and the rules for a change; see also [CONTRIBUTING.md](CONTRIBUTING.md) |
+| [SECURITY.md](SECURITY.md) | The threat model and how to report a problem |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each version |
 
 ## Status
 

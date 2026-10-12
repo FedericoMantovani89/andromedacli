@@ -1,0 +1,43 @@
+name: Bug report
+description: Something does not work as the README or the interface says
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: The steps, and the text of any error. A screenshot helps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AndromedaCli version
+      description: Shown in the title bar of the app or the browser tab (or the commit, if you run from source).
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: The output of `claude --version`.
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: The output of `node --version` (not needed for the desktop app).
+  - type: dropdown
+    id: how
+    attributes:
+      label: How do you run it?
+      options: [Desktop app, "npm run console -- serve", start-console.bat]
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `npm run console -- doctor --json`
+      description: Check it for anything private before pasting. In the desktop app, *Options → Prerequisites* shows the same checks.
+      render: json

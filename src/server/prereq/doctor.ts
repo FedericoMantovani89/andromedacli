@@ -8,7 +8,7 @@ import { loadBundles } from '../i18n-bundles';
 import { startServer } from '../index';
 import { checkBundles } from '../../shared/i18n-checks';
 import { ToastNotifier, type Notifier } from '../notify/notifier';
-import { runChecks,type CheckResult, type Runner } from './checks';
+import { compareVersions, runChecks, TESTED_CLAUDE_MAX, type CheckResult, type Runner } from './checks';
 import { errorMessage } from '../../shared/guards';
 
 export type DoctorStatus = 'ok' | 'warn' | 'fail' | 'error';
@@ -32,6 +32,10 @@ const MIN_FREE_BYTES = 2 * 1024 ** 3;
 
 function fromPrereq(c: CheckResult): DoctorCheck {
   const detail = [c.version, c.message].filter(Boolean).join(' ') || undefined;
+  // The console talks to Claude Code through its plugin and terminal, which Claude Code may change: a version newer than the last tested one is a warning, not a failure.
+  if (c.id === 'claude' && c.status === 'ok' && c.version && compareVersions(c.version, TESTED_CLAUDE_MAX) > 0) {
+    return { id: c.id, status: 'warn', detail: `${c.version} (untested: the last version tried is ${TESTED_CLAUDE_MAX})`, fix: 'It probably works. If something misbehaves, try the tested version, and tell the maintainer which one broke.' };
+  }
   if (c.status === 'ok') return { id: c.id, status: 'ok', detail };
   if (c.status === 'error') return { id: c.id, status: 'error', detail, fix: 'Run the command by hand to see why it fails.' };
   return { id: c.id, status: c.required ? 'fail' : 'warn', detail: detail ?? c.status, fix: FIX[c.id] };

@@ -45,3 +45,11 @@ it('leaves no temporary folders behind after the security self-test', async () =
   await runDoctor({ ...dirs(), run: goodRunner });
   expect(count()).toBe(before);
 }, 40000);
+
+it('a Claude Code newer than the last tested one is a warning, not a failure', async () => {
+  const newer: Runner = async (cmd, a, t) => (cmd === 'claude' ? { code: 0, stdout: '2.9.0 (Claude Code)' } : goodRunner(cmd, a, t));
+  const r = await runDoctor({ ...dirs(), run: newer });
+  expect(byId(r, 'claude')).toMatchObject({ status: 'warn' });
+  expect(byId(r, 'claude')?.detail).toContain('untested');
+  expect(r.ok).toBe(true);
+}, 40000);

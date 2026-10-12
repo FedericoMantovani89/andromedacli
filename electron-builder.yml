@@ -13,7 +13,7 @@ electronFuses:
 publish:
   provider: github
   owner: FedericoMantovani89
-  repo: multiconsole
+  repo: andromedacli
 # node-pty 1.1 is N-API: its prebuilt win32-x64 files run in Electron as they are, nothing is compiled.
 npmRebuild: false
 # Native files must be real files on disk: node-pty (the terminals) and node-notifier (the toast helper).

@@ -26,7 +26,7 @@ Runs on 127.0.0.1 with a per-start token. Real terminals (xterm.js) are the core
 - `npm run check` (literal-string, focus and i18n lints) is the build gate.
 
 ## Brand Commitments
-Commercial name AndromedaCli (repo stays `multiconsole`). The user gave total freedom on the visual identity, including the splash image and layout arrangement, as long as the SPEC behaviours above hold.
+Commercial name AndromedaCli (the repository was renamed from `multiconsole` to `andromedacli` on 2026-10-12). The user gave total freedom on the visual identity, including the splash image and layout arrangement, as long as the SPEC behaviours above hold.
 
 ## Evidence on Hand
 Existing UI in `src/ui`, splash image `src/ui/splash.jpg`. No testimonials, customers or benchmarks exist; none must be invented.

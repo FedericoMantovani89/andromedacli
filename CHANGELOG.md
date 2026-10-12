@@ -1,30 +1,45 @@
 # Changelog
 
 All notable changes to this project are recorded here, newest first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project is not versioned yet, so entries are grouped by
-the phases of `docs/SPEC.md` section 24. Write entries in English (P11) and add them in the same change that
-introduces the behaviour.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/)
+(a release is a `v<version>` tag, which is also what the desktop app shows). Before the first release the work was grouped by the phases
+of `docs/SPEC.md` section 24: those entries are kept below the releases. Write entries in English (P11) and add them in the same
+change that introduces the behaviour.
 
 ## [Unreleased]
 
 ### Added
-- Options > Notifications: "The main notifies me in the Claude app (Remote Control)" (`notifications.mainPush`, off by default, one switch). When on, the main's prompt gets `prompts/main-push.md` and `PushNotification` is allowed: with `/rc` connected the main notifies when it starts an agent, when an agent finishes, when it has a question and when it finishes a whole task. Read when the sessions start, so Save asks for the restart.
 - Agent panels have a Compact button, the counterpart of the bar's Expand: the panel folds into a bar and the next agent takes its slot.
 - Archived agents can be deleted from the list, one by one or all at once (after a question): the record, the session and the terminal history go; worktree, branch, ticket, report and ledger stay (`DELETE /api/agents/<slug>`, `POST /api/agents/delete-archived`).
-
 - Status bar: a red "Bypass on" chip is shown at all times while agents run without permission prompts.
 - `SECURITY.md`: the layers, what the guard guarantees and what it does not, what bypass changes, and what leaves the machine. The README now mentions the desktop app, the delete of archived agents and Compact, and says that dictation audio goes to Groq.
-- `npm run shot:readme` makes the README pictures (`assets/screenshots/`) from a staged demo project (`scripts/demo-agent.cjs`); the README shows them.
 - The address that opens the page (printed by `serve`, the app window, a notification click) carries a single-use code (`?code=`) instead of the token. The page swaps it once for the token (`POST /api/session`, only with the console's own `Origin`) and removes it from the address; a used or expired (12 h) code opens nothing. The token is still accepted as `Authorization: Bearer` and `?token=` for tools that hold it.
+- `npm run shot:readme` makes the README pictures (`assets/screenshots/`) from a staged demo project (`scripts/demo-agent.cjs`); the README shows them.
+- `doctor` warns (not fails) when the installed Claude Code is newer than the last version a real contract run used (`TESTED_CLAUDE_MAX`, now 2.1.294).
+- `CONTRIBUTING.md`, issue templates (bug report with Claude Code and Node versions and the `doctor` output), and Dependabot for npm and GitHub Actions (weekly, grouped).
+- CI: a `smoke` job (the checks and the seven smoke files) runs next to the full suite, so a break in the basics shows early.
+
+### Changed
+- The README is a short front page (tagline, why, quick start, safety, links); the rest moved to `guide/` (using, architecture, configuration, desktop app, development). The repository was renamed to `andromedacli` (old links and the desktop app's update check follow the redirect). The changelog follows Keep a Changelog with the released versions.
+- Shipped model catalog: added Fable 5.1 and Haiku 5.5.
+- Status bar: the project budget reads "∞" (no limit is set) instead of "n/a", and "Resume now" is shown only while the console sleeps for a usage limit.
 
 ### Fixed
 - Guard: an agent can no longer change the git remotes (`git remote add`, `set-url`, `remove`, `rename`, `set-head`, `set-branches`); listing them still works.
 - App: voice dictation failed with "the browser has no permission to use the microphone" because the window refused every permission but clipboard and notifications; it now grants audio-only `media` to the console's own address.
 
+## [0.0.6] - 2026-10-11
+
+### Added
+- Options > Notifications: "The main notifies me in the Claude app (Remote Control)" (`notifications.mainPush`, off by default, one switch). When on, the main's prompt gets `prompts/main-push.md` and `PushNotification` is allowed: with `/rc` connected the main notifies when it starts an agent, when an agent finishes, when it has a question and when it finishes a whole task. Read when the sessions start, so Save asks for the restart.
+
 ### Changed
-- Shipped model catalog: added Fable 5.1 and Haiku 5.5.
-- Status bar: the project budget reads "∞" (no limit is set) instead of "n/a", and "Resume now" is shown only while the console sleeps for a usage limit.
 - CI: when a vitest worker crashes on the GitHub runner with no test failing, the whole suite runs once more (`scripts/ci-tests.sh`); a failing test or a second crash still fails the job.
+
+## [0.0.5] - 2026-10-11
+
+### Changed
+- CI: when a vitest worker crashes on the GitHub runner with no test failing, the files whose worker died run once more (`scripts/ci-tests.sh`); a failing test or a second crash still fails the job.
 - Options > Secrets: the saved Groq key shows in the field itself, as grey text, its first five characters and five stars (`gsk_a*****`; the console sends only that, never the key); typing replaces it, and below the field there is only "Remove key". The field has an eye that shows or hides what is being typed, like a password field (it never reveals the saved key).
 - The dictation dialog closes with the X in its corner (like Options) instead of a Close button, records with a red dot and stops with a red square, and has no Clear button (the text is erased by hand). While it records, it shows the time since the start (m:ss) and bars that follow the voice, like an equalizer (Web Audio; where that is missing the clock still runs). `npm run shot` has `--groq`, `--fill`, `--fake-mic` and `--wait` for this.
 - Expanding a dormant agent no longer opens an empty terminal: the panel prints the agent's last words in full (the entries of the read panel, n/a when there are none) and keeps the Wake up button in its header, so the text can be read before waking it.
@@ -43,6 +58,13 @@ introduces the behaviour.
 - Test helper `makeRepo` copies a repository built once per process instead of repeating about twelve git calls for every test (the copy is about 0.2 s against about 1 s idle).
 - Questions for the user now go through the main's own AskUserQuestion dialog, so they can be answered from Remote Control: an agent that writes the work is refused AskUserQuestion and asks the main with `send_message` (the main relays the question and options as written and returns the answer word for word), and the main's `ask_user` tool is gone from its tool list. Reviewer and recovery sessions, permissions and the console's own requests (tickets, releases) still use the queue.
 
+## [0.0.4] - 2026-10-10
+
+### Fixed
+- The release workflow's "Smoke test of the unpacked app" (`npm run smoke:app`) failed on tag v0.0.3 with `401 unauthorized` and a 503 on the terminal socket. The app was fine: the script read the page's token as soon as the static `#topbar` existed, before the page's script had stored it in `sessionStorage`. It now waits for the token first; no check was removed or weakened.
+
+## [0.0.3] - 2026-10-10
+
 ### Added
 - "Archive all finished": a button in the archived list (the status-bar chip now also shows as "Archived (0)" while some agent can be archived) archives, after a confirmation that shows how many, every agent that is finished, or idle with a delivered, merged or released ticket, in one request (`POST /api/agents/archive-finished`, answers `{count, slugs}`). Agents waiting on a decision or stopped (budget, limit, blocked, recovering) are never archived; nothing is deleted and Unarchive still works. After a restart, reviewers and merged developers are not brought back, and stopped finishes stay visible, as before.
 - Voice dictation for the main: a microphone icon button in the main panel's header (beside its state; not on agent panels) opens a dialog that records from the browser microphone, has the console transcribe it with Groq Whisper (`whisper-large-v3-turbo`, in the UI language), puts the text in an editable box, appends each further clip, and *Send to main* types the text into the main's input without pressing Enter. Closing the dialog keeps the text until the page reloads, Clear, or a send. The text typed is plain single-line text: escape sequences, Enter and other control characters are removed. It is typed as plain text, so a transcript that starts with `/` or `!` is seen by the main as typed (a command or mode switch of its terminal program).
@@ -53,6 +75,14 @@ introduces the behaviour.
 - Archive of finished agents: an agent whose session ended for good (a merged ticket, a finished review or recovery) leaves the agents column by itself and is listed under "Archived (N)" in the status bar, with Unarchive and Unarchive all; nothing is deleted. A stopped agent (budget, loop, usage limit) stays, new work un-archives an agent, the flag survives a restart, and a small Archive button archives an idle agent with a delivered or merged ticket by hand (`POST /api/agents/<slug>/archive` and `/unarchive`). The agents counters and Alt+n ignore archived agents.
 - A project can set a different test command for each moment (`testCommands` in `project.json`, three fields in Options, This project): `ticket` (validation step, review re-run, recovery), `merge` (after a merge) and `release`; each falls back to the single test command, so nothing changes unless they are set. New npm scripts `test:ticket` (check + tests changed against the project branch) and `test:smoke` (check + 7 core files); neither writes the commit-gate stamp.
 - The header Queue and Options buttons and the agent bar's Read button are icon buttons (bell with a count badge, gear, clipboard); the tooltip and accessible name keep the translated text.
+
+### Fixed
+- A recovery session is no longer ended while its report is still being handled: the 3 s grace before the session is closed now starts after the new agent has been started, so a slow restart on a loaded machine cannot revoke the session before the report is answered (a second report was answered "unauthorized" instead of "not_recovery").
+- A long validation no longer ends in "The console did not answer.": `step_done` runs the tests as a job of its own, each request waits at most 15 s and answers `running`, the mod asks again until the real result, and the step is recorded when the run ends.
+
+## [0.0.2] - 2026-10-09
+
+### Added
 - Requests between agents: `send_message` (question, answer, info, unknown, escalate) routed by the console; a question returns an id `TODO-xxxxxx` at once and the asker keeps working.
 - A checklist step can wait for an answer (`Step.waitingOn`): `step_done` goes past it, the validation and documentation steps refuse (`pending_requests`) while one waits, and a step cannot close while its `TODO-<id>` comment is still in the code (`todo_left`); the ticket is not delivered with any such comment left.
 - An agent cannot close its validation or documentation step while a request addressed to it is open (`unanswered_requests`), nor close the step named after an open request ("Answer TODO-x") before answering it (`request_unanswered`).
@@ -60,17 +90,29 @@ introduces the behaviour.
 - An unanswered question goes to the main after `agents.requestTimeoutMinutes` (15 by default, counted from the moment the colleague received it); chains of requests are limited by `agents.requestMaxHops` (3); a recipient that is not running sends the question to the main at once.
 - The agent bar shows "waiting for <colleague> (TODO-x)" and "to answer for <colleague> (TODO-x)"; a Requests drawer lists the requests between agents.
 - Desktop app: it looks for a newer version on the GitHub releases (after 30 s, then every 4 hours); the status bar offers Download, then Restart to update, and nothing happens without the user (a repository that is private, or a release without `latest.yml`, shows nothing). The version of a release is the tag that was pushed.
-- Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
 
 ### Fixed
-- The release workflow's "Smoke test of the unpacked app" (`npm run smoke:app`) failed on tag v0.0.3 with `401 unauthorized` and a 503 on the terminal socket. The app was fine: the script read the page's token as soon as the static `#topbar` existed, before the page's script had stored it in `sessionStorage`. It now waits for the token first; no check was removed or weakened.
-- A recovery session is no longer ended while its report is still being handled: the 3 s grace before the session is closed now starts after the new agent has been started, so a slow restart on a loaded machine cannot revoke the session before the report is answered (a second report was answered "unauthorized" instead of "not_recovery").
-- A long validation no longer ends in "The console did not answer.": `step_done` runs the tests as a job of its own, each request waits at most 15 s and answers `running`, the mod asks again until the real result, and the step is recorded when the run ends.
 - Desktop app: a second click on close (or a quit) while the clean stop runs no longer ends the app before the stop finishes, and "Restart to update" stops the server cleanly before the installer starts; the install request is answered at once.
 - Budget: an agent resumed after a console restart no longer has its whole earlier transcript counted a second time.
 - Queue: what the user is asked to allow is built by the console from the call that will be remembered; the "always" buttons are offered only for a call that can be remembered; a dropped question frees its handler.
 - Console: made-up file names no longer grow the page cache; an ended session keeps 256 KB of scrollback instead of 4 MB.
 - Release: the build job holds no credentials (a second job publishes), actions are pinned to a commit; the app refuses browser permissions other than clipboard copy and notifications and the exe can no longer run as a plain Node interpreter.
+
+## [0.0.1] - 2026-10-09
+
+### Added
+- Desktop app: the console ships as a Windows x64 Electron app (one window, the server runs inside it, no separate Node process, NSIS installer); `npm run build:app`, `dist:dir`, `dist` and `smoke:app`. Closing the window asks first when agents are running.
+- Options, Project: while the test command is empty the console uses the one the project suggests (npm test from a package.json with a test script, mvn test or gradle test); the field shows it as a placeholder and says where it comes from. Switches with a longer explanation (squash, worktrees) have it in an (i) tooltip instead of a line below, and the template menu is called Template.
+- Shipped profiles are now `developer` (general), `reviewer` and `recovery`; `backend`, `dba` and `frontend` are gone, and so are the profiles of the Java and web templates (the project's CLAUDE.md says how it is built). The new-agent menu lists only profiles to pick by hand (not `reviewer`/`recovery`); a template's profile list is checked for its shape only. The build and lint command fields are gone from Options, Project (the console never used them).
+- Options: the Names tab is gone (it only listed fixed rules; the new-agent form already says why a name is refused).
+- Options: the panel has a visible scrollbar and a shadow at the edge that still has content behind it, so a long tab shows there is more below.
+- Options, Budget and limits: the token budget, the alert/restriction/stop levels and the usage-limit levels are horizontal sliders with the value in a read-only box at the right. Levels that must stay in order stop at their neighbour and are sent as one request; the footnote now says which settings apply to new agents.
+- Options, Profiles: profiles can be created, edited and deleted from the dialog (files in the config folder, all fields: name, description, model, token budget, read only, instructions). A shipped profile is edited as a copy and restored one by one or all at once; a profile only the project has stays read only here. New routes `GET /api/profiles`, `PUT|DELETE /api/profiles/<name>`, `POST /api/profiles/restore`; the new-agent menu lists every profile.
+- After Save in Options, a Yes/No question offers to restart the sessions when a setting Claude reads only at launch changed (bypass, guard mode, agent model) or a program installed since is not on the PATH of the running console. Yes (`POST /api/restart`) ends and starts again every project's sessions (the main resumes its conversation, the agents that were running are resumed), refreshes the PATH from the system on Windows, and loads the page again from the splash; the console, its port and token stay.
+- The divider between main and the agents can be dragged (20-80%) to widen or narrow either side; double-click resets to half; the position is remembered in the browser.
+- A project folder that is not a git repository but holds several (for example `abc-website` with `abc-fe` and `abc-be`) now works: `spawn_agent` and the new-agent form take a `repo`, each agent gets its worktree and branches in that repo, and review, merge and a single release confirmation run per repo (`git.repoRequired`, `git.unknownRepo`); the main's prompt lists the repos.
+- With no project open (nothing remembered and no `--project-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-project dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
+- `GET /api/host` tells the page what the console knows without a project (projects, language, languages); project routes with no project answer `404 project.notFound`.
 
 ### Changed
 - Lighter console: the UI is minified and split (the reader's markdown libraries and the Options dialog load when first used) and served with ETag and Brotli instead of `no-store`; state pushes are merged and built once per project instead of once per socket and per change; one slug regex and one JSON reader; terminals keep 10 000 lines in the page instead of 20 000.
@@ -104,18 +146,6 @@ introduces the behaviour.
 - Options: the left column is split into Global and Project groups, each with a heading and a separator.
 - Options, Budget and limits: the three sliders of a group (alert, restriction, stop; and the quota ones) move together: reaching a neighbour pushes it along instead of stopping.
 - Options: a number outside its range is refused with a message that names the field and its limits ("must be a whole number between 1 and 64"); Save tries every staged change and lists all the refusals together (config entries and the project limit).
-
-### Added
-- Options, Project: while the test command is empty the console uses the one the project suggests (npm test from a package.json with a test script, mvn test or gradle test); the field shows it as a placeholder and says where it comes from. Switches with a longer explanation (squash, worktrees) have it in an (i) tooltip instead of a line below, and the template menu is called Template.
-- Shipped profiles are now `developer` (general), `reviewer` and `recovery`; `backend`, `dba` and `frontend` are gone, and so are the profiles of the Java and web templates (the project's CLAUDE.md says how it is built). The new-agent menu lists only profiles to pick by hand (not `reviewer`/`recovery`); a template's profile list is checked for its shape only. The build and lint command fields are gone from Options, Project (the console never used them).
-- Options: the Names tab is gone (it only listed fixed rules; the new-agent form already says why a name is refused).
-- Options: the panel has a visible scrollbar and a shadow at the edge that still has content behind it, so a long tab shows there is more below.
-- Options, Budget and limits: the token budget, the alert/restriction/stop levels and the usage-limit levels are horizontal sliders with the value in a read-only box at the right. Levels that must stay in order stop at their neighbour and are sent as one request; the footnote now says which settings apply to new agents.
-- Options, Profiles: profiles can be created, edited and deleted from the dialog (files in the config folder, all fields: name, description, model, token budget, read only, instructions). A shipped profile is edited as a copy and restored one by one or all at once; a profile only the project has stays read only here. New routes `GET /api/profiles`, `PUT|DELETE /api/profiles/<name>`, `POST /api/profiles/restore`; the new-agent menu lists every profile.
-- After Save in Options, a Yes/No question offers to restart the sessions when a setting Claude reads only at launch changed (bypass, guard mode, agent model) or a program installed since is not on the PATH of the running console. Yes (`POST /api/restart`) ends and starts again every project's sessions (the main resumes its conversation, the agents that were running are resumed), refreshes the PATH from the system on Windows, and loads the page again from the splash; the console, its port and token stay.
-- The divider between main and the agents can be dragged (20-80%) to widen or narrow either side; double-click resets to half; the position is remembered in the browser.
-
-### Changed
 - Options: changes in every tab are staged and applied by one Save button (which closes the dialog); a top-right X closes without saving. A refused change shows its error and the dialog stays open. Tabs keep their edits while another tab is shown.
 - Options, Models: aliases are no longer listed; the catalog date sits next to the label; Refresh is a green round-arrow button beside the menu; the catalog address has an (i) tooltip; the cache time field is gone (fixed 6 hours, Refresh forces); the "applies to new agents" note is a footnote.
 - Choosing a folder in the new-project dialog (Browse or typing it) fills the project name from the folder name; a name the user typed is kept. A rule makes the `hidden` attribute win even over a class that sets `display` (the name field of the dialog had been showing when it should not).
@@ -137,6 +167,8 @@ introduces the behaviour.
 - The main's prompt tells it to do every file-changing job through console agents (`spawn_agent`), not Claude Code's built-in subagents, which are invisible to the console (no worktree, ticket or budget).
 - Visual redesign of the whole UI: dark graphite surface with hairline seams instead of dimmed panels, one accent for focus, state dots with colour only for state, tab-style project and options navigation, themed terminals, a brand mark in the top bar and a narrow-window layout.
 - Options dialog navigation is a vertical menu on the left (a row on narrow windows); Escape closes the Options, new-project and close-project dialogs.
+- `serve` without `--project-root` no longer opens the current folder: it opens the projects remembered in `projects.json`, or shows the welcome screen. `startServer` takes `projectRoot` and `projectName` as optional.
+- The request handler takes the console-wide part (`HostContext`) apart from a project's `Context`.
 
 ### Fixed
 - On Windows the terminals use the ConPTY bundled with node-pty (falling back to the system's if it cannot start): the system one on Windows 10 dropped the mouse and alternate-screen requests of Claude Code's fullscreen mode, so the mouse wheel did nothing in the terminals while PageUp/PageDown worked.
@@ -145,20 +177,11 @@ introduces the behaviour.
 - The native folder window opened by Browse could appear behind the browser; its owner window is now shown (invisible, off-screen, topmost, brought to the foreground) so the dialog comes to the front.
 - The new-project dialog on the welcome screen listed no templates and detected no commands (those routes needed an open project); they now answer with no project open.
 - The start-up picture now covers the whole window (cropped instead of letterboxed), and dialog forms (new project, save as template) have stacked labels, styled fields, a three-column commands row and a primary action button.
-
-### Added
-- A project folder that is not a git repository but holds several (for example `abc-website` with `abc-fe` and `abc-be`) now works: `spawn_agent` and the new-agent form take a `repo`, each agent gets its worktree and branches in that repo, and review, merge and a single release confirmation run per repo (`git.repoRequired`, `git.unknownRepo`); the main's prompt lists the repos.
-- With no project open (nothing remembered and no `--project-root`) the console shows a welcome screen that asks for a project; creating it starts the console as usual. The new-project dialog has a Browse button that opens the native Windows folder window (`POST /api/pick-folder`, one window at a time, title in the interface language).
-- `GET /api/host` tells the page what the console knows without a project (projects, language, languages); project routes with no project answer `404 project.notFound`.
-
-### Fixed
 - The guard no longer asks the network whether a UNC path (`\servershare...`) exists: it is never inside a local folder, so it is decided at once (the lookup of an unknown server name took about 20 s per call).
 
-### Changed
-- `serve` without `--project-root` no longer opens the current folder: it opens the projects remembered in `projects.json`, or shows the welcome screen. `startServer` takes `projectRoot` and `projectName` as optional.
-- The request handler takes the console-wide part (`HostContext`) apart from a project's `Context`.
+## Before the first release
 
-Next: Phase 7 (external providers, optional); ask before starting.
+The phases below were built before the first tag, in the order they are listed (newest first).
 
 ## Phase 6: multiple projects, full resume, notifications, templates, options (2026-10-05)
 
@@ -390,3 +413,11 @@ Next: Phase 7 (external providers, optional); ask before starting.
 Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` with the outcome of checks V1-V19, the study
 of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.
+
+[Unreleased]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/FedericoMantovani89/andromedacli/releases/tag/v0.0.1
