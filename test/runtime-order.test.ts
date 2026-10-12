@@ -69,7 +69,7 @@ function wiringFixture() {
   }));
   c.provide('persister', () => fake({ onChange: () => { log.push('persister'); } }));
   c.provide('questions', () => fake({ onAdd: () => { log.push('questions.onAdd'); }, onChange: () => { log.push('questions.onChange'); } }));
-  c.provide('ptys', () => fake({ onExit: () => { log.push('ptys.onExit'); } }));
+  c.provide('ptys', () => fake({ onDiscard: () => undefined, onExit: () => { log.push('ptys.onExit'); } }));
   c.provide('inbox', () => fake({ onPush: () => { log.push('inbox.onPush'); }, onAck: () => { log.push('inbox.onAck'); } }));
   c.provide('waker', () => fake({}));
   c.provide('requests', () => fake({}));
