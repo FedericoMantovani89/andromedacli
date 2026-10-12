@@ -19,21 +19,16 @@ import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
 import { createToken, LoginCodes, SessionTokens } from './security';
 import { AgentRegistry } from './agents/registry';
-import { Inbox } from './agents/inbox';
 import { Scheduler } from './agents/scheduler';
-import { CONSOLE_FROM, QuestionQueue } from './questions/queue';
-import { PermissionMemory } from './questions/permission-memory';
+import { CONSOLE_FROM } from './questions/queue';
 import { describeKey } from './questions/describe';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
-import { ReadingStore } from './reading/store';
 import { failQueuedStart, launchAgent, launchResume, spawnAgent } from './agents/spawn';
 import { ResumeService, type WakeResult } from './agents/resume';
-import { TicketStore } from './tickets/store';
 import { StepService } from './tickets/steps';
 import { RequestService } from './requests/service';
-import { RequestStore } from './requests/store';
 import { ReviewService } from './tickets/review';
 import { RecoveryService, replacementCheckout } from './tickets/recovery';
 import { MergeService } from './tickets/merge';
@@ -79,11 +74,11 @@ import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
-import { StateProblems } from './state-problems';
 import { KeyedQueue } from './keyed-queue';
 import { errorMessage } from '../shared/guards';
 import { Container } from './runtime/container';
 import type { Services, ProjectContainer } from './runtime/services';
+import { registerState } from './runtime/state';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -178,20 +173,14 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const { configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits } = shared;
   const c: ProjectContainer = new Container<Services>();
   c.provide('env', () => ({ shared, o, configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits }));
-  // State files the console could not read are set aside and listed here; the page shows them until the user dismisses them.
-  const stateProblems = new StateProblems(o.projectRoot, () => shared.broadcastAll());
-  const store = new ProjectStore(o.projectRoot, stateProblems.add);
-  store.init(o.projectName);
-  // Phase 6A: did the last run end through close()? A crash leaves `false`. This run is "not clean" until its own close() says so.
-  const previousRunWasClean = store.readCleanStop();
-  store.writeCleanStop(false);
-  // The project keeps the name it was created with, even if its folder is renamed later (it is also the main session id).
-  const projectName = store.project.name;
+  registerState(c);
+  const stateProblems = c.get('stateProblems');
+  const store = c.get('store');
+  const previousRunWasClean = c.get('previousRunWasClean');
+  const projectName = c.get('projectName');
   const ptys = new PtyManager();
   const tokens = new SessionTokens();
-  // What was not delivered before a stop is delivered after the restart (messages for dormant agents wait for their wake-up).
-  const inbox = new Inbox(join(o.projectRoot, '.andromedaconsole', 'state', 'inbox.json'), stateProblems.add);
-  inbox.load();
+  const inbox = c.get('inbox');
   const registry = new AgentRegistry();
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
   const savedMainSession = store.readMainSession();
@@ -199,12 +188,11 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const hasMainTranscript = (id: string): boolean => existsSync(transcriptPath(o.projectsDir ?? defaultProjectsDir(), o.projectRoot, id));
   const mainResumeId = savedMainSession !== undefined && SESSION_ID_RE.test(savedMainSession) && hasMainTranscript(savedMainSession) ? savedMainSession : undefined;
   registry.register({ slug: projectName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
-  const questions = new QuestionQueue();
-  const permissions = new PermissionMemory();
-  const reading = new ReadingStore(join(o.projectRoot, '.andromedaconsole', 'state', 'reading'));
+  const questions = c.get('questions');
+  const permissions = c.get('permissions');
+  const reading = c.get('reading');
   // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
-  /** The global secret patterns plus the project's own (Phase 6D). */
-  const secretPatterns = (): string[] => [...runtime.git.secretPatterns, ...(store.fields().secretPatterns ?? [])];
+  const secretPatterns = c.get('secretPatterns');
   // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
   // The test command the console runs: the one saved for the project, else the one its files suggest (pom.xml, build.gradle, package.json).
   let detectedTest: { at: number; value: string | undefined } | undefined;
@@ -229,7 +217,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     ...(r.watchOwner && r.owner !== undefined ? { ownerAlive: () => registry.get(r.owner!)?.state !== 'finished' && ptys.status(r.owner!) === 'running' } : {}),
   });
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
-  const tickets = new TicketStore(o.projectRoot, stateProblems.add);
+  const tickets = c.get('tickets');
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
   const endTimers = new Set<ReturnType<typeof setTimeout>>(); // reviewers about to be ended; cancelled at shutdown
   /**
@@ -609,8 +597,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     requestIds: (slug) => requests.idsFrom(slug),
   });
   // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
-  const requestStore = new RequestStore(join(o.projectRoot, '.andromedaconsole', 'state', 'requests.json'), stateProblems.add);
-  requestStore.load();
+  const requestStore = c.get('requestStore');
   const requests: RequestService = new RequestService({
     store: requestStore, mainSlug: projectName,
     agent: (slug) => { const a = registry.get(slug); return a ? { role: a.role, state: a.state } : undefined; },
