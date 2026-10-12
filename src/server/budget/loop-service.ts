@@ -6,6 +6,8 @@ import { errorMessage } from '../../shared/guards';
 import { MainTeller } from '../main-teller';
 
 export interface LoopDeps {
+  /** The per-ticket queue shared by every ticket service of the project; without it the service has its own. */
+  queue?: KeyedQueue;
   detector: LoopDetector;
   tickets: TicketStore;
   tellAgent(slug: string, text: string): void;
@@ -31,10 +33,10 @@ export type LoopLevel = 0 | 1 | 2 | 3;
  */
 export class LoopService {
   private readonly levels = new Map<string, LoopLevel>();
-  private readonly queue = new KeyedQueue();
+  private readonly queue: KeyedQueue;
   private readonly main = new MainTeller((text) => this.d.tellMain(text));
 
-  constructor(private readonly d: LoopDeps) {}
+  constructor(private readonly d: LoopDeps) { this.queue = d.queue ?? new KeyedQueue(); }
 
   /** The detector: `index.ts` tells it about every sign of life of an agent (silence). */
   get detector(): LoopDetector { return this.d.detector; }

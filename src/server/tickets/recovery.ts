@@ -31,6 +31,8 @@ const stepLine = (s: { n: number; title: string; done: boolean; waitingOn?: { re
 type SpawnResult = { ok: true } | { ok: false; code: string; detail?: string };
 
 export interface RecoveryDeps extends TicketTestDeps {
+  /** The per-ticket queue shared by every ticket service of the project; without it the service has its own. */
+  queue?: KeyedQueue;
   tickets: TicketStore;
   ledger: Ledger;
   /** The project folder: with `project` it scopes the ledger (agent names repeat across projects). */
@@ -241,11 +243,11 @@ function parseReport(body: unknown): RecoveryReport | undefined {
  * Everything that changes a ticket happens here, one call at a time per ticket.
  */
 export class RecoveryService {
-  private readonly queue = new KeyedQueue();
+  private readonly queue: KeyedQueue;
   /** Running recoveries: session name -> the ticket and the status it was stopped in. In memory: a resumed console is Phase 6. */
   private readonly active = new Map<string, { ticket: string; stopStatus: StopStatus }>();
 
-  constructor(private readonly d: RecoveryDeps) {}
+  constructor(private readonly d: RecoveryDeps) { this.queue = d.queue ?? new KeyedQueue(); }
 
   /** The ticket a recovery session works on, or undefined for any other session. */
   ticketOf(recovery: string): string | undefined { return this.active.get(recovery)?.ticket; }

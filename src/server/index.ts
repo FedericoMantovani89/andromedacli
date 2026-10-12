@@ -79,6 +79,7 @@ import { StaleChecker, latestCommitMs } from './git/stale';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
 import { StateProblems } from './state-problems';
+import { KeyedQueue } from './keyed-queue';
 import { errorMessage } from '../shared/guards';
 
 export interface StartOptions {
@@ -305,7 +306,9 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     const lang = language !== 'auto' && bundles.has(language) ? language : 'en';
     return { lang, t: createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') }) };
   };
+  const ticketQueue = new KeyedQueue(); // one queue per ticket, shared by every service that changes it
   const review = new ReviewService({
+    queue: ticketQueue,
     tickets, root: o.projectRoot, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('ticket'),
@@ -397,6 +400,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const restrictions = new Restrictions();
   const turns = new Map<string, number>(); // turns started per session: the ledger's `turn`
   const budget: BudgetService = new BudgetService({
+    queue: ticketQueue,
     tickets, ledger, reader, project: projectName, root: resolve(o.projectRoot),
     // The loaded object, read on every call. The Options dialog edits `budget` in place (applyConfig below), so a change is seen here
     // at once and applies to the sessions launched afterwards (a running agent keeps the limit it began with).
@@ -426,6 +430,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   });
   // Recovery after a stop (SPEC 16.5): a read-only session diagnoses, then a NEW agent takes the ticket over on the same branch.
   const recovery: RecoveryService = new RecoveryService({
+    queue: ticketQueue,
     tickets, ledger, root: resolve(o.projectRoot), project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('ticket'),
@@ -472,6 +477,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const onBudgetAnswer = budgetAnswerHandler({ budget, tickets, recovery, tellMain: (text) => { inbox.push(projectName, text); }, changed: () => broadcast() });
   // Loops and blocks (SPEC 17): found in the transcript events, handled in three steps; time signals only warn the main.
   const loop = new LoopService({
+    queue: ticketQueue,
     detector: new LoopDetector(() => config.budget.loop, () => Date.now()),
     tickets,
     tellAgent: (slug, text) => { inbox.push(slug, text); },
@@ -639,6 +645,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   });
   const guardLog = new GuardLog(join(o.projectRoot, '.andromedaconsole', 'state', 'guard.jsonl'));
   const steps: StepService = new StepService({
+    queue: ticketQueue,
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
     testCommand: testCommandAt('ticket'),

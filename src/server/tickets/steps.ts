@@ -27,6 +27,8 @@ export type ChecklistSetResult =
   | { status: 'refused'; code: ChecklistError | 'no_worktree' | 'already_delivered'; detail: string };
 
 export interface StepDeps extends TicketTestDeps {
+  /** The per-ticket queue shared by every ticket service of the project; without it the service has its own. */
+  queue?: KeyedQueue;
   tickets: TicketStore;
   /** The user switched the tests off for this project: the validation step closes without running anything. */
   testsDisabled?(): boolean;
@@ -58,11 +60,11 @@ const refuse = (code: StepRefusal, extra: Omit<Extract<StepResult, { status: 're
  * validation and pushes. Calls for one agent are serialised, so a repeated or concurrent `step_done` can never commit twice.
  */
 export class StepService {
-  private readonly queue = new KeyedQueue();
+  private readonly queue: KeyedQueue;
   private readonly jobs = new Map<string, StepJob>();
   private readonly unclaimed = new Map<string, { n: number; result: StepResult }>();
 
-  constructor(private readonly d: StepDeps) {}
+  constructor(private readonly d: StepDeps) { this.queue = d.queue ?? new KeyedQueue(); }
 
   checklistSet(slug: string, items: string[]): Promise<ChecklistSetResult> {
     return this.queue.run(slug, async () => {

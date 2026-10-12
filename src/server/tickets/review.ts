@@ -9,6 +9,8 @@ import { KeyedQueue } from '../keyed-queue';
 export const MAX_REWORK_ROUNDS = 2;
 
 export interface ReviewDeps extends TicketTestDeps {
+  /** The per-ticket queue shared by every ticket service of the project; without it the service has its own. */
+  queue?: KeyedQueue;
   tickets: TicketStore;
   /** The project folder (where `.andromedaconsole/` lives). */
   root: string;
@@ -133,9 +135,9 @@ const noteLines = (notes: ReviewNote[]): string[] => notes.map((n, i) => `${i + 
  * Everything that changes a ticket happens here, one call at a time per ticket.
  */
 export class ReviewService {
-  private readonly queue = new KeyedQueue();
+  private readonly queue: KeyedQueue;
 
-  constructor(private readonly d: ReviewDeps) {}
+  constructor(private readonly d: ReviewDeps) { this.queue = d.queue ?? new KeyedQueue(); }
 
   async ticketReport(slug: string, o: { rerun?: boolean } = {}): Promise<TicketReportResult> {
     const ticket = this.d.tickets.get(slug);

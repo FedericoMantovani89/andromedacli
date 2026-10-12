@@ -15,6 +15,8 @@ export const HANDOVER_FILE = '.andromedaconsole/handover.md';
 export const ALERT_TEXT = `Budget alert: you have used most of the token budget of this ticket. Write the handover note NOW to ${HANDOVER_FILE} in your worktree (what is done, what is missing, what you suspect is consuming the most): at the budget limit every tool except step_done is refused, so this is your only chance. Then close the step you are on with step_done. Do not start anything new.`;
 
 export interface BudgetDeps {
+  /** The per-ticket queue shared by every ticket service of the project; without it the service has its own. */
+  queue?: KeyedQueue;
   tickets: TicketStore; ledger: Ledger; reader: TranscriptReader; project: string;
   /** The project folder: with `project` it scopes the ledger, which every project of the user shares. */
   root: string;
@@ -38,12 +40,12 @@ const validLimit = (n: number): boolean => Number.isFinite(n) && n > 0;
 
 export class BudgetService {
   private ledgerWarned = false;
-  private readonly queue = new KeyedQueue();
+  private readonly queue: KeyedQueue;
   private readonly lastSession = new Map<string, { sessionId: string; turn: number }>();
   private readonly toldMissing = new Set<string>();
   private readonly main = new MainTeller((text) => this.d.tellMain(text));
 
-  constructor(private readonly d: BudgetDeps) {}
+  constructor(private readonly d: BudgetDeps) { this.queue = d.queue ?? new KeyedQueue(); }
 
   private get scope(): LedgerScope { return { project: this.d.project, root: this.d.root }; }
   private used(slug: string): number { return this.d.ledger.totalFor(slug, this.scope).tokens; }

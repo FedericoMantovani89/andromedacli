@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { git } from './git';
+import { KeyedQueue } from '../keyed-queue';
 import { SLUG_RE } from '../../shared/slug';
 import { errorMessage } from '../../shared/guards';
 
@@ -21,17 +22,14 @@ export async function commonDir(repo: string): Promise<string> {
   return r.stdout.trim();
 }
 
-const repoLocks = new Map<string, Promise<unknown>>();
+const repoLocks = new KeyedQueue();
 
 /**
  * One git-structure change at a time per repository (creating the project branch, adding a worktree, writing the repository config):
  * four agents launched at once would otherwise race on the same refs and config lock.
  */
 export function withRepoLock<T>(repo: string, fn: () => Promise<T>): Promise<T> {
-  const key = repo.replace(/\\/g, '/').toLowerCase();
-  const run = (repoLocks.get(key) ?? Promise.resolve()).then(fn, fn);
-  repoLocks.set(key, run.catch(() => undefined));
-  return run;
+  return repoLocks.run(repo.replace(/\\/g, '/').toLowerCase(), fn);
 }
 
 /** The project branch `project/<project>` is where agents' work will land (merged in Phase 4); it starts at the current HEAD. */

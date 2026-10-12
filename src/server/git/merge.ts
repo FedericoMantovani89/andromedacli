@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { identityArgs } from './commit';
 import { git } from './git';
+import { KeyedQueue } from '../keyed-queue';
 import { commonDir, ensureProjectBranch, withRepoLock } from './worktree';
 import type { ChangedFile } from '../tickets/report';
 import { errorMessage } from '../../shared/guards';
@@ -27,17 +28,14 @@ export async function changedFiles(cwd: string, base: string, head: string): Pro
   return files;
 }
 
-const projectLocks = new Map<string, Promise<unknown>>();
+const projectLocks = new KeyedQueue();
 
 /**
  * One user of the console's `.project` worktree at a time: a merge (which stages, commits and runs the tests there) and a release
  * proposal (which runs the tests there) must not reset or clean it under each other.
  */
 export function withProjectLock<T>(repo: string, fn: () => Promise<T>): Promise<T> {
-  const key = fwd(repo).toLowerCase();
-  const run = (projectLocks.get(key) ?? Promise.resolve()).then(fn, fn);
-  projectLocks.set(key, run.catch(() => undefined));
-  return run;
+  return projectLocks.run(fwd(repo).toLowerCase(), fn);
 }
 
 /** The console's own worktree on the project branch, where tickets are merged. A leading dot can never be an agent's name. */
