@@ -17,6 +17,16 @@ import type { RequestService } from '../requests/service';
 import type { SessionTokens } from '../security';
 import type { StateProblems } from '../state-problems';
 import type { TicketStore } from '../tickets/store';
+import type { KeyedQueue } from '../keyed-queue';
+import type { StepService } from '../tickets/steps';
+import type { ReviewService } from '../tickets/review';
+import type { CentralRun } from '../tickets/central';
+import type { MergeService } from '../tickets/merge';
+import type { ReleaseService } from '../tickets/release';
+import type { RecoveryService } from '../tickets/recovery';
+import type { BudgetService } from '../budget/service';
+import type { Restrictions } from '../budget/restrictions';
+import type { LoopService } from '../budget/loop-service';
 import type { Container } from './container';
 import type { Env } from './env';
 
@@ -62,8 +72,20 @@ export interface Services {
   scheduler: Scheduler;
   launchMain: (resumeId: string | undefined) => void;
   staleChecker: StaleChecker;
-  // temporary bridges to locals of createProjectRuntime (removed with the areas that take them over)
+  // ticket-flow (runtime/ticket-flow.ts)
+  ticketQueue: KeyedQueue;
+  review: ReviewService;
+  central: CentralRun;
+  merge: MergeService;
+  release: ReleaseService;
+  recovery: RecoveryService;
+  onBudgetAnswer: (answer: string, payload: { ticket: string }) => Promise<void>;
+  steps: StepService;
   requests: RequestService;
+  // temporary bridges to locals of createProjectRuntime (removed with the areas that take them over)
+  budget: BudgetService;
+  restrictions: Restrictions;
+  loop: LoopService;
   ctx: Context;
 }
 export type ProjectContainer = Container<Services>;

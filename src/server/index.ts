@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createRequestHandler, type Context, type HostContext } from './http';
@@ -24,16 +24,7 @@ import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
 import { launchResume, spawnAgent } from './agents/spawn';
 import { ResumeService, type WakeResult } from './agents/resume';
-import { StepService } from './tickets/steps';
-import { RequestService } from './requests/service';
-import { ReviewService } from './tickets/review';
-import { RecoveryService, replacementCheckout } from './tickets/recovery';
-import { MergeService } from './tickets/merge';
-import { ReleaseService } from './tickets/release';
 import { TestQueue } from './tickets/test-queue';
-import { CentralRun } from './tickets/central';
-import { createCentralGit } from './tickets/central-git';
-import { commonDir, removeWorktree } from './git/worktree';
 import { createTranslator } from '../shared/i18n';
 import { resolveVersion } from './version';
 import { evaluate } from './guard/rules';
@@ -46,7 +37,6 @@ import { Ledger } from './budget/ledger';
 import { defaultProjectsDir, pickTranscript, TranscriptReader } from './budget/transcript';
 import { BudgetService } from './budget/service';
 import { Restrictions } from './budget/restrictions';
-import { budgetAnswerHandler } from './budget/answers';
 import { commitWip } from './git/commit';
 import { LoopDetector } from './budget/loop-detector';
 import { LoopService } from './budget/loop-service';
@@ -63,13 +53,13 @@ import { WakeService } from './agents/wake';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
 import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
-import { KeyedQueue } from './keyed-queue';
 import { errorMessage } from '../shared/guards';
 import { Container } from './runtime/container';
 import type { Services, ProjectContainer } from './runtime/services';
 import { registerState } from './runtime/state';
 import { registerTests } from './runtime/tests';
 import { registerAgents } from './runtime/agents';
+import { registerTicketFlow } from './runtime/ticket-flow';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -154,8 +144,6 @@ export const WAKE_MESSAGE = 'The subscription limit was reset. Check the suspend
 const WAKE_WAIT_MS = 60_000;
 /** How long one step_done request waits for the step (the validation can take tens of minutes): the host cuts a request that stays open for about a minute. */
 const STEP_DONE_WAIT_MS = 15_000;
-/** How long after the last merge the central full run waits for another one: merges that follow each other share one run. */
-const CENTRAL_SETTLE_MS = 120_000;
 
 /** The per-project part of the console: everything bound to one folder (Phase 6C: a project runtime; `startServer` hosts the first one). */
 async function createProjectRuntime(shared: Shared, p: { projectRoot: string; projectName: string }): Promise<ProjectRuntime> {
@@ -167,6 +155,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   registerState(c);
   registerTests(c);
   registerAgents(c);
+  registerTicketFlow(c);
   const stateProblems = c.get('stateProblems');
   const store = c.get('store');
   const previousRunWasClean = c.get('previousRunWasClean');
@@ -193,71 +182,11 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const endReadOnlySession = c.get('endReadOnlySession');
   const repoOfTicket = c.get('repoOfTicket');
   const reportLanguage = c.get('reportLanguage');
-  const ticketQueue = new KeyedQueue(); // one queue per ticket, shared by every service that changes it
-  const review = new ReviewService({
-    queue: ticketQueue,
-    tickets, root: o.projectRoot, project: projectName,
-    worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: testCommandAt('ticket'),
-    runTests: testRunnerAt('ticket'),
-    testsDisabled,
-    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    // Report headings follow the interface language; "auto" is resolved by the browser, so the server uses English for it.
-    language: reportLanguage,
-    spawnReviewer: async (r) => {
-      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'reviewer', goal: r.goal, model: r.model, source: 'main', review: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
-      return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
-    },
-    existingSlugs: () => [projectName, ...store.listAgents().map((a) => a.slug)],
-    authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && ptys.status(slug) === 'running',
-    notifyMain: (text) => { inbox.push(projectName, text); },
-    notifyAuthor: (slug, text) => { inbox.push(slug, text); },
-    askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
-    endReviewer: (slug) => endReadOnlySession(slug),
-  });
-  // The full run on the merged project branch: after the merges settle, one run for the whole batch, through the queue.
-  const central: CentralRun = new CentralRun({
-    root: o.projectRoot, project: projectName, tickets, report: stateProblems.add,
-    command: testCommandAt('release'),
-    mergeCommand: testCommandAt('merge'),
-    timeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    settleMs: CENTRAL_SETTLE_MS,
-    merging: () => merge.inFlight(),
-    git: createCentralGit({ root: o.projectRoot, project: projectName, runTests: (job) => shared.testQueue.run(job), timeoutMs: () => runtime.git.testTimeoutMinutes * 60_000 }),
-    runTests: (job) => shared.testQueue.run({ ...job, onWait: () => broadcast() }),
-    authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && registry.get(slug)?.state !== 'finished' && ptys.status(slug) === 'running',
-    notifyAuthor: (slug, text) => { inbox.push(slug, text); },
-    notifyMain: (text) => { inbox.push(projectName, text); },
-    askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
-    changed: () => broadcast(),
-  });
-  const merge = new MergeService({
-    tickets, root: o.projectRoot, project: projectName,
-    worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: testCommandAt('merge'),
-    runTests: testRunnerAt('merge'),
-    testsDisabled,
-    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    squash: () => store.project.squash !== false,
-    language: reportLanguage,
-    authorAlive: (slug) => registry.get(slug)?.state !== 'interrupted' && registry.get(slug)?.state !== 'finished' && ptys.status(slug) === 'running',
-    notifyMain: (text) => { inbox.push(projectName, text); },
-    notifyAuthor: (slug, text) => { inbox.push(slug, text); },
-    needsUser: (slug, reason) => { review.askUserAboutTicket(slug, reason); },
-    merged: () => central.merged(),
-    finishAgent: async (slug) => { await finishAgent(slug); registry.setGit(slug, undefined); },
-  });
-  const release = new ReleaseService({
-    tickets, root: o.projectRoot, project: projectName,
-    testCommand: testCommandAt('release'),
-    runTests: testRunnerAt('release'),
-    greenFor: (repo, tip, command) => central.greenFor(repo, tip, command),
-    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    language: reportLanguage,
-    notifyMain: (text) => { inbox.push(projectName, text); },
-    askConfirm: (q, onAnswer) => questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'confirm', payload: q.payload }, onAnswer).id,
-    changed: () => broadcast(),
-  });
+  const ticketQueue = c.get('ticketQueue'); // one queue per ticket, shared by every service that changes it
+  const review = c.get('review');
+  const central = c.get('central');
+  const merge = c.get('merge');
+  const release = c.get('release');
   const finishAgent = c.get('finishAgent');
   const readHandover = c.get('readHandover');
   const keepHandover = c.get('keepHandover');
@@ -295,53 +224,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     },
     changed: () => broadcast(),
   });
-  // Recovery after a stop (SPEC 16.5): a read-only session diagnoses, then a NEW agent takes the ticket over on the same branch.
-  const recovery: RecoveryService = new RecoveryService({
-    queue: ticketQueue,
-    tickets, ledger, root: resolve(o.projectRoot), project: projectName,
-    worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: testCommandAt('ticket'),
-    runTests: testRunnerAt('ticket'),
-    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    spawnRecovery: async (r) => {
-      const out = await spawnAgent(ctx, { slug: r.slug, profile: 'recovery', goal: r.goal, model: r.model, source: 'main', recovery: { ticket: r.ticket, sha: r.sha }, ...repoOfTicket(r.ticket) });
-      return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
-    },
-    spawnReplacement: async (r) => {
-      // The stopped agent's restriction goes with its session; the new name never inherits one.
-      restrictions.clear(r.from);
-      if (ptys.status(r.from) === 'running') await finishAgent(r.from, { stopped: true });
-      const old = registry.get(r.from)?.git;
-      // No fallback to a normal spawn: without the stopped agent's worktree the new one would start on a NEW branch.
-      const checkout = replacementCheckout(runtime.git.worktrees, old);
-      if (!checkout.ok) return { ok: false, code: checkout.code, detail: `the worktree of ${r.from} is not known` };
-      if (old) {
-        // Whatever is still uncommitted is kept on the branch before the folder goes (git refuses a branch checked out twice).
-        const wip = await commitWip({ worktree: old.worktree, slug: r.from, project: projectName, reason: 'handover', secretPatterns: secretPatterns() });
-        if (!wip.ok) return { ok: false, code: 'wip_failed', detail: `${wip.code}${wip.files ? `: ${wip.files.join(', ')}` : wip.detail ? `: ${wip.detail}` : ''}` };
-        const oldRepo = old.repo ?? o.projectRoot;
-        await removeWorktree(oldRepo, old.worktree);
-        rmSync(join(await commonDir(oldRepo), 'console-hooks', r.from), { recursive: true, force: true });
-        registry.setGit(r.from, undefined);
-      }
-      const out = await spawnAgent(ctx, {
-        slug: r.slug, profile: r.profile, goal: r.goal, model: r.model, source: 'main',
-        ...(r.budget !== undefined ? { budget: r.budget } : {}), ...(old ? { resumeBranch: old.branch } : {}), ...repoOfTicket(r.slug),
-      });
-      return out.ok ? { ok: true } : { ok: false, code: out.code, detail: out.params?.reason !== undefined ? String(out.params.reason) : out.code };
-    },
-    existingSlugs: () => [projectName, ...store.listAgents().map((a) => a.slug)],
-    notifyMain: (text) => { inbox.push(projectName, text); },
-    askUser: (q, onAnswer) => { questions.ask({ from: CONSOLE_FROM, text: q.text, kind: 'decision', options: q.options, payload: q.payload }, onAnswer); },
-    endRecovery: (slug) => endReadOnlySession(slug),
-    budget,
-    profileOf: (ticket) => store.listAgents().find((a) => a.slug === ticket)?.profile ?? registry.get(ticket)?.profile ?? 'developer',
-    readHandover,
-    // The live requests follow the ticket to the replacement's name (and back, when its start fails).
-    renamed: (from, to) => { requests.rename(from, to); },
-    changed: () => broadcast(),
-  });
-  const onBudgetAnswer = budgetAnswerHandler({ budget, tickets, recovery, tellMain: (text) => { inbox.push(projectName, text); }, changed: () => broadcast() });
+  c.provide('budget', () => budget);
+  c.provide('restrictions', () => restrictions);
+  const recovery = c.get('recovery');
+  const onBudgetAnswer = c.get('onBudgetAnswer');
   // Loops and blocks (SPEC 17): found in the transcript events, handled in three steps; time signals only warn the main.
   const loop = new LoopService({
     queue: ticketQueue,
@@ -364,6 +250,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     processAlive: (slug) => ptys.status(slug) === 'running',
     changed: () => broadcast(),
   });
+  c.provide('loop', () => loop);
   // Usage limits of the subscription (SPEC 18): the mod reports them, the service decides the step.
   // The quota state, the sleep timer and its clock are console-wide (the limits belong to the account): see `shared`.
   const quotaStepRef = c.get('quotaStepRef'); // read by the scheduler on every decision
@@ -484,39 +371,11 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const prepareRepo = c.get('prepareRepo');
   const staleChecker = c.get('staleChecker');
   const guardLog = new GuardLog(join(o.projectRoot, '.andromedaconsole', 'state', 'guard.jsonl'));
-  const steps: StepService = new StepService({
-    queue: ticketQueue,
-    tickets, project: projectName,
-    worktreeOf: (slug) => registry.get(slug)?.git,
-    testCommand: testCommandAt('ticket'),
-    runTests: testRunnerAt('ticket'),
-    testsDisabled,
-    testTimeoutMs: () => runtime.git.testTimeoutMinutes * 60_000,
-    queuePosition: (slug) => shared.testQueue.position(slug),
-    secretPatterns,
-    notifyMain: (_slug, text) => { inbox.push(projectName, text); },
-    changed: () => broadcast(),
-    stepClosed: (slug, o) => loop.onStepDone(slug, o),
-    // The request service is created just below; these are only called when a tool runs.
-    debts: (slug) => requests.debts(slug),
-    requestIds: (slug) => requests.idsFrom(slug),
-  });
+  const steps = c.get('steps');
   // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
   const requestStore = c.get('requestStore');
-  const requests: RequestService = new RequestService({
-    store: requestStore, mainSlug: projectName,
-    agent: (slug) => { const a = registry.get(slug); return a ? { role: a.role, state: a.state } : undefined; },
-    ticketStatus: (slug) => tickets.get(slug)?.status,
-    push: (slug, text) => inbox.push(slug, text),
-    markWaiting: (slug, n, w) => steps.markWaiting(slug, n, w),
-    clearWaiting: (slug, id) => steps.clearWaiting(slug, id),
-    timeoutMs: () => config.agents.requestTimeoutMinutes * 60_000,
-    maxHops: () => config.agents.requestMaxHops,
-    now: o.requestNow ?? Date.now,
-    changed: () => broadcast(),
-  });
+  const requests = c.get('requests');
   inbox.onAck((slug, id) => requests.onDelivered(slug, id));
-  c.provide('requests', () => requests);
   const launchLog = c.get('launchLog');
   const scheduler = c.get('scheduler');
   const launchMain = c.get('launchMain');
