@@ -11,6 +11,7 @@ introduces the behaviour.
 - Options > Notifications: "The main notifies me in the Claude app (Remote Control)" (`notifications.mainPush`, off by default, one switch). When on, the main's prompt gets `prompts/main-push.md` and `PushNotification` is allowed: with `/rc` connected the main notifies when it starts an agent, when an agent finishes, when it has a question and when it finishes a whole task. Read when the sessions start, so Save asks for the restart.
 
 ### Changed
+- Shipped model catalog: added Fable 5.1 and Haiku 5.5.
 - CI: when a vitest worker crashes on the GitHub runner with no test failing, the whole suite runs once more (`scripts/ci-tests.sh`); a failing test or a second crash still fails the job.
 - Options > Secrets: the saved Groq key shows in the field itself, as grey text, its first five characters and five stars (`gsk_a*****`; the console sends only that, never the key); typing replaces it, and below the field there is only "Remove key". The field has an eye that shows or hides what is being typed, like a password field (it never reveals the saved key).
 - The dictation dialog closes with the X in its corner (like Options) instead of a Close button, records with a red dot and stops with a red square, and has no Clear button (the text is erased by hand). While it records, it shows the time since the start (m:ss) and bars that follow the voice, like an equalizer (Web Audio; where that is missing the clock still runs). `npm run shot` has `--groq`, `--fill`, `--fake-mic` and `--wait` for this.
