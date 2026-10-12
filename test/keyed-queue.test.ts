@@ -72,3 +72,19 @@ it('leaves nothing behind once the work is done', async () => {
   await tick();
   expect(q.pending).toBe(0);
 });
+
+it('a function that throws before it returns a promise is a rejection, not a throw, and does not leave the key held (review)', async () => {
+  const q = new KeyedQueue();
+  const bad = q.run('k', (() => { throw new Error('sync boom'); }) as () => Promise<never>);
+  await expect(bad).rejects.toThrow('sync boom');
+  await expect(q.run('k', async () => 'next')).resolves.toBe('next');
+});
+
+it('a nested call whose function throws synchronously is a rejection too, not a throw out of run() (review)', async () => {
+  const q = new KeyedQueue();
+  const out = await withTimeout(q.run('k', async () => {
+    const p = q.run('k', (() => { throw new Error('inner boom'); }) as () => Promise<never>); // must not throw here
+    return p.then(() => 'no error', (e: Error) => e.message);
+  }));
+  expect(out).toBe('inner boom');
+});

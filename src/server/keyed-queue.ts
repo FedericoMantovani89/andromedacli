@@ -18,7 +18,9 @@ export class KeyedQueue {
   run<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const heldNow = this.held.getStore();
     const mine = heldNow?.get(key);
-    if (mine !== undefined && !mine.done) return fn();
+    if (mine !== undefined && !mine.done) {
+      try { return fn(); } catch (e) { return Promise.reject(e); } // a function that throws is a rejection, as on the queued path
+    }
     const frame: Frame = { done: false };
     const context = new Map(heldNow ?? []);
     context.set(key, frame);
