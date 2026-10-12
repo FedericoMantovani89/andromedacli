@@ -129,7 +129,8 @@ async function excludeOrRollback(repo: string, path: string, undo?: () => Promis
 
 export async function removeWorktree(repo: string, path: string): Promise<void> {
   await git(repo, ['worktree', 'remove', '--force', fwd(path)]);
-  if (existsSync(path)) rmSync(path, { recursive: true, force: true });
+  // Node retries a folder that is still busy (EBUSY, EPERM, ENOTEMPTY: a handle that has not closed yet) before it gives up.
+  if (existsSync(path)) rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await git(repo, ['worktree', 'prune']);
 }
 

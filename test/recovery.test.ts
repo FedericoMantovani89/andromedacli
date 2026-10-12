@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -263,6 +263,19 @@ describe('report', () => {
     expect(tickets.get('a-job-r2')).toBeUndefined();
     expect(tickets.get('a-job')).toMatchObject({ status: 'needs_user', recoveries: 1 });
     expect(main.join('\n')).toMatch(/boom/);
+  });
+  it('a replacement that cannot start puts the ticket\'s budget back as it was (B5)', async () => {
+    deps.budget.restart = (slug, limit) => { restarted.push({ slug, limit }); tickets.setBudget(slug, { limit, step: 'ok' }); }; // what the real one does
+    const rec = await started();
+    replacementResult = { ok: false, code: 'agent.spawnFailed', detail: 'boom' };
+    await svc.report(rec, REPORT);
+    expect(tickets.get('a-job')?.budget).toEqual({ limit: 1000, step: 'stopped' });
+  });
+  it('a replacement that cannot start leaves the stopped agent\'s worktree where it was (pinned: the report said it is lost)', async () => {
+    const rec = await started();
+    replacementResult = { ok: false, code: 'agent.spawnFailed', detail: 'boom' };
+    await svc.report(rec, REPORT);
+    expect(existsSync(wt)).toBe(true);
   });
   it('remedy raise_budget asks the user first: nothing is spent until "approve"', async () => {
     const rec = await started();

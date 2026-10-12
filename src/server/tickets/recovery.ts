@@ -417,6 +417,7 @@ export class RecoveryService {
     try { handover = this.d.readHandover?.(from); } catch { handover = undefined; }
     if (handover) this.d.tickets.setHandover(from, handover);
     const t = this.d.tickets.get(from)!;
+    const previousBudget = t.budget;
     const to = replacementSlugFor(from, this.d.existingSlugs());
     const limit = o.limit ?? t.budget?.limit;
     const goal = replacementGoal({ from, project: this.d.project, ticket: t, report: o.report, limit });
@@ -434,6 +435,7 @@ export class RecoveryService {
     if (!started.ok) {
       this.d.tickets.rename(to, from);
       this.d.renamed?.(to, from);
+      if (limit !== undefined) this.d.tickets.setBudget(from, previousBudget); // restart() had replaced it: the ticket goes back as it was
       this.d.tickets.move(from, 'needs_user');
       this.d.changed();
       return { ok: false, code: 'spawn_failed', detail: started.detail ?? started.code };

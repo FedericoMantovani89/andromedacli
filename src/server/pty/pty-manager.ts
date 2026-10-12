@@ -10,6 +10,8 @@ interface Entry {
   pty: nodePty.IPty; ring: ByteRing; subs: Set<(chunk: Buffer) => void>; exited: boolean; cols: number; rows: number;
 }
 
+const TASKKILL_TIMEOUT_MS = 10_000;
+const EXIT_WAIT_MS = 5_000;
 const SCROLLBACK_BYTES = 4 * 1024 * 1024;
 /** What a session that has ended keeps: reviewers get a new name every round, so the ended ones add up over a day. */
 const EXITED_SCROLLBACK_BYTES = 256 * 1024;
@@ -82,15 +84,22 @@ export class PtyManager {
    * Node process for a minute while a real CLI winds down (measured with Claude Code), so the tree is terminated
    * first with taskkill.
    */
+  /** Stops a session and its whole process tree, and waits until the process is gone (or 5 s): its files are free to delete after that. */
   async killTree(id: string): Promise<void> {
     const e = this.entries.get(id);
     if (!e || e.exited) return;
+    await this.killEntry(e);
+  }
+
+  private async killEntry(e: Entry): Promise<void> {
     if (process.platform === 'win32') {
       await new Promise<void>((done) => {
-        execFile('taskkill', ['/PID', String(e.pty.pid), '/T', '/F'], { windowsHide: true }, () => done());
+        execFile('taskkill', ['/PID', String(e.pty.pid), '/T', '/F'], { windowsHide: true, timeout: TASKKILL_TIMEOUT_MS }, () => done());
       });
     }
     try { e.pty.kill(); } catch { /* already gone */ }
+    const deadline = Date.now() + EXIT_WAIT_MS;
+    while (!e.exited && Date.now() < deadline) await new Promise<void>((r) => setTimeout(r, 25));
   }
 
   snapshot(id: string): Buffer {
@@ -124,8 +133,9 @@ export class PtyManager {
 
   /** Stops a session and forgets it entirely (used when creating it failed half-way). */
   async discard(id: string): Promise<void> {
-    await this.killTree(id);
-    this.entries.delete(id);
+    const e = this.entries.get(id);
+    this.entries.delete(id); // forgotten first: the exit of this process must not be reported as the session's
+    if (e && !e.exited) await this.killEntry(e);
   }
 
   async killAll(): Promise<void> {
