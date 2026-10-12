@@ -24,3 +24,19 @@ export function isTag(repo: string, name: string): boolean {
     return false;
   }
 }
+
+/**
+ * The commands git itself ships, plus the external ones agents use (`git lfs`). A subcommand outside this set can only be an alias
+ * (or a program named `git-<name>` on the PATH): the guard cannot see what it runs, so it is refused (`git.alias`).
+ */
+export const GIT_BUILTINS: ReadonlySet<string> = new Set([
+  'add', 'am', 'apply', 'archive', 'bisect', 'blame', 'branch', 'bundle', 'cat-file', 'check-attr', 'check-ignore', 'checkout',
+  'checkout-index', 'cherry', 'cherry-pick', 'citool', 'clean', 'clone', 'commit', 'commit-tree', 'config', 'count-objects', 'credential',
+  'describe', 'diff', 'diff-files', 'diff-index', 'diff-tree', 'difftool', 'fast-export', 'fast-import', 'fetch', 'filter-branch',
+  'for-each-ref', 'format-patch', 'fsck', 'gc', 'gui', 'hash-object', 'help', 'http-push', 'init', 'interpret-trailers', 'lfs',
+  'log', 'ls-files', 'ls-remote', 'ls-tree', 'maintenance', 'merge', 'merge-base', 'mergetool', 'mktree', 'mv', 'name-rev', 'notes',
+  'pack-refs', 'prune', 'prune-packed', 'pull', 'push', 'range-diff', 'read-tree', 'rebase', 'reflog', 'remote', 'repack', 'replace',
+  'request-pull', 'reset', 'restore', 'rev-list', 'rev-parse', 'revert', 'rm', 'send-pack', 'shortlog', 'show', 'show-branch',
+  'show-ref', 'sparse-checkout', 'stash', 'status', 'stripspace', 'submodule', 'switch', 'symbolic-ref', 'tag', 'unpack-file',
+  'update-index', 'update-ref', 'var', 'verify-commit', 'verify-tag', 'version', 'whatchanged', 'worktree', 'write-tree',
+]);

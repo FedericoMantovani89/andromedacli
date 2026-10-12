@@ -1,7 +1,11 @@
 import { baseName } from './paths';
 
 export type ShellKind = 'posix' | 'powershell';
-export interface Segment { argv: string[]; raw: string; pipeFromPrev: boolean }
+export interface Segment {
+  argv: string[]; raw: string; pipeFromPrev: boolean;
+  /** The `VAR=value` words that stood before the command (`GIT_DIR=x git status`), also after a wrapper such as `env`. */
+  env?: string[];
+}
 
 const MAX_DEPTH = 5;
 const OPERATOR_LOOKALIKE = /^(\d*|&)?>{1,2}$/;
@@ -120,11 +124,12 @@ function tokenize(command: string, shell: ShellKind): { segments: Raw[]; inner: 
 }
 
 /** Drops leading `VAR=value` words and wrappers such as `env`, `sudo`, `nohup`. */
-function stripPrefix(tokens: string[]): string[] {
+function stripPrefix(tokens: string[]): { argv: string[]; env: string[] } {
   let t = tokens;
   let opened = false;
+  const env: string[] = [];
   for (;;) {
-    while (t.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(t[0]!)) t = t.slice(1);
+    while (t.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(t[0]!)) { env.push(t[0]!); t = t.slice(1); }
     // A subshell: `(cmd args)` arrives as `(cmd` ... `args)`.
     if (t.length > 0 && t[0]!.startsWith('(') && !t[0]!.startsWith('((')) {
       opened = true;
@@ -143,7 +148,7 @@ function stripPrefix(tokens: string[]): string[] {
     break;
   }
   if (opened && t.length > 0) t = [...t.slice(0, -1), t[t.length - 1]!.replace(/\)+$/, '')].filter((x, i, a) => i < a.length - 1 || x !== '');
-  return t;
+  return { argv: t, env };
 }
 
 /** Scripts a shell or interpreter will run, so they are examined as commands too. */
@@ -185,9 +190,9 @@ export function splitCommand(command: string, shell: ShellKind = 'posix', depth 
   const { segments, inner } = tokenize(command, shell);
   const out: Segment[] = [];
   for (const s of segments) {
-    const argv = stripPrefix(s.tokens);
+    const { argv, env } = stripPrefix(s.tokens);
     if (argv.length === 0) continue;
-    out.push({ argv, raw: s.raw, pipeFromPrev: s.pipe });
+    out.push({ argv, env, raw: s.raw, pipeFromPrev: s.pipe });
     for (const n of nestedScripts(argv)) out.push(...splitCommand(n.text, n.shell, depth + 1));
   }
   for (const text of inner) out.push(...splitCommand(text, shell, depth + 1));

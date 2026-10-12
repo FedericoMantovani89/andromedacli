@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { win32 } from 'node:path';
 import { findSecrets } from '../git/secrets';
 import { baseName, hasComponent, isInside, realResolve } from './paths';
-import { headBranch, isTag } from './gitrefs';
+import { GIT_BUILTINS, headBranch, isTag } from './gitrefs';
 import { commandName, splitCommand, type Segment, type ShellKind } from './shell';
 import { READONLY_RULE, readOnlyViolation } from './readonly';
 
@@ -44,6 +44,9 @@ const EXEC_EXT = /\.(exe|bat|cmd|ps1|sh|msi|dll|com|scr|vbs|jar)$/i;
 const DOWNLOAD_RAW = /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile)\b/i;
 
 const CD_COMMANDS = new Set(['cd', 'chdir', 'set-location', 'sl', 'pushd']);
+/** Environment variables that change git's config, hooks or programs: set before a git command they undo the push hook (an alias plus `core.hooksPath`). */
+const DANGEROUS_GIT_ENV = /^GIT_(CONFIG[A-Z0-9_]*|DIR|WORK_TREE|COMMON_DIR|EXEC_PATH|SSH|SSH_COMMAND|EXTERNAL_DIFF|ASKPASS)$/i;
+const envName = (assignment: string): string => assignment.replace(/^\$env:/i, '').replace(/^env:/i, '').split('=')[0]!.trim();
 const isFlag =(t: string): boolean => /^-/.test(t);
 
 /** Subcommand and its arguments after git's global options; `-c` values and `--git-dir` are reported too. */
@@ -144,7 +147,7 @@ function gitRule(argv: string[], ctx: GuardContext): GuardDecision {
       return ALLOW;
     }
     default:
-      return ALLOW;
+      return sub === '' || GIT_BUILTINS.has(sub) ? ALLOW : deny('git.alias', `git ${sub} is not a git command: an alias could hide a push or a hooks change`);
   }
 }
 
@@ -265,6 +268,15 @@ function evaluateShell(call: GuardCall, ctx: GuardContext): GuardDecision {
     if (CD_COMMANDS.has(name)) {
       const target = s.argv.slice(1).find((t) => !isFlag(t));
       cwd = target === undefined ? driveRoot : (realResolve(target, cwd) ?? driveRoot);
+    }
+    // A variable that rewrites git's config for one command (or for the rest of the session) gets around the push hook.
+    const setsGitEnv =
+      (name === 'git' && (s.env ?? []).some((e) => DANGEROUS_GIT_ENV.test(envName(e)))) ||
+      (/^\$env:/i.test(s.argv[0] ?? '') && DANGEROUS_GIT_ENV.test(envName(s.argv[0]!))) ||
+      ((name === 'set-item' || name === 'si') && /^env:/i.test(s.argv[1] ?? '') && DANGEROUS_GIT_ENV.test(envName(s.argv[1]!))) ||
+      (['export', 'set', 'setx'].includes(name) && s.argv.slice(1).some((a) => DANGEROUS_GIT_ENV.test(envName(a))));
+    if (setsGitEnv) {
+      return deny(ctx.role === 'main' ? 'git.hooks-tamper' : 'git.config-write', 'changing git\'s configuration through the environment would get around the console push hook');
     }
     if (name === 'git') {
       const d = gitRule(s.argv, ctx);

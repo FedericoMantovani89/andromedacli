@@ -47,7 +47,7 @@ const DENY_AGENT: [string, () => Call, string][] = [
   ['git push', () => sh('git push'), 'git.commit-push'],
   ['git push origin HEAD', () => sh('git push origin HEAD'), 'git.commit-push'],
   ['git -C .. push', () => sh('git -C .. push'), 'git.commit-push'],
-  ['GIT_DIR env push', () => sh('GIT_DIR=/x/.git git push'), 'git.commit-push'],
+  ['GIT_DIR env push', () => sh('GIT_DIR=/x/.git git push'), 'git.config-write'], // the environment rule fires before the push rule
   ['git --no-pager push', () => sh('git --no-pager push'), 'git.commit-push'],
   ['git.exe push', () => sh('git.exe push'), 'git.commit-push'],
   ['quoted git push', () => sh('"git" push'), 'git.commit-push'],
