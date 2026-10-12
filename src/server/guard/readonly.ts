@@ -6,7 +6,7 @@ export const READONLY_RULE = 'readonly.write';
 const WRITERS = new Set([
   'cp', 'copy', 'copy-item', 'cpi', 'mv', 'move', 'move-item', 'mi', 'rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'mkdir', 'md',
   'new-item', 'ni', 'touch', 'tee', 'set-content', 'sc', 'add-content', 'ac', 'out-file', 'clear-content', 'clc', 'rename-item', 'ren', 'rni',
-  'ln', 'chmod', 'chown', 'truncate', 'dd', 'install', 'patch', 'wget', 'xcopy', 'robocopy', 'set-item', 'new-itemproperty', 'tee-object',
+  'ln', 'mklink', 'chmod', 'chown', 'truncate', 'dd', 'install', 'patch', 'wget', 'xcopy', 'robocopy', 'set-item', 'new-itemproperty', 'tee-object',
   'unzip', 'expand-archive', 'compress-archive', '7z', '7za', 'export-csv', 'export-clixml', 'export-alias', 'export-console', 'start-transcript',
 ]);
 const GIT_READ = new Set([
@@ -48,6 +48,8 @@ export function readOnlyViolation(s: Segment): string | undefined {
   if (WRITERS.has(name)) return `${name} changes files`;
   if (DOTNET_WRITE.test(s.raw)) return 'writing a file through .NET changes it';
   if (rest.some((a) => a === '--write' || a === '--fix' || a === '--in-place' || a.startsWith('--in-place='))) return 'this option writes files';
+  if (name === 'node' && rest.some((a) => /^(-e|--eval|-p|--print)$/.test(a))) return 'node -e runs code that can write files';
+  if (/^python3?$/.test(name) && rest.includes('-c')) return 'python -c runs code that can write files';
   if (name === 'sed' && rest.some((a) => a === '-i' || a.startsWith('-i'))) return 'sed -i edits files in place';
   if (name === 'awk' && (rest.includes('inplace') || rest.includes('--inplace'))) return 'awk in place edits files';
   if (name === 'perl' && rest.some((a) => /^-[a-zA-Z]*i[^a-zA-Z]*$/.test(a))) return 'perl -i edits files in place';

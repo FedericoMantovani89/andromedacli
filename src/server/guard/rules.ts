@@ -39,10 +39,10 @@ const WRITERS = new Set([
   'new-item', 'ni', 'remove-item', 'ri', 'copy-item', 'cpi', 'move-item', 'mi', 'touch', 'mkdir', 'rd', 'rmdir', 'ln', 'xcopy', 'echo',
 ]);
 const RM_COMMANDS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri', 'unlink']);
-const DOWNLOADERS = new Set(['curl', 'wget', 'iwr', 'irm', 'invoke-webrequest', 'invoke-restmethod']);
+const DOWNLOADERS = new Set(['curl', 'wget', 'iwr', 'irm', 'invoke-webrequest', 'invoke-restmethod', 'certutil', 'bitsadmin', 'start-bitstransfer']);
 const EXEC_SINKS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'iex', 'invoke-expression', 'powershell', 'pwsh', 'cmd', 'python', 'python3', 'node', 'perl', 'ruby']);
 const EXEC_EXT = /\.(exe|bat|cmd|ps1|sh|msi|dll|com|scr|vbs|jar)$/i;
-const DOWNLOAD_RAW = /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile)\b/i;
+const DOWNLOAD_RAW = /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile|certutil|bitsadmin|start-bitstransfer)\b/i;
 
 const CD_COMMANDS = new Set(['cd', 'chdir', 'set-location', 'sl', 'pushd', 'push-location']);
 /** Back to a folder the guard did not follow: the cwd is unknown from here on. */
@@ -264,6 +264,19 @@ function dotGitTarget(argv: string[]): string | undefined {
   return writtenPaths(argv).find((t) => hasComponent(t, '.git') || hasComponent(t, 'console-hooks'));
 }
 
+/** The file names a downloader command saves to: `-o f`, `-ofile`, `--output=f`, `-OutFile f`, `-Destination f`, `certutil -urlcache ... f`, `bitsadmin ... f`. */
+function downloadOutputs(name: string, argv: string[]): string[] {
+  const out: string[] = [];
+  argv.forEach((t, j) => {
+    const next = argv[j + 1];
+    if (/^(-o|-O|--output|-outfile|-out|-destination)$/i.test(t) && next !== undefined) out.push(next);
+    const joined = /^(?:--output=|-outfile[:=]|-destination[:=])(.+)$/i.exec(t) ?? /^-o(.+)$/.exec(t);
+    if (joined) out.push(joined[1]!);
+  });
+  if ((name === 'certutil' && argv.some((t) => /^-urlcache$/i.test(t))) || name === 'bitsadmin') out.push(argv[argv.length - 1]!);
+  return out;
+}
+
 function downloadRule(segments: Segment[]): GuardDecision | undefined {
   const saved: string[] = [];
   for (let i = 0; i < segments.length; i++) {
@@ -276,10 +289,7 @@ function downloadRule(segments: Segment[]): GuardDecision | undefined {
       return deny('net.download-exec', 'running downloaded text is not allowed');
     }
     if (DOWNLOADERS.has(name)) {
-      s.argv.forEach((t, j) => {
-        const out = /^(-o|-O|--output|-outfile|-out)$/i.test(t) ? s.argv[j + 1] : undefined;
-        if (out !== undefined && EXEC_EXT.test(out)) saved.push(baseName(out).toLowerCase());
-      });
+      for (const out of downloadOutputs(name, s.argv)) if (EXEC_EXT.test(out)) saved.push(baseName(out).toLowerCase());
     }
     if (saved.length > 0 && i > 0) {
       const ran = [s.argv[0]!, s.argv[1] ?? ''].map((t) => baseName(t).toLowerCase());
