@@ -50,13 +50,14 @@ export function writeTargets(argv: string[]): string[] {
   const rest = argv.slice(1);
   const out = redirectTargets(argv);
   const words: string[] = [];
+  const isWriter = ALL.has(name) || FIRST.has(name) || LAST.has(name) || SECOND.has(name);
   let named = false;
   for (let i = 0; i < rest.length; i++) {
     const t = rest[i]!;
     if (OP.test(t)) { i++; continue; } // a redirect operator and its target (already collected)
     if (/^(?:\d*|&)?>/.test(t)) continue; // a redirection with its target attached (collected above)
     if (VALUE_PARAMS.test(t)) { i++; continue; }
-    if (PATH_PARAMS.test(t)) { if (rest[i + 1] !== undefined) { out.push(rest[i + 1]!); named = true; } i++; continue; }
+    if (PATH_PARAMS.test(t)) { if (rest[i + 1] !== undefined && isWriter && (ALL.has(name) || FIRST.has(name) || /destination/i.test(t))) { out.push(rest[i + 1]!); named = true; } i++; continue; }
     if (isFlag(t)) continue;
     if (/^\/[A-Za-z?]$/.test(t) || (SECOND.has(name) && SWITCH.test(t))) continue; // `rd /s /q`, `del /q`: cmd switches, not paths
     words.push(t);

@@ -170,3 +170,13 @@ describe('git remote in a read-only session', () => {
     for (const c of ['git remote add x http://y', 'git remote remove origin', 'git remote set-url origin http://y', 'git remote rename a b']) expect(reviewer(sh(c)).decision, c).toBe('deny');
   });
 });
+
+it('node and python options end at the script: the flags after it belong to the script', async () => {
+  const { readOnlyViolation } = await import('../src/server/guard/readonly');
+  const seg = (raw: string) => ({ raw, argv: raw.split(' ') }) as Parameters<typeof readOnlyViolation>[0];
+  expect(readOnlyViolation(seg('node server.js -p 3000'))).toBeUndefined();
+  expect(readOnlyViolation(seg('python -m pytest -c pytest.ini'))).toBeUndefined();
+  expect(readOnlyViolation(seg('node -e code'))).toMatch(/node -e/);
+  expect(readOnlyViolation(seg('node -r ts-node/register -p 1'))).toMatch(/node -e/);
+  expect(readOnlyViolation(seg('python -c x'))).toMatch(/python -c/);
+});

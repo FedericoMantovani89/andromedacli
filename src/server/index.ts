@@ -33,7 +33,7 @@ import { InstallService, type InstallEntry } from './prereq/install';
 import type { Notifier } from './notify/notifier';
 import type { NotifyClock } from './notify/service';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
-import { readJsonFile } from './json-file';
+import { readJsonFile, readJsonState } from './json-file';
 import { errorMessage } from '../shared/guards';
 import { Container, boot } from './runtime/container';
 import type { Services, ProjectContainer } from './runtime/services';
@@ -168,7 +168,9 @@ const projectsFile = (configDir: string): string => join(configDir, 'projects.js
 
 /** The remembered projects; a damaged or missing file is no projects. */
 function readProjectsFile(configDir: string): { root: string; name: string }[] {
-  const parsed = readJsonFile(projectsFile(configDir));
+  // A damaged file is set aside (never overwritten by the next save) and the console says so; it then opens without remembered projects.
+  const s = readJsonState(projectsFile(configDir), (file, movedTo) => console.warn(`console: ${file} could not be read; it was kept as ${movedTo}`));
+  const parsed = s.status === 'ok' ? s.value : undefined;
   if (!Array.isArray(parsed)) return [];
   return parsed.filter((p): p is { root: string; name: string } => typeof p?.root === 'string' && typeof p?.name === 'string');
 }
@@ -182,7 +184,7 @@ const sameFolder = (a: string, b: string): boolean => (process.platform === 'win
  */
 export async function startServer(o: StartOptions): Promise<RunningServer> {
   hardenExecutableSearch(); // before the first git or claude is started
-  installProcessGuards(join(o.configDir, 'errors.log')); // an unhandled rejection is logged there and does not stop the console
+  const removeProcessGuards = installProcessGuards(join(o.configDir, 'errors.log')); // an unhandled rejection is logged there and does not stop the console
   const configPath = join(o.configDir, 'config.json');
   const { config } = loadConfig(configPath);
   const token = createToken();
@@ -449,6 +451,7 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     close: async () => {
       closing = true;
       shared.sleep.close();
+      removeProcessGuards();
       shared.helperUsage.flush();
       await projectChain; // an opening or closing in progress ends first
       for (const r of [...runtimes]) await r.close();

@@ -10,6 +10,7 @@ change that introduces the behaviour.
 
 ### Changed
 - Internal: the assembly of a project is now a typed container with one file per area (state, tests, agents, tickets, budget, http), instead of one 900-line function; behavior is unchanged.
+- Fixes from the review of the hardening work: the guard no longer counts `-Path` of a reading command as a write nor `node server.js -p 3000` as `node -p`; `git stage` and the other missing built-ins are not taken for aliases; a discarded session releases its questions, restrictions and inbox; a damaged `projects.json` is set aside; the unhandled-rejection logger is removed on close; the budget tick no longer waits on one busy ticket.
 - The page is served with a Content-Security-Policy (own scripts only, connections to this server only, no framing), `nosniff` and no referrer.
 - Internal: the project folder is canonicalised (8.3 short names expanded) when a project opens and before git worktree paths are compared; the POSIX-only branches of the ticket test runner are gone.
 - `npm run test:ticket` finds the `project/<name>` branch by itself (`TICKET_BASE` overrides it); `start-console.bat` is now in the repository and uses `--project-root`; `node-notifier` is 11 (no `uuid` advisory); the mod manifest author is `andromedaconsole`.

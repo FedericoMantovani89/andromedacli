@@ -43,4 +43,5 @@ export const GIT_BUILTINS: ReadonlySet<string> = new Set([
   'index-pack', 'mailinfo', 'mailsplit', 'merge-file', 'merge-index', 'merge-tree', 'mktag', 'multi-pack-index', 'p4', 'pack-objects',
   'patch-id', 'receive-pack', 'refs', 'replay', 'repo', 'rerere', 'scalar', 'send-email', 'show-index', 'svn', 'unpack-objects',
   'update-server-info', 'upload-archive', 'upload-pack', 'verify-pack',
+  'stage', 'check-ref-format', 'check-mailmap', 'for-each-repo', 'fmt-merge-msg', 'backfill', 'init-db', 'pack-redundant', 'merge-one-file',
 ]);

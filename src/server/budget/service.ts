@@ -120,11 +120,10 @@ export class BudgetService {
   async tick(): Promise<void> {
     let all: ReturnType<TicketStore['list']>;
     try { all = this.d.tickets.list(); } catch (err) { this.reportFailure('all agents', err); return; }
-    for (const t of all) {
-      if (t.budget?.step === 'limit' && t.status === 'in_progress' && this.d.isLive(t.slug)) {
-        await this.queue.run(t.slug, () => this.advance(t.slug)).catch((err) => this.reportFailure(t.slug, err));
-      }
-    }
+    // Together: a ticket whose key is held (a long validation) must not delay the grace period of the others.
+    await Promise.all(all
+      .filter((t) => t.budget?.step === 'limit' && t.status === 'in_progress' && this.d.isLive(t.slug))
+      .map((t) => this.queue.run(t.slug, () => this.advance(t.slug)).catch((err) => this.reportFailure(t.slug, err))));
   }
 
   /** The agent is about to be resumed (`--resume`): what its transcript holds now was counted in an earlier run. */

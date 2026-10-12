@@ -34,6 +34,7 @@ export function spawnPty(file: string, args: string[], o: PtyOptions, spawn: typ
 export class PtyManager {
   private readonly entries = new Map<string, Entry>();
   private readonly exitCallbacks: ((id: string, code: number) => void)[] = [];
+  private readonly discardCallbacks: ((id: string) => void)[] = [];
 
   /**
    * Starts a session. An id whose process has exited may be started again (a resumed session): its scrollback and the terminals
@@ -117,6 +118,11 @@ export class PtyManager {
     this.exitCallbacks.push(cb);
   }
 
+  /** Called when a session is discarded (its exit is not reported, see `discard`): what the console holds for it must go too. */
+  onDiscard(cb: (id: string) => void): void {
+    this.discardCallbacks.push(cb);
+  }
+
   status(id: string): Status {
     const e = this.entries.get(id);
     return !e ? 'unknown' : e.exited ? 'exited' : 'running';
@@ -135,6 +141,7 @@ export class PtyManager {
   async discard(id: string): Promise<void> {
     const e = this.entries.get(id);
     this.entries.delete(id); // forgotten first: the exit of this process must not be reported as the session's
+    for (const cb of this.discardCallbacks) { try { cb(id); } catch { /* cleanup never stops the discard */ } }
     if (e && !e.exited) await this.killEntry(e);
   }
 

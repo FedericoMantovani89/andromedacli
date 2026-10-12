@@ -161,7 +161,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 #statusbar span[hidden], #statusbar button[hidden] { display: none; }
 .statusbar-bypass { color: var(--bad); font-weight: 600; }
 .statusbar-bypass[hidden] { display: none; }
-.statusbar-problem { color: var(--bad); font-weight: 600; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
+.statusbar-problem { color: var(--bad); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .statusbar-problem[hidden] { display: none; }
 .statusbar-resume { font: inherit; padding: 0 9px; line-height: 18px; }
 .statusbar-update-text { margin-left: auto; }

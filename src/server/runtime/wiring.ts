@@ -50,6 +50,15 @@ export function wire(c: ProjectContainer): void {
     }
     broadcast();
   });
+  // What the console holds for a session goes with it, whether it ended or was discarded (a failed start, an archived agent deleted).
+  const forgetHeld = (id: string): void => {
+    questions.dropFrom(id);
+    inbox.clear(id);
+    restrictions.clear(id);
+    loop.forget(id);
+    permissions.forget(id);
+  };
+  ptys.onDiscard((id) => forgetHeld(id));
   ptys.onExit((id) => {
     // A reviewer that ends without a verdict (it crashed, or was closed) must not leave its ticket in review for ever.
     if (registry.get(id)?.role === 'reviewer' && !registry.get(id)?.finishing && review.abandonReview(id)) broadcast();
@@ -61,13 +70,9 @@ export function wire(c: ProjectContainer): void {
       try { tickets.move(id, 'suspended_limit'); } catch { /* told below anyway */ }
       inbox.push(projectName, `The resumed agent "${id}" ended before its session started; its ticket is suspended for the limit again. Try resume_agent once more, or tell the user.`);
     }
-    questions.dropFrom(id);
     registry.onProcessExit(id);
     tokens.revoke(id);
-    inbox.clear(id);
-    restrictions.clear(id);
-    loop.forget(id);
-    permissions.forget(id);
+    forgetHeld(id);
     broadcast();
   });
 }

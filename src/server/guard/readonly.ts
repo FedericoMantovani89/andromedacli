@@ -40,6 +40,19 @@ function redirectTargets(argv: string[], midToken: boolean): string[] {
   return out;
 }
 
+/** The options an interpreter reads for itself: the words up to the script or module (`node server.js -p 3000`: `-p` belongs to the script). `withValue` options take the next word. */
+function interpreterOptions(args: string[], withValue: string[]): string[] {
+  const own: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (!a.startsWith('-')) break;
+    own.push(a);
+    if (withValue.includes(a)) i++;
+    if (a === '-c' || a === '-m') break;
+  }
+  return own;
+}
+
 /** The reason a read-only session may not run this command, or undefined when it may. */
 export function readOnlyViolation(s: Segment): string | undefined {
   const name = commandName(s.argv[0] ?? '');
@@ -48,8 +61,8 @@ export function readOnlyViolation(s: Segment): string | undefined {
   if (WRITERS.has(name)) return `${name} changes files`;
   if (DOTNET_WRITE.test(s.raw)) return 'writing a file through .NET changes it';
   if (rest.some((a) => a === '--write' || a === '--fix' || a === '--in-place' || a.startsWith('--in-place='))) return 'this option writes files';
-  if (name === 'node' && rest.some((a) => /^(-e|--eval|-p|--print)$/.test(a))) return 'node -e runs code that can write files';
-  if (/^python3?$/.test(name) && rest.includes('-c')) return 'python -c runs code that can write files';
+  if (name === 'node' && interpreterOptions(rest, ['-r', '--require', '--import', '--loader']).some((a) => /^(-e|--eval|-p|--print)$/.test(a))) return 'node -e runs code that can write files';
+  if (/^python3?$/.test(name) && interpreterOptions(rest, ['-W', '-X']).includes('-c')) return 'python -c runs code that can write files';
   if (name === 'sed' && rest.some((a) => a === '-i' || a.startsWith('-i'))) return 'sed -i edits files in place';
   if (name === 'awk' && (rest.includes('inplace') || rest.includes('--inplace'))) return 'awk in place edits files';
   if (name === 'perl' && rest.some((a) => /^-[a-zA-Z]*i[^a-zA-Z]*$/.test(a))) return 'perl -i edits files in place';
