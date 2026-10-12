@@ -38,7 +38,7 @@ export interface ProjectsApi {
   /** The context of every open project, in the order they were opened (the first one answers requests with no `?project=`). */
   contexts(): Context[];
   add(o: AddProjectOptions): Promise<{ name: string }>;
-  /** `purge`: also takes the project back to "never opened" (worktrees, its branches, `.andromedacli`). */
+  /** `purge`: also takes the project back to "never opened" (worktrees, its branches, `.andromedaconsole`). */
   close(name: string, purge?: boolean): Promise<void>;
   /** Ends every session of every open project and starts them again (main resumes its session, agents that were running are woken), with the settings and PATH of this moment. The console itself stays up. */
   restart(): Promise<void>;

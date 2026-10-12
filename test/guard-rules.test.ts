@@ -314,7 +314,7 @@ const ALLOW_AGENT: [string, () => Call][] = [
   ['Write .github workflow', () => wr('.github/workflows/x.yml')],
   ['Write .gitattributes', () => wr('.gitattributes')],
   ['Write .env.example', () => wr('.env.example')],
-  ['Write .andromedacli file', () => wr('.andromedacli/note.md')],
+  ['Write .andromedaconsole file', () => wr('.andromedaconsole/note.md')],
   ['Write unicode name', () => wr('docs/è-π.md')],
   ['Edit inside', () => ed('src/a.ts')],
   ['NotebookEdit inside', () => nb('nb/a.ipynb')],

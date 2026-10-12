@@ -32,4 +32,4 @@ The full suite (`npm test`, 10-15 minutes, real node-pty children and real git) 
 
 - One topic per pull request, with the tests that show it works.
 - A change to what the interface shows needs a look at the real thing: `npm run build`, then `npm run shot -- --tab <name>` makes a screenshot from a throw-away console.
-- AndromedaCli is Windows-only by design (see the README): do not add code for macOS or Linux, and expect a pull request that only does that to be declined.
+- AndromedaConsole is Windows-only by design (see the README): do not add code for macOS or Linux, and expect a pull request that only does that to be declined.

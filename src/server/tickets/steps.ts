@@ -273,8 +273,8 @@ export class StepService {
   private writeChecklistFile(slug: string, worktree: string, steps: Step[]): void {
     const lines = steps.map((s) => `- [${s.done ? 'x' : ' '}] ${s.n}. ${s.title}${s.skipped ? ' (skipped)' : ''}${s.waitingOn ? ` (waiting for ${s.waitingOn.requestId} (${s.waitingOn.to}))` : ''}${s.note ? ` — ${s.note.replace(/\s+/g, ' ')}` : ''}`);
     try {
-      mkdirSync(join(worktree, '.andromedacli'), { recursive: true });
-      writeFileSync(join(worktree, '.andromedacli', 'checklist.md'), `---\nticket: ${slug}\n---\n${lines.join('\n')}\n`, 'utf8');
+      mkdirSync(join(worktree, '.andromedaconsole'), { recursive: true });
+      writeFileSync(join(worktree, '.andromedaconsole', 'checklist.md'), `---\nticket: ${slug}\n---\n${lines.join('\n')}\n`, 'utf8');
     } catch { /* the ticket store is the record; the file is a convenience for the agent */ }
   }
 }

@@ -59,7 +59,7 @@ it('a waiting step is skipped: the agent goes on to the next one, and cannot clo
 it('the checklist file in the worktree says what a step waits for', async () => {
   await upTo(2);
   await svc.markWaiting('a', 3, W);
-  const file = join(wt, '.andromedacli', 'checklist.md');
+  const file = join(wt, '.andromedaconsole', 'checklist.md');
   expect(readFileSync(file, 'utf8')).toContain('waiting for TODO-7f3a15 (be-orders)');
 });
 it('the validation and documentation cannot be closed while a step waits, and the tests do not run', async () => {

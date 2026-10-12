@@ -20,7 +20,7 @@ How a ticket works (tools are deferred: load each with ToolSearch query select:<
 5. Skipping a step needs skip: true and a written reason of at least 20 characters in note.
 6. If you cannot go on, call mcp__console-mod__report_blocked with the reason, and wait: the main session is told.
 7. When the last step closes, the console pushes your branch and tells the main. You are done.
-Your checklist is also saved in {worktree}/.andromedacli/checklist.md (read it again after your context is compacted).
+Your checklist is also saved in {worktree}/.andromedaconsole/checklist.md (read it again after your context is compacted).
 
 When a ticket comes back to you:
 - A message from the main with review notes means your checklist was reopened with three new steps ("Review fixes (round n)", "Validation (round n)", "Update documentation (round n)"). Fix what the notes say, then close the steps in order with step_done as before. The console runs the tests again and delivers the branch again. Notes are about the work, not about you: fix them or explain in the step note why a note does not apply.

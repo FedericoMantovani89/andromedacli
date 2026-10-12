@@ -54,17 +54,17 @@ export async function excludeConsoleFolder(repo: string): Promise<void> {
   const file = join(await commonDir(repo), 'info', 'exclude');
   mkdirSync(dirname(file), { recursive: true });
   const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  if (!text.split(/\r?\n/).some((l) => l.trim() === '.andromedacli/')) appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}.andromedacli/\n`);
+  if (!text.split(/\r?\n/).some((l) => l.trim() === '.andromedaconsole/')) appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}.andromedaconsole/\n`);
 }
 
 export const agentBranchFor = (project: string, slug: string): string => `agent/${project}/${slug}`;
 
 /**
- * The folder that holds a project's worktrees: `<project>/.andromedacli/worktrees`, one level deeper (`/<repo>`) when the project folder holds
- * several repositories. Everything the console makes for a project lives under its `.andromedacli`, so throwing the project away is one folder.
+ * The folder that holds a project's worktrees: `<project>/.andromedaconsole/worktrees`, one level deeper (`/<repo>`) when the project folder holds
+ * several repositories. Everything the console makes for a project lives under its `.andromedaconsole`, so throwing the project away is one folder.
  */
 export const worktreesDirFor = (projectRoot: string, repo: string): string => {
-  const base = join(projectRoot, '.andromedacli', 'worktrees');
+  const base = join(projectRoot, '.andromedaconsole', 'worktrees');
   return resolve(projectRoot).toLowerCase() === resolve(repo).toLowerCase() ? base : join(base, basename(repo));
 };
 

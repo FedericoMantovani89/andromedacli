@@ -25,8 +25,8 @@ describe('validCloneUrl', () => {
 });
 
 describe('cloneIntoFolder', () => {
-  const folder = (): string => { const d = mkdtempSync(join(tmpdir(), 'clone-')); mkdirSync(join(d, '.andromedacli')); return d; }; // the console's own folder is allowed
-  it('makes the folder a clone on the remote default branch, with the files and the history, and leaves .andromedacli alone', async () => {
+  const folder = (): string => { const d = mkdtempSync(join(tmpdir(), 'clone-')); mkdirSync(join(d, '.andromedaconsole')); return d; }; // the console's own folder is allowed
+  it('makes the folder a clone on the remote default branch, with the files and the history, and leaves .andromedaconsole alone', async () => {
     const t = makeRepo({ remote: true });
     made.push(t);
     gitSync(t.repo, 'push', '-q', '-u', 'origin', 'main');
@@ -36,7 +36,7 @@ describe('cloneIntoFolder', () => {
     expect(readFileSync(join(root, 'README.md'), 'utf8').trim()).toBe('hello'); // line endings follow the machine's git settings
     expect(gitSync(root, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('main');
     expect(gitSync(root, 'rev-parse', '--abbrev-ref', '@{upstream}').trim()).toBe('origin/main');
-    expect(existsSync(join(root, '.andromedacli'))).toBe(true);
+    expect(existsSync(join(root, '.andromedaconsole'))).toBe(true);
   });
   it('an empty remote becomes a repository with its remote and a first empty commit', async () => {
     const t = makeRepo({ remote: true, commit: false });

@@ -41,8 +41,8 @@ it('does not wrap an absolute .exe path in cmd.exe (spaces in "Program Files" br
 });
 
 it('displayName adds --name, also together with --resume', () => {
-  const l = buildClaudeLaunch({ ...base, displayName: 'demo AndromedaCli', resumeId: 'abc-123', platform: 'linux' });
-  expect(l.args.slice(l.args.indexOf('--name'), l.args.indexOf('--name') + 2)).toEqual(['--name', 'demo AndromedaCli']);
+  const l = buildClaudeLaunch({ ...base, displayName: 'demo AndromedaConsole', resumeId: 'abc-123', platform: 'linux' });
+  expect(l.args.slice(l.args.indexOf('--name'), l.args.indexOf('--name') + 2)).toEqual(['--name', 'demo AndromedaConsole']);
   expect(l.args).toContain('--resume');
   expect(buildClaudeLaunch(base).args).not.toContain('--name');
 });

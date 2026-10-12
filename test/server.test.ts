@@ -22,9 +22,9 @@ async function boot(runner: Runner = goodRunner, seed: { configJson?: string; ag
   const projectRoot = mkdtempSync(join(tmpdir(), 'srv-project-'));
   if (seed.configJson !== undefined) writeFileSync(join(configDir, 'config.json'), seed.configJson);
   if (seed.agentsJson !== undefined) {
-    mkdirSync(join(projectRoot, '.andromedacli', 'state'), { recursive: true });
-    writeFileSync(join(projectRoot, '.andromedacli', 'project.json'), JSON.stringify({ name: 'shop-api', createdAt: '2026-01-01T00:00:00Z' }));
-    writeFileSync(join(projectRoot, '.andromedacli', 'state', 'agents.json'), seed.agentsJson);
+    mkdirSync(join(projectRoot, '.andromedaconsole', 'state'), { recursive: true });
+    writeFileSync(join(projectRoot, '.andromedaconsole', 'project.json'), JSON.stringify({ name: 'shop-api', createdAt: '2026-01-01T00:00:00Z' }));
+    writeFileSync(join(projectRoot, '.andromedaconsole', 'state', 'agents.json'), seed.agentsJson);
   }
   Object.assign(lastDirs, { configDir, projectRoot });
   const s = await startServer({
@@ -325,7 +325,7 @@ it('offers every language that has a bundle file, and saves it', async () => {
 });
 it('cleans up when saving the new agent fails after the process started, so the slug can be retried', async () => {
   const s = await boot();
-  const file = join(lastDirs.projectRoot, '.andromedacli', 'state', 'agents.json');
+  const file = join(lastDirs.projectRoot, '.andromedaconsole', 'state', 'agents.json');
   const original = readFileSync(file, 'utf8');
   rmSync(file);
   mkdirSync(file); // a directory where the file should be: writing fails
@@ -368,7 +368,7 @@ it('serves the splash image without a token, as a real JPEG', async () => {
 it('serves the page with the build version in the tab title and over the splash', async () => {
   const s = await boot();
   const html = await (await fetch(`http://127.0.0.1:${s.port}/`)).text();
-  expect(html).toMatch(/<title>AndromedaCli v\d+\.\d+\.\d+[^<]*<\/title>/);
+  expect(html).toMatch(/<title>AndromedaConsole v\d+\.\d+\.\d+[^<]*<\/title>/);
   expect(html).toMatch(/<span id="splash-version">v\d+\.\d+\.\d+[^<]*<\/span>/);
   expect(html).not.toContain('%VERSION%');
 });

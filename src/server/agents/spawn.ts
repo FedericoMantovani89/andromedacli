@@ -38,10 +38,10 @@ const refuse = (httpStatus: number, code: string, params?: Record<string, string
 export const goalMessage = (goal: string, file?: string): string =>
   `Your goal for this activity (written by the main session). These are your instructions: start now.\n\n${goal}${file ? `\n\nThe same goal is saved in ${file.replace(/\\/g, '/')}: read it again if your context is compacted.` : ''}`;
 
-/** The goal as a file next to the agent's other console files (`.andromedacli/`): it can be read again after a compaction. Undefined when it cannot be written. */
+/** The goal as a file next to the agent's other console files (`.andromedaconsole/`): it can be read again after a compaction. Undefined when it cannot be written. */
 function writeGoalFile(cwd: string, slug: string, goal: string): string | undefined {
   try {
-    const dir = join(cwd, '.andromedacli');
+    const dir = join(cwd, '.andromedaconsole');
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `goal-${slug}.md`);
     writeFileSync(file, `---\nagent: ${slug}\n---\n${goal}\n`, 'utf8');
@@ -163,7 +163,7 @@ function startProcess(ctx: Context, r: SpawnRequest, profile: Profile, cwd: stri
   const launch = buildClaudeLaunch({
     command: ctx.claudeCommand, role: roleOf(r), slug: r.slug, project: ctx.projectName,
     url: `http://127.0.0.1:${ctx.getPort()}`, token: ctx.tokens.issue(r.slug), bypass, baseEnv: process.env,
-    pluginDir: ctx.modDir, displayName: `${r.slug} ${ctx.projectName} AndromedaCli`,
+    pluginDir: ctx.modDir, displayName: `${r.slug} ${ctx.projectName} AndromedaConsole`,
     allowedTools: ctx.modDir ? (r.review ? REVIEWER_TOOLS : r.recovery ? RECOVERY_TOOLS : AGENT_TOOLS) : undefined,
     appendPromptFile: renderAgentPrompt({ profile, slug: r.slug, project: ctx.projectName, outDir: ctx.promptsDir, git, review: Boolean(r.review), recovery: Boolean(r.recovery), projectRoot: ctx.projectRoot, docs: projectFields.docs, helpers: helperToolsText(ctx.getPrereq()), noGitignore: !hasGitignore(cwd) }),
     // request > profile > project (Phase 6D) > the global choice in Options (Phase 6E) > Claude Code's own default (no --model)

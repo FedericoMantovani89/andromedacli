@@ -51,12 +51,12 @@ async function boot(o: { budget?: Record<string, unknown>; spawnBudget?: number 
 
 const agentOf = async (s: Running): Promise<any> => (await state(s)).agents.find((a: any) => a.slug === SLUG);
 const wipCommits = (wt: string): string[] => gitSync(wt, 'log', '--format=%s').split('\n').filter((l) => l.startsWith('wip:'));
-const ticketOf = (t: TestRepo): any => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', `${SLUG}.json`), 'utf8'));
+const ticketOf = (t: TestRepo): any => JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'state', 'tickets', `${SLUG}.json`), 'utf8'));
 const inboxTexts = async (s: Running, slug: string): Promise<string[]> => (await mod(s, slug, '/v1/inbox')).body.messages.map((m: { text: string }) => m.text);
 
 it('1-2. the budget is n/a until the first readable turn; session.start gives the console the session whose transcript it then reads', async () => {
   const { s, t, addTokens, turn } = await boot();
-  await until(() => existsSync(join(t.repo, '.andromedacli', 'state', 'tickets', `${SLUG}.json`)) && ticketOf(t).budget !== undefined);
+  await until(() => existsSync(join(t.repo, '.andromedaconsole', 'state', 'tickets', `${SLUG}.json`)) && ticketOf(t).budget !== undefined);
   expect(ticketOf(t).budget).toEqual({ limit: 1000, step: 'ok' });
   expect((await agentOf(s)).budget).toBeUndefined(); // n/a, never zero
   // the transcript is found under the session id and the folder that session.start gave

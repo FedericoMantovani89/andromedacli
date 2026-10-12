@@ -57,8 +57,8 @@ jobs:
         with:
           name: installer
           path: |
-            release/AndromedaCli-Setup-*.exe
-            release/AndromedaCli-Setup-*.exe.blockmap
+            release/AndromedaConsole-Setup-*.exe
+            release/AndromedaConsole-Setup-*.exe.blockmap
             release/latest.yml
           if-no-files-found: error
           retention-days: 1
@@ -82,5 +82,5 @@ jobs:
         run: |
           flags=""
           case "$VERSION" in *-*) flags="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" "release/AndromedaCli-Setup-$VERSION.exe" "release/AndromedaCli-Setup-$VERSION.exe.blockmap" release/latest.yml \
-            --title "AndromedaCli $VERSION" --generate-notes $flags
+          gh release create "$GITHUB_REF_NAME" "release/AndromedaConsole-Setup-$VERSION.exe" "release/AndromedaConsole-Setup-$VERSION.exe.blockmap" release/latest.yml \
+            --title "AndromedaConsole $VERSION" --generate-notes $flags

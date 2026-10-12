@@ -9,7 +9,7 @@ export interface MarkerHit { file: string; line: number; id: string }
  */
 export async function findMarkers(cwd: string, ids: string[]): Promise<MarkerHit[] | undefined> {
   if (ids.length === 0) return [];
-  const args = ['grep', '-n', '-I', '-F', '--untracked', ...ids.flatMap((id) => ['-e', id]), '--', '.', ':(exclude).andromedacli'];
+  const args = ['grep', '-n', '-I', '-F', '--untracked', ...ids.flatMap((id) => ['-e', id]), '--', '.', ':(exclude).andromedaconsole'];
   const r = await git(cwd, args);
   // When git prints nothing, git() puts the exec error message in stderr: a single "Command failed: ..." line. A spawn failure
   // (for example a missing folder) also exits 1 with no output but carries a different message.

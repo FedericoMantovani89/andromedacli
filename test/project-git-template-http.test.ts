@@ -18,7 +18,7 @@ describe('POST /api/projects/git-init', () => {
     expect(existsSync(join(root, '.git'))).toBe(true);
     expect(gitSync(root, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
     expect(gitSync(root, 'log', '--format=%s')).toBe('chore: start');
-    expect(gitSync(root, 'status', '--porcelain')).toBe(''); // .andromedacli is kept out of the status
+    expect(gitSync(root, 'status', '--porcelain')).toBe(''); // .andromedaconsole is kept out of the status
     expect((await ui(s, '/api/state')).body.projectIsRepo).toBe(true);
     const again = await ui(s, '/api/projects/git-init', 'POST', {});
     expect([again.status, again.body.code]).toEqual([409, 'git.alreadyRepo']);
@@ -52,8 +52,8 @@ describe('POST /api/projects/apply-template', () => {
     expect((await ui(s, '/api/project', 'PUT', { testCommand: 'my test' })).status).toBe(200);
     const done = await ui(s, '/api/projects/apply-template', 'POST', { templateId: 'frontend-web' });
     expect([done.status, done.body.templateId]).toEqual([200, 'frontend-web']);
-    expect(existsSync(join(root, '.andromedacli', 'main.md'))).toBe(true);
-    expect(readFileSync(join(root, '.andromedacli', 'rules.md'), 'utf8')).toMatch(/front end/i);
+    expect(existsSync(join(root, '.andromedaconsole', 'main.md'))).toBe(true);
+    expect(readFileSync(join(root, '.andromedaconsole', 'rules.md'), 'utf8')).toMatch(/front end/i);
     expect((await ui(s, '/api/state')).body.project.testCommand).toBe('my test');
   });
 

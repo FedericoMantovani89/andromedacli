@@ -25,15 +25,15 @@ it('creates agent/<project>/<slug> from the project branch in a sibling folder, 
   expect(gitSync(wt.path, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('agent/shop-api/fix-login');
   expect(gitSync(wt.path, 'rev-parse', 'HEAD')).toBe(gitSync(repo, 'rev-parse', 'project/shop-api'));
 });
-it('ignores the .andromedacli folder through the repo exclude file, once', async () => {
+it('ignores the .andromedaconsole folder through the repo exclude file, once', async () => {
   const { repo } = makeRepo();
   await createAgentWorktree({ repo, project: 'p-one', slug: 'a-job' });
   await createAgentWorktree({ repo, project: 'p-one', slug: 'b-job' });
   const exclude = readFileSync(join(repo, '.git', 'info', 'exclude'), 'utf8');
-  expect(exclude.split('\n').filter((l) => l.trim() === '.andromedacli/')).toHaveLength(1);
+  expect(exclude.split('\n').filter((l) => l.trim() === '.andromedaconsole/')).toHaveLength(1);
   const wt = join(dirname(repo), `${basename(repo)}.worktrees`, 'a-job');
-  mkdirSync(join(wt, '.andromedacli'));
-  writeFileSync(join(wt, '.andromedacli', 'checklist.md'), 'x');
+  mkdirSync(join(wt, '.andromedaconsole'));
+  writeFileSync(join(wt, '.andromedaconsole', 'checklist.md'), 'x');
   expect(gitSync(wt, 'status', '--porcelain')).toBe('');
 });
 it('refuses an existing folder or branch and leaves nothing behind', async () => {

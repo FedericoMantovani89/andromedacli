@@ -22,7 +22,7 @@ const spawn = async (s: Running, name: string): Promise<void> => {
 };
 const guard = (s: Running, slug: string, tool: string, input: unknown) => mod(s, slug, '/v1/guard', 'POST', { tool, input });
 const logOf = (t: TestRepo): any[] => {
-  const file = join(t.repo, '.andromedacli', 'state', 'guard.jsonl');
+  const file = join(t.repo, '.andromedaconsole', 'state', 'guard.jsonl');
   return existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 };
 
@@ -82,7 +82,7 @@ it('an unknown tool is allowed; bad bodies are 400; tokens are required and only
   expect((await req(s, '/v1/guard', { method: 'POST', token: s.token, body: { tool: 'Bash', input: {} } })).status).toBe(401);
   expect((await mod(s, 'first-job', '/v1/guard', 'GET')).status).toBe(404);
 });
-it('every deny is logged to .andromedacli/state/guard.jsonl; allows are not', async () => {
+it('every deny is logged to .andromedaconsole/state/guard.jsonl; allows are not', async () => {
   const { s, t } = await boot();
   await spawn(s, 'first-job');
   await guard(s, 'first-job', 'Bash', { command: 'git status' });
@@ -127,21 +127,21 @@ it('counts the optional helpers the shell commands use (counters only) and tells
   expect(state.helperUse.counts).toEqual({ rg: 2, jq: 1, fd: 1 });
   expect(typeof state.helperUse.since).toBe('string');
   // The fake prerequisite runner answers for every tool, so the prompt of the agent lists the helpers.
-  const prompt = readFileSync(join(t.repo, '.andromedacli', 'state', 'prompts', 'agent-first-job.md'), 'utf8');
+  const prompt = readFileSync(join(t.repo, '.andromedaconsole', 'state', 'prompts', 'agent-first-job.md'), 'utf8');
   expect(prompt).toContain('Command-line helpers installed on this machine');
   expect(prompt).toContain('`rg` over `grep`');
 });
 
 it('a repository with no .gitignore: the main is told once to ask the user, the agent is told to keep its work clean; with one, neither', async () => {
   const { s, t } = await boot();
-  const prompts = join(t.repo, '.andromedacli', 'state', 'prompts');
+  const prompts = join(t.repo, '.andromedaconsole', 'state', 'prompts');
   const main = readFileSync(join(prompts, 'main-shop-api.md'), 'utf8');
   expect(main).toContain('No .gitignore was found in: the project folder.');
   expect(main).toContain('AskUserQuestion');
   await spawn(s, 'first-job');
   expect(readFileSync(join(prompts, 'agent-first-job.md'), 'utf8')).toContain('This repository has no .gitignore.');
   // the question is asked once per repository: a second main prompt of the same project does not repeat it
-  const marker = JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'gitignore-asked.json'), 'utf8'));
+  const marker = JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'state', 'gitignore-asked.json'), 'utf8'));
   expect(marker).toEqual(['']);
 });
 it('with a committed .gitignore the agent prompt has no such notice', async () => {
@@ -151,7 +151,7 @@ it('with a committed .gitignore the agent prompt has no such notice', async () =
   gitSync(t.repo, 'add', '-A');
   gitSync(t.repo, '-c', 'user.name=Tester', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'ignore');
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
-  const prompts = join(t.repo, '.andromedacli', 'state', 'prompts');
+  const prompts = join(t.repo, '.andromedaconsole', 'state', 'prompts');
   expect(readFileSync(join(prompts, 'main-shop-api.md'), 'utf8')).not.toContain('.gitignore');
   await spawn(s, 'first-job');
   expect(readFileSync(join(prompts, 'agent-first-job.md'), 'utf8')).not.toContain('no .gitignore');
@@ -160,7 +160,7 @@ it('with a committed .gitignore the agent prompt has no such notice', async () =
 it('an agent\'s goal is also saved as a file in its checkout, and the message that carries it names that file', async () => {
   const { s, t } = await boot();
   await spawn(s, 'first-job');
-  const file = join(worktreePathFor(t.repo, 'first-job'), '.andromedacli', 'goal-first-job.md');
+  const file = join(worktreePathFor(t.repo, 'first-job'), '.andromedaconsole', 'goal-first-job.md');
   expect(existsSync(file)).toBe(true);
   expect(readFileSync(file, 'utf8')).toContain('\ng\n');
   const inbox = await mod(s, 'first-job', '/v1/inbox', 'GET');

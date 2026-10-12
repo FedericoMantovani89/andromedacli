@@ -60,11 +60,11 @@ async function closeUpTo(last: number): Promise<void> {
 const refused = (r: StepResult): string => (r.status === 'refused' ? r.code : 'closed');
 
 describe('checklistSet', () => {
-  it('stores the checklist and writes .andromedacli/checklist.md in the worktree', async () => {
+  it('stores the checklist and writes .andromedaconsole/checklist.md in the worktree', async () => {
     const r = await svc.checklistSet('a', ITEMS);
     expect(r.status).toBe('ok');
     expect(tickets.progress('a')).toMatchObject({ done: 0, total: 6 });
-    const file = readFileSync(join(wt, '.andromedacli', 'checklist.md'), 'utf8');
+    const file = readFileSync(join(wt, '.andromedaconsole', 'checklist.md'), 'utf8');
     expect(file).toContain('ticket: a');
     expect(file).toContain('- [ ] 1. Study the code');
   });
@@ -81,7 +81,7 @@ describe('checklistSet', () => {
     expect(tickets.progress('a')).toMatchObject({ done: 1, total: 7 });
     const bad = await svc.checklistSet('a', ['Study something else', ...ITEMS.slice(1)]);
     expect(bad).toMatchObject({ status: 'refused', code: 'changes_done' });
-    expect(readFileSync(join(wt, '.andromedacli', 'checklist.md'), 'utf8')).toContain('- [x] 1. Study the code');
+    expect(readFileSync(join(wt, '.andromedaconsole', 'checklist.md'), 'utf8')).toContain('- [x] 1. Study the code');
   });
   it('an unknown agent has no worktree', async () => {
     expect(await svc.checklistSet('ghost', ITEMS)).toMatchObject({ status: 'refused', code: 'no_worktree' });

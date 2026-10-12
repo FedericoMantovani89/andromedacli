@@ -55,7 +55,7 @@ async function until(f: () => Promise<boolean> | boolean, ms: number): Promise<b
 
 const started = Date.now();
 const s = await startServer({ port: 0, projectRoot: repo, configDir, projectName: 'gitreal' });
-writeFileSync(join(repo, '.andromedacli', 'project.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, '.andromedacli', 'project.json'), 'utf8')), testCommand: 'node --test' }));
+writeFileSync(join(repo, '.andromedaconsole', 'project.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(repo, '.andromedaconsole', 'project.json'), 'utf8')), testCommand: 'node --test' }));
 const ui = async (path: string, method = 'GET', body?: unknown) => {
   const r = await fetch(`${s.url}${path}`, {
     method, headers: { authorization: `Bearer ${s.token}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined,
@@ -70,10 +70,10 @@ async function type(slug: string, text: string): Promise<void> {
   s.writeToSession(slug, '\r');
 }
 const ticket = (slug: string): any => {
-  const f = join(repo, '.andromedacli', 'state', 'tickets', `${slug}.json`);
+  const f = join(repo, '.andromedaconsole', 'state', 'tickets', `${slug}.json`);
   return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : undefined;
 };
-const wtOf = (slug: string): string => join(scratch, 'my repo', '.andromedacli', 'worktrees', slug);
+const wtOf = (slug: string): string => join(scratch, 'my repo', '.andromedaconsole', 'worktrees', slug);
 const remoteBranches = (): string[] => git(remote, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n').filter(Boolean);
 
 /** What a person would look at when a step does not happen: the terminal tail, the state and the queue. */
@@ -123,7 +123,7 @@ try {
   const delivered = await until(() => ticket('add-multiply')?.status === 'delivered', 720000);
   if (!delivered) {
     await diagnose('add-multiply');
-    const gl = join(repo, '.andromedacli', 'state', 'guard.jsonl');
+    const gl = join(repo, '.andromedaconsole', 'state', 'guard.jsonl');
     console.log(`INFO  guard log tail: ${existsSync(gl) ? readFileSync(gl, 'utf8').slice(-600) : '(none)'}`);
     console.log(`INFO  answers of add-multiply: ${JSON.stringify((await answers('add-multiply')).slice(-500))}`);
   }
@@ -148,9 +148,9 @@ try {
   rec('main started the second agent', await until(async () => ((await ui('/api/state')).agents as { slug: string }[]).some((a) => a.slug === 'try-danger'), 240000));
   const reported = await until(async () => /force=denied/.test(await answers('try-danger')) && /outside=denied/.test(await answers('try-danger')), 600000);
   rec('both dangerous actions were refused and the agent reported it', reported, reported ? '' : (await answers('try-danger')).slice(-400));
-  rec('nothing outside the worktree was written', !existsSync(join(scratch, 'outside.txt')) && !existsSync(join(scratch, 'my repo', '.andromedacli', 'worktrees', 'outside.txt')));
+  rec('nothing outside the worktree was written', !existsSync(join(scratch, 'outside.txt')) && !existsSync(join(scratch, 'my repo', '.andromedaconsole', 'worktrees', 'outside.txt')));
   rec('the force push never reached the remote', !remoteBranches().includes('agent/gitreal/try-danger'), remoteBranches().join(','));
-  const log = existsSync(join(repo, '.andromedacli', 'state', 'guard.jsonl')) ? readFileSync(join(repo, '.andromedacli', 'state', 'guard.jsonl'), 'utf8') : '';
+  const log = existsSync(join(repo, '.andromedaconsole', 'state', 'guard.jsonl')) ? readFileSync(join(repo, '.andromedaconsole', 'state', 'guard.jsonl'), 'utf8') : '';
   rec('the guard log names git.force and path.outside-worktree for that agent', log.includes('git.force') && log.includes('path.outside-worktree'), log.slice(-300));
 
   // ---- 3. Bypass OFF: the permission prompt is routed to the console, and the guard still refuses ----

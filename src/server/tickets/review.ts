@@ -10,7 +10,7 @@ export const MAX_REWORK_ROUNDS = 2;
 
 export interface ReviewDeps extends TicketTestDeps {
   tickets: TicketStore;
-  /** The project folder (where `.andromedacli/` lives). */
+  /** The project folder (where `.andromedaconsole/` lives). */
   root: string;
   /** The user switched the tests off for this project: nothing is run and the facts say so. */
   testsDisabled?(): boolean;

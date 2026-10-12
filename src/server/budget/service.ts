@@ -9,8 +9,8 @@ import { MainTeller } from '../main-teller';
 export type BudgetStep = 'ok' | 'alert' | 'limit' | 'stopped';
 const ORDER: BudgetStep[] = ['ok', 'alert', 'limit', 'stopped'];
 
-/** Where an agent writes its handover note, relative to its worktree (kept out of git by the console's exclude of `.andromedacli/`). */
-export const HANDOVER_FILE = '.andromedacli/handover.md';
+/** Where an agent writes its handover note, relative to its worktree (kept out of git by the console's exclude of `.andromedaconsole/`). */
+export const HANDOVER_FILE = '.andromedaconsole/handover.md';
 
 export const ALERT_TEXT = `Budget alert: you have used most of the token budget of this ticket. Write the handover note NOW to ${HANDOVER_FILE} in your worktree (what is done, what is missing, what you suspect is consuming the most): at the budget limit every tool except step_done is refused, so this is your only chance. Then close the step you are on with step_done. Do not start anything new.`;
 

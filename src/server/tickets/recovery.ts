@@ -50,7 +50,7 @@ export interface RecoveryDeps extends TicketTestDeps {
   /** The profile of the agent that owned the ticket (the replacement gets the same one). */
   profileOf(ticket: string): string;
   /**
-   * The handover note the stopped agent left in its worktree (`.andromedacli/handover.md`), read before its folder goes; undefined when it
+   * The handover note the stopped agent left in its worktree (`.andromedaconsole/handover.md`), read before its folder goes; undefined when it
    * wrote none. Absent: the ticket's recorded note is used as it is.
    */
   readHandover?(slug: string): string | undefined;

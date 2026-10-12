@@ -61,20 +61,20 @@ describe('projects host', () => {
     await expect(s.addProject(newDir(), 'beta-project')).rejects.toMatchObject({ code: 'project.duplicate' });
   });
 
-  it('closes a project and leaves its folder; the last project can be closed too; purge also removes .andromedacli', async () => {
+  it('closes a project and leaves its folder; the last project can be closed too; purge also removes .andromedaconsole', async () => {
     const s = await bootServer({ projectName: 'alpha-project' });
     const dir = newDir();
     await s.addProject(dir, 'beta-project');
     await s.closeProject('beta-project');
     expect(s.projects().map((p) => p.name)).toEqual(['alpha-project']);
-    expect(existsSync(join(dir, '.andromedacli'))).toBe(true);
+    expect(existsSync(join(dir, '.andromedaconsole'))).toBe(true);
     expect((await ui(s, '/api/state?project=beta-project')).status).toBe(404);
     await expect(s.closeProject('beta-project')).rejects.toMatchObject({ code: 'project.notFound' });
     const gamma = newDir();
     await s.addProject(gamma, 'gamma-project');
-    expect(existsSync(join(gamma, '.andromedacli'))).toBe(true);
+    expect(existsSync(join(gamma, '.andromedaconsole'))).toBe(true);
     await s.closeProject('gamma-project', true);
-    expect(existsSync(join(gamma, '.andromedacli'))).toBe(false);
+    expect(existsSync(join(gamma, '.andromedaconsole'))).toBe(false);
     expect(existsSync(gamma)).toBe(true);
     await s.closeProject('alpha-project');
     expect(s.projects()).toEqual([]);

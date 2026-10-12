@@ -9,7 +9,7 @@ import { _electron as electron } from 'playwright-core';
 import WebSocket from 'ws';
 
 const root = resolve(import.meta.dirname, '..');
-const exe = join(root, 'release', 'win-unpacked', 'AndromedaCli.exe');
+const exe = join(root, 'release', 'win-unpacked', 'AndromedaConsole.exe');
 if (!existsSync(exe)) { console.error('smoke: run `npm run dist:dir` first'); process.exit(2); }
 
 const configDir = mkdtempSync(join(tmpdir(), 'smoke-cfg-'));
@@ -31,12 +31,12 @@ const check = (name: string, ok: boolean, detail = ''): void => {
 
 /** The private memory of each process of the app, by kind (main = the server and the window's owner). */
 function perProcess(): string {
-  const ps = "Get-CimInstance Win32_Process -Filter \"Name='AndromedaCli.exe'\" | ForEach-Object { $t = if ($_.CommandLine -match '--type=([a-z-]+)') { $Matches[1] } else { 'main' }; $pr = Get-Process -Id $_.ProcessId; '{0}:{1}MB' -f $t, [math]::Round($pr.PrivateMemorySize64 / 1MB) }";
+  const ps = "Get-CimInstance Win32_Process -Filter \"Name='AndromedaConsole.exe'\" | ForEach-Object { $t = if ($_.CommandLine -match '--type=([a-z-]+)') { $Matches[1] } else { 'main' }; $pr = Get-Process -Id $_.ProcessId; '{0}:{1}MB' -f $t, [math]::Round($pr.PrivateMemorySize64 / 1MB) }";
   return execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { encoding: 'utf8' }).trim().split(/\r?\n/).join('  ');
 }
 
 function memory(): { processes: number; workingMb: number; privateMb: number } {
-  const ps = "$p = Get-Process -Name AndromedaCli -ErrorAction SilentlyContinue; if ($p) { '{0} {1} {2}' -f $p.Count, [math]::Round(($p | Measure-Object WorkingSet64 -Sum).Sum / 1MB), [math]::Round(($p | Measure-Object PrivateMemorySize64 -Sum).Sum / 1MB) } else { '0 0 0' }";
+  const ps = "$p = Get-Process -Name AndromedaConsole -ErrorAction SilentlyContinue; if ($p) { '{0} {1} {2}' -f $p.Count, [math]::Round(($p | Measure-Object WorkingSet64 -Sum).Sum / 1MB), [math]::Round(($p | Measure-Object PrivateMemorySize64 -Sum).Sum / 1MB) } else { '0 0 0' }";
   const [n, w, p] = execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { encoding: 'utf8' }).trim().split(' ').map(Number);
   return { processes: n ?? 0, workingMb: w ?? 0, privateMb: p ?? 0 };
 }
@@ -55,7 +55,7 @@ try {
   // The page keeps the token for itself and takes it out of the address bar (src/ui/api.ts).
   const token = (await page.evaluate(() => sessionStorage.getItem('console.token'))) ?? '';
   check('the window shows the console on 127.0.0.1', url.hostname === '127.0.0.1' && token !== '', page.url());
-  check('the title names the app', (await page.title()).includes('AndromedaCli'), await page.title());
+  check('the title names the app', (await page.title()).includes('AndromedaConsole'), await page.title());
   check('the page has no Node.js (sandboxed, no integration)', await page.evaluate(() => typeof (globalThis as { require?: unknown }).require === 'undefined' && typeof (globalThis as { process?: unknown }).process === 'undefined'));
 
   const base = url.origin;

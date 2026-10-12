@@ -45,12 +45,12 @@ export interface TicketProgress { done: number; total: number; blocked: boolean;
 const MAX_GOAL = 4000;
 const REOPEN_FROM: TicketStatus[] = ['changes_requested', 'conflict', 'needs_user'];
 
-/** One JSON file per agent under <repo>/.andromedacli/state/tickets/ (SPEC 23). */
+/** One JSON file per agent under <repo>/.andromedaconsole/state/tickets/ (SPEC 23). */
 export class TicketStore {
   private readonly dir: string;
 
   constructor(root: string) {
-    this.dir = join(root, '.andromedacli', 'state', 'tickets');
+    this.dir = join(root, '.andromedaconsole', 'state', 'tickets');
   }
 
   private file(slug: string): string {

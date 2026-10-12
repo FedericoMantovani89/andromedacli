@@ -1,10 +1,10 @@
 # Security
 
-AndromedaCli runs several Claude Code sessions on your machine, each one a normal `claude` process with your Windows user's rights. This page says what the console does to limit the damage, what it does not do, and what changes when you turn bypass on. Read it before you run agents on a project you cannot afford to damage.
+AndromedaConsole runs several Claude Code sessions on your machine, each one a normal `claude` process with your Windows user's rights. This page says what the console does to limit the damage, what it does not do, and what changes when you turn bypass on. Read it before you run agents on a project you cannot afford to damage.
 
 ## The layers
 
-1. **Separate worktree and branch per agent.** Each agent works in `<project>/.andromedacli/worktrees/<name>` on `agent/<project>/<name>`.
+1. **Separate worktree and branch per agent.** Each agent works in `<project>/.andromedaconsole/worktrees/<name>` on `agent/<project>/<name>`.
 2. **A pre-push hook in each worktree** refuses every ref except the agent's own branch.
 3. **The guard** checks each file and shell tool call against explicit rules before it runs (see below).
 4. **Roles.** Only the console and the main merge and push. Reviewer and recovery sessions are read-only.

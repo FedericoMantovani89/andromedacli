@@ -60,7 +60,7 @@ it('a tag with odd characters is not trusted (it ends up in HTML)', () => {
 });
 
 it('renderIndex puts the version in the tab title and in the splash overlay, escaped', () => {
-  const html = '<title>AndromedaCli %VERSION%</title><div id="splash"><span id="splash-version">%VERSION%</span></div>';
-  expect(renderIndex(html, '1.2.3')).toBe('<title>AndromedaCli v1.2.3</title><div id="splash"><span id="splash-version">v1.2.3</span></div>');
+  const html = '<title>AndromedaConsole %VERSION%</title><div id="splash"><span id="splash-version">%VERSION%</span></div>';
+  expect(renderIndex(html, '1.2.3')).toBe('<title>AndromedaConsole v1.2.3</title><div id="splash"><span id="splash-version">v1.2.3</span></div>');
   expect(renderIndex(html, '1.2.3<b>')).not.toContain('<b>');
 });

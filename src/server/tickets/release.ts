@@ -137,7 +137,7 @@ export class ReleaseService {
     const fromProject = (await changedFiles(repo, base, `project/${this.d.project}`)) ?? [];
     const fromMain = hasOrigin ? ((await changedFiles(repo, base, target)) ?? []) : [];
     const byPath = new Map<string, ChangedFile>();
-    for (const f of [...fromMain, ...fromProject]) if (!f.path.startsWith('.andromedacli/')) byPath.set(f.path, byPath.get(f.path) ?? f);
+    for (const f of [...fromMain, ...fromProject]) if (!f.path.startsWith('.andromedaconsole/')) byPath.set(f.path, byPath.get(f.path) ?? f);
     const extra = hasOrigin ? Number((await git(repo, ['rev-list', '--count', `origin/${target}..${target}`])).stdout.trim()) : 0;
     return { files: [...byPath.values()], extraCommits: Number.isFinite(extra) ? extra : 0 };
   }

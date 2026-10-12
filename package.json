@@ -1,10 +1,10 @@
 {
-  "name": "andromedacli",
+  "name": "andromedaconsole",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "AndromedaCli: a local console that runs and shows several Claude Code sessions",
-  "author": "AndromedaCli",
+  "description": "AndromedaConsole: a local console that runs and shows several Claude Code sessions",
+  "author": "AndromedaConsole",
   "main": "out/main/index.mjs",
   "engines": {
     "node": ">=22"

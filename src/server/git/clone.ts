@@ -28,13 +28,13 @@ const NO_RISKY_TRANSPORT = ['-c', 'protocol.ext.allow=never', '-c', 'protocol.fi
 const CLONE_TIMEOUT_MS = 10 * 60_000;
 
 /**
- * Makes the project folder (empty but for the console's own `.andromedacli`) a clone of `url`: `git init`, the remote, a fetch and a
+ * Makes the project folder (empty but for the console's own `.andromedaconsole`) a clone of `url`: `git init`, the remote, a fetch and a
  * checkout of the remote's default branch. It is not `git clone`, which refuses a folder that is not empty. Prompts for a password are
  * turned off (a credential helper still works), and a failed attempt takes the half-made repository away again.
  */
 export async function cloneIntoFolder(root: string, url: string, o: { timeoutMs?: number; allowLocal?: boolean } = {}): Promise<CloneResult> {
   let others: string[];
-  try { others = readdirSync(root).filter((n) => n !== '.andromedacli'); } catch (e) { return { ok: false, code: 'git.cloneFailed', detail: scrub(errorMessage(e)) }; }
+  try { others = readdirSync(root).filter((n) => n !== '.andromedaconsole'); } catch (e) { return { ok: false, code: 'git.cloneFailed', detail: scrub(errorMessage(e)) }; }
   if (others.length > 0) return { ok: false, code: 'git.cloneFolderNotEmpty' };
 
   const env = { GIT_TERMINAL_PROMPT: '0' };

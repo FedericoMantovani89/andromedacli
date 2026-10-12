@@ -12,7 +12,7 @@ afterEach(() => { while (made.length) removeDir(made.pop()!.base); });
 autoClose();
 
 let projectRoot = '';
-/** Where the server puts an agent's worktree: `<project>/.andromedacli/worktrees/<repo>/<slug>`. */
+/** Where the server puts an agent's worktree: `<project>/.andromedaconsole/worktrees/<repo>/<slug>`. */
 const worktreePathFor = (repo: string, slug: string): string => pathFor(repo, slug, worktreesDirFor(projectRoot, repo));
 
 async function boot(): Promise<{ s: Running; m: MultiRepo }> {
@@ -54,8 +54,8 @@ it('an agent gets its worktree, branch and project branch in the chosen repo onl
   expect(gitSync(fe, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).toContain(agentBranchFor('shop-api', 'audit-privacy'));
   expect(gitSync(be, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).not.toContain('project/shop-api');
   expect((await cwdOf(s, 'audit-privacy')).toLowerCase()).toBe(wt.toLowerCase());
-  expect(readFileSync(join(m.root, '.andromedacli', 'project.json'), 'utf8')).toContain('shop-api'); // project state stays in the project folder
-  expect(existsSync(join(fe, '.andromedacli'))).toBe(false);
+  expect(readFileSync(join(m.root, '.andromedaconsole', 'project.json'), 'utf8')).toContain('shop-api'); // project state stays in the project folder
+  expect(existsSync(join(fe, '.andromedaconsole'))).toBe(false);
 });
 it('agents in both repos at once get their own worktrees (no race on refs or config)', async () => {
   const { s, m } = await boot();
@@ -76,7 +76,7 @@ it('the UI route takes a repo too', async () => {
 it('the ticket remembers the repo, and the release hook is installed in every repo at start', async () => {
   const { s, m } = await boot();
   await spawn(s, 'audit-privacy', 'abc-fe');
-  const ticket = JSON.parse(readFileSync(join(m.root, '.andromedacli', 'state', 'tickets', 'audit-privacy.json'), 'utf8'));
+  const ticket = JSON.parse(readFileSync(join(m.root, '.andromedaconsole', 'state', 'tickets', 'audit-privacy.json'), 'utf8'));
   expect(ticket.repo).toBe('abc-fe');
   for (const name of ['abc-fe', 'abc-be']) expect(existsSync(join(m.repos[name]!.repo, '.git', 'hooks', 'pre-push')), name).toBe(true);
 });

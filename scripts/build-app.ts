@@ -37,5 +37,5 @@ copy('src/i18n', 'src/i18n', (src) => !/\.(ts|map)$/.test(src));
 
 const version = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }).version;
 // The server reads the version from the `package.json` of the app root.
-writeFileSync(join(appRoot, 'package.json'), JSON.stringify({ name: 'andromedacli', version }, null, 2));
+writeFileSync(join(appRoot, 'package.json'), JSON.stringify({ name: 'andromedaconsole', version }, null, 2));
 console.log(`app built in ${out}`);

@@ -80,7 +80,7 @@ export class CentralRun {
   private readonly file: string;
 
   constructor(private readonly d: CentralDeps) {
-    this.file = join(d.root, '.andromedacli', 'state', 'central-tests.json');
+    this.file = join(d.root, '.andromedaconsole', 'state', 'central-tests.json');
   }
 
   /** A ticket was merged: the run starts when the merges have settled. */

@@ -1,6 +1,6 @@
 import type { NotificationsConfig, NotifyMessage } from '../shared/notify';
 
-/** The tab title with the number of things waiting for the user in front: "(2) AndromedaCli v0.0.1". */
+/** The tab title with the number of things waiting for the user in front: "(2) AndromedaConsole v0.0.1". */
 export function titleWithCount(title: string, waiting: number): string {
   const base = title.replace(/^\(\d+\)\s+/, '');
   return waiting > 0 ? `(${waiting}) ${base}` : base;

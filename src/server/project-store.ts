@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
 import { readJsonFile } from './json-file';
+import { migrateProjectFolder } from './legacy-names';
 
 export const TEST_MOMENTS = ['ticket', 'merge', 'release'] as const;
 export type TestMoment = (typeof TEST_MOMENTS)[number];
@@ -91,16 +92,17 @@ export function isValidProjectField(field: ProjectField, v: unknown, knownProfil
   }
 }
 
-/** Project state under <repo>/.andromedacli/ (SPEC 23): project.json and state/agents.json. */
+/** Project state under <repo>/.andromedaconsole/ (SPEC 23): project.json and state/agents.json. */
 export class ProjectStore {
   private readonly projectFile: string;
   private readonly agentsFile: string;
   private readonly stateDir: string;
 
   constructor(root: string) {
-    this.stateDir = join(root, '.andromedacli', 'state');
-    this.projectFile = join(root, '.andromedacli', 'project.json');
-    this.agentsFile = join(root, '.andromedacli', 'state', 'agents.json');
+    migrateProjectFolder(root);
+    this.stateDir = join(root, '.andromedaconsole', 'state');
+    this.projectFile = join(root, '.andromedaconsole', 'project.json');
+    this.agentsFile = join(root, '.andromedaconsole', 'state', 'agents.json');
   }
 
   init(name: string): void {

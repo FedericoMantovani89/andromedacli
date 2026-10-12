@@ -93,7 +93,7 @@ describe('TicketStore pipeline', () => {
     expect(() => store.move('a', 'in_progress')).toThrow('ticket.badTransition');
   });
   it('a Phase 3 ticket file (no pipeline fields) reads with defaults', () => {
-    const dir = join(root, '.andromedacli', 'state', 'tickets');
+    const dir = join(root, '.andromedaconsole', 'state', 'tickets');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'old.json'), JSON.stringify({ slug: 'old', steps: [], status: 'delivered', blocked: false, updatedAt: 'x' }));
     expect(store.get('old')).toMatchObject({ status: 'delivered', round: 0, verdicts: [] });

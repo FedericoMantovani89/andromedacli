@@ -32,7 +32,7 @@ const configDir = mkdtempSync(join(tmpdir(), 'e2e-req-cfg-'));
 const shots = mkdtempSync(join(tmpdir(), 'e2e-req-shots-'));
 writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: true } }));
 const s = await startServer({ port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null });
-const projectFile = join(t.repo, '.andromedacli', 'project.json');
+const projectFile = join(t.repo, '.andromedaconsole', 'project.json');
 writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
 
 const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
@@ -46,7 +46,7 @@ const call = async (token: string | undefined, path: string, method = 'GET', bod
 };
 const tool = (slug: string, name: string, body: unknown) => call(s.sessionTokenFor(slug), `/v1/tools/${name}`, 'POST', body);
 const panel = (slug: string) => `.panel[data-slug="${slug}"]`;
-const worktreeOf = (slug: string): string => join(t.repo, '.andromedacli', 'worktrees', slug);
+const worktreeOf = (slug: string): string => join(t.repo, '.andromedaconsole', 'worktrees', slug);
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 try {

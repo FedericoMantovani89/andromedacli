@@ -238,7 +238,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const ptys = new PtyManager();
   const tokens = new SessionTokens();
   // What was not delivered before a stop is delivered after the restart (messages for dormant agents wait for their wake-up).
-  const inbox = new Inbox(join(o.projectRoot, '.andromedacli', 'state', 'inbox.json'));
+  const inbox = new Inbox(join(o.projectRoot, '.andromedaconsole', 'state', 'inbox.json'));
   inbox.load();
   const registry = new AgentRegistry();
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
@@ -249,7 +249,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   registry.register({ slug: projectName, role: 'main', profile: 'main', ...(mainResumeId !== undefined ? { sessionId: mainResumeId } : {}) });
   const questions = new QuestionQueue();
   const permissions = new PermissionMemory();
-  const reading = new ReadingStore(join(o.projectRoot, '.andromedacli', 'state', 'reading'));
+  const reading = new ReadingStore(join(o.projectRoot, '.andromedaconsole', 'state', 'reading'));
   // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
   /** The global secret patterns plus the project's own (Phase 6D). */
   const secretPatterns = (): string[] => [...runtime.git.secretPatterns, ...(store.fields().secretPatterns ?? [])];
@@ -375,7 +375,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     registry.markFinished(slug, { stopped: o.stopped === true });
     await ptys.killTree(slug);
   };
-  /** The handover note an agent wrote in its worktree (`.andromedacli/handover.md`), at most 4000 characters; undefined when none. */
+  /** The handover note an agent wrote in its worktree (`.andromedaconsole/handover.md`), at most 4000 characters; undefined when none. */
   const readHandover = (slug: string): string | undefined => {
     const worktree = registry.get(slug)?.git?.worktree;
     if (!worktree) return undefined;
@@ -633,7 +633,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     tellMain: (text) => { inbox.push(projectName, text); },
     changed: () => broadcast(),
   });
-  const guardLog = new GuardLog(join(o.projectRoot, '.andromedacli', 'state', 'guard.jsonl'));
+  const guardLog = new GuardLog(join(o.projectRoot, '.andromedaconsole', 'state', 'guard.jsonl'));
   const steps: StepService = new StepService({
     tickets, project: projectName,
     worktreeOf: (slug) => registry.get(slug)?.git,
@@ -651,7 +651,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     requestIds: (slug) => requests.idsFrom(slug),
   });
   // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
-  const requestStore = new RequestStore(join(o.projectRoot, '.andromedacli', 'state', 'requests.json'));
+  const requestStore = new RequestStore(join(o.projectRoot, '.andromedaconsole', 'state', 'requests.json'));
   requestStore.load();
   const requests: RequestService = new RequestService({
     store: requestStore, mainSlug: projectName,
@@ -689,10 +689,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     const launch = buildClaudeLaunch({
       command: ctx.claudeCommand, role: 'main', slug: projectName, project: projectName,
       url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
-      pluginDir: ctx.modDir, displayName: `${projectName} AndromedaCli`,
+      pluginDir: ctx.modDir, displayName: `${projectName} AndromedaConsole`,
       allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__send_message', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup', ...(config.notifications.mainPush ? ['PushNotification'] : [])] : undefined,
       appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), profiles: pickableProfiles(store.fields().profiles, listProfileNames(o.projectRoot, join(o.configDir, 'profiles'))), helpers: helperToolsText(shared.getPrereq()), mainPush: config.notifications.mainPush,
-        noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedacli', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
+        noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedaconsole', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
       ...(resumeId !== undefined ? { resumeId } : {}),
     });
     ptys.spawn({ id: projectName, ...launch, cwd: resolve(o.projectRoot), cols: 120, rows: 30 });
@@ -732,7 +732,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     get guardMode() { return runtime.guardMode; },
     detectedTestCommand,
     modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resourcePath('mod') : undefined)),
-    promptsDir: join(o.projectRoot, '.andromedacli', 'state', 'prompts'),
+    promptsDir: join(o.projectRoot, '.andromedaconsole', 'state', 'prompts'),
     guard: (slug, tool, input) => {
       // Which optional helpers the shell commands use (only counters are kept): the Prerequisites tab shows whether they are used.
       if ((tool === 'Bash' || tool === 'PowerShell') && typeof input.command === 'string') shared.helperUsage.record(input.command);
@@ -1196,8 +1196,8 @@ export async function startServer(o: StartOptions): Promise<RunningServer> {
     o, configPath, config, token, loginCode: () => loginCodes.issue(), bundles: loadBundles(o.i18nDir),
     ledger: new Ledger(join(o.configDir, 'ledger')),
     quotaState: new QuotaState(),
-    // Heavy runs go one at a time; `ANDROMEDACLI_TEST_CONCURRENCY` raises the limit on a machine with cores to spare.
-    testQueue: new TestQueue({ limit: () => Number(process.env.ANDROMEDACLI_TEST_CONCURRENCY) || 1, changed: () => ws.broadcastState() }),
+    // Heavy runs go one at a time; `ANDROMEDACONSOLE_TEST_CONCURRENCY` raises the limit on a machine with cores to spare.
+    testQueue: new TestQueue({ limit: () => Number(process.env.ANDROMEDACONSOLE_TEST_CONCURRENCY) || 1, changed: () => ws.broadcastState() }),
     // The sleep timer and the account's limits are one per console; at a reset every project's main wakes.
     sleep: new SleepTimer({
       clock: sleepClock,

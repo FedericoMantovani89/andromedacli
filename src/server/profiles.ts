@@ -43,7 +43,7 @@ function readProfile(file: string, name: string, source: Profile['source']): Pro
 /** SPEC 11.4: the project's profiles override the user's, which override the shipped ones. */
 export function loadProfile(name: string, projectRoot: string, userDir: string = join(configDir(), 'profiles')): Profile | undefined {
   if (!SLUG_RE.test(name)) return undefined; // also rules out path traversal
-  return readProfile(join(projectRoot, '.andromedacli', 'profiles', `${name}.md`), name, 'project')
+  return readProfile(join(projectRoot, '.andromedaconsole', 'profiles', `${name}.md`), name, 'project')
     ?? readProfile(join(userDir, `${name}.md`), name, 'user')
     ?? readProfile(join(promptsDir(), 'profiles', `${name}.md`), name, 'shipped');
 }
@@ -63,7 +63,7 @@ export function pickableProfiles(offered: readonly string[] | undefined, existin
 
 export function listProfileNames(projectRoot: string, userDir: string = join(configDir(), 'profiles')): string[] {
   const shipped = namesIn(shippedDir());
-  const all = new Set([...shipped, ...namesIn(userDir), ...namesIn(join(projectRoot, '.andromedacli', 'profiles'))]);
+  const all = new Set([...shipped, ...namesIn(userDir), ...namesIn(join(projectRoot, '.andromedaconsole', 'profiles'))]);
   const rank = (n: string): number => (SHIPPED_ORDER.includes(n) ? SHIPPED_ORDER.indexOf(n) : SHIPPED_ORDER.length);
   return [...all].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
@@ -169,11 +169,11 @@ const humanViaMain = (main: string): string => `You cannot ask the human directl
 const HUMAN_VIA_QUEUE = 'When you need a decision from the human, use the AskUserQuestion tool: the console shows the question to them in its queue and brings the answer back to you.';
 const GITIGNORE_AGENT = 'This repository has no .gitignore. Do not create or edit one unless your goal says so, and keep dependencies and build output (node_modules, target, dist...) out of your work: if they cannot be avoided, say so in the note of the documentation step so the main can ask the user.';
 
-/** A project's own text file (`.andromedacli/main.md`, `.andromedacli/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
+/** A project's own text file (`.andromedaconsole/main.md`, `.andromedaconsole/rules.md`), bounded; undefined when it is missing, empty or unreadable. */
 function projectText(projectRoot: string | undefined, file: 'main.md' | 'rules.md'): string | undefined {
   if (!projectRoot) return undefined;
   try {
-    const path = join(projectRoot, '.andromedacli', file);
+    const path = join(projectRoot, '.andromedaconsole', file);
     if (!existsSync(path)) return undefined;
     const text = readFileSync(path, 'utf8').replace(/\r\n/g, '\n').trim();
     return text === '' ? undefined : text.slice(0, MAX_PROJECT_TEXT);

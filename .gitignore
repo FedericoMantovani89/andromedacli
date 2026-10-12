@@ -4,7 +4,7 @@ dist/
 out/
 release/
 # the console's own state when it runs on this very repository
-.andromedacli/
+.andromedaconsole/
 # scratch space of the executing-projects skill
 .superpowers/
 # stray probe output of real-Claude runs

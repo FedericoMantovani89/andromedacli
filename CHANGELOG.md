@@ -8,6 +8,9 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+### Changed
+- The product is now called AndromedaConsole (it was AndromedaCli, a name already taken): window and page title, splash picture, installer (`AndromedaConsole-Setup-*.exe`), app id, package name, and the `--name` that Remote Control shows. The project folder `.andromedacli/` is now `.andromedaconsole/`, the settings folder `%APPDATA%\andromedacli` is now `%APPDATA%\andromedaconsole`, and `ANDROMEDACLI_TEST_CONCURRENCY` is now `ANDROMEDACONSOLE_TEST_CONCURRENCY`. The first start moves the old folders by itself (state paths and git worktrees are repaired); an installed 0.0.7 does not auto-update across the new app id and needs the new installer once.
+
 ### Added
 - `npm run test:changed`: the checks, then the tests related to the diff against `origin/main`. `test:ticket` (diff against `project/<name>`, what the console runs for a ticket) selects every file in a plain checkout where that branch is far behind.
 - CI: when a vitest worker crashes natively, its minidump is kept (Windows Error Reporting) and uploaded as the `crash-dumps` artifact.
@@ -30,9 +33,9 @@ change that introduces the behaviour.
 - CI: a `smoke` job (the checks and the seven smoke files) runs next to the full suite, so a break in the basics shows early.
 
 ### Changed
-- The README and `CONTRIBUTING.md` now say that AndromedaCli is Windows-only by design: no macOS or Linux support, and none planned.
+- The README and `CONTRIBUTING.md` now say that AndromedaConsole is Windows-only by design: no macOS or Linux support, and none planned.
 - CI: when vitest workers crash with no test failing (a native crash on the Windows runner), only the crashed files run again, up to three more times, instead of the whole suite once; a failing test still fails the job at once, and so does a file that keeps crashing.
-- The README is a short front page (tagline, why, quick start, safety, links); the rest moved to `guide/` (using, architecture, configuration, desktop app, development). The repository was renamed to `andromedacli` (old links and the desktop app's update check follow the redirect). The changelog follows Keep a Changelog with the released versions.
+- The README is a short front page (tagline, why, quick start, safety, links); the rest moved to `guide/` (using, architecture, configuration, desktop app, development). The repository was renamed to `andromedaconsole` (old links and the desktop app's update check follow the redirect). The changelog follows Keep a Changelog with the released versions.
 - Shipped model catalog: added Fable 5.1 and Haiku 5.5.
 - Status bar: the project budget reads "∞" (no limit is set) instead of "n/a", and "Resume now" is shown only while the console sleeps for a usage limit.
 
@@ -60,7 +63,7 @@ change that introduces the behaviour.
 - The "+ new agent" control is always the first item of the agents column, and stays on top while the column scrolls.
 - With many agents the agents column scrolls instead of crushing the panels: a panel keeps a minimum height of 140 px, a bar its own height.
 - `npm run shot` has new options to look at the interface in a given situation: `--update`, `--agents`, `--many`, `--states`, `--split`, `--scroll`; it also prints the page errors.
-- The app has an icon: the galaxy from the splash picture (`build/icon.ico`, 16 to 256 px) on `AndromedaCli.exe`, on the installer and uninstaller and in the installer header. `signAndEditExecutable: false` became `signExecutable: false` so the icon is written into the exe; there is still no code signing.
+- The app has an icon: the galaxy from the splash picture (`build/icon.ico`, 16 to 256 px) on `AndromedaConsole.exe`, on the installer and uninstaller and in the installer header. `signAndEditExecutable: false` became `signExecutable: false` so the icon is written into the exe; there is still no code signing.
 - The page has a favicon (the galaxy, `favicon.png`, served without a token like the splash).
 - The splash picture is twice as large (2798x1434, resampled with Lanczos, lightly cleaned and sharpened); it is the same picture, so it is smoother but has no new detail.
 - Tests: `git-clone` and `project-fields` close their server before they remove their folders (afterEach hooks run last-declared first); on the GitHub runner the folder was locked by the still running agent and the hook timed out.
@@ -81,8 +84,8 @@ change that introduces the behaviour.
 - "Archive all finished": a button in the archived list (the status-bar chip now also shows as "Archived (0)" while some agent can be archived) archives, after a confirmation that shows how many, every agent that is finished, or idle with a delivered, merged or released ticket, in one request (`POST /api/agents/archive-finished`, answers `{count, slugs}`). Agents waiting on a decision or stopped (budget, limit, blocked, recovering) are never archived; nothing is deleted and Unarchive still works. After a restart, reviewers and merged developers are not brought back, and stopped finishes stay visible, as before.
 - Voice dictation for the main: a microphone icon button in the main panel's header (beside its state; not on agent panels) opens a dialog that records from the browser microphone, has the console transcribe it with Groq Whisper (`whisper-large-v3-turbo`, in the UI language), puts the text in an editable box, appends each further clip, and *Send to main* types the text into the main's input without pressing Enter. Closing the dialog keeps the text until the page reloads, Clear, or a send. The text typed is plain single-line text: escape sequences, Enter and other control characters are removed. It is typed as plain text, so a transcript that starts with `/` or `!` is seen by the main as typed (a command or mode switch of its terminal program).
 - Options, Secrets tab (global): the Groq API key, with a warning that the audio goes to Groq. The key is kept only in `<config dir>/secrets.json` (owner-only where the system supports it), never in `config.json`, never sent back to the browser (the tab shows only n/a or set, with replace and remove), never logged, and not copied by templates or copy-settings. New routes: `GET/PUT /api/secrets`, `POST /api/dictation/transcribe` (25 MB limit checked before any network call, refused without a key), `POST /api/main/input`; new error codes `dictation.*`. New `mic` icon.
-- One queue for the long test runs of the whole machine: heavy runs (the `merge` and `release` commands, and `ticket` runs when the project has no `testCommands.ticket` of its own) go one at a time, first come first served, so two full suites never slow each other down (the machine has 2 physical cores; the `recovery-http` test failed when they overlapped). A `ticket` command set in `testCommands.ticket` counts as the fast one and is not queued. The limit is 1; `ANDROMEDACLI_TEST_CONCURRENCY` raises it. A waiting run shows as "Waiting for the test queue (n)" on the agent's ticket chip and `step_done` answers `running` with `queue: n`; the state also carries a `testQueue` snapshot. The timeout counts from the start of the run, and the slot is freed when a run ends, times out or fails; a validation whose agent is gone is dropped or stopped.
-- Central full run: after the merges into `project/<name>` have settled (120 s with no merge on its way) the console runs the `release` command once on the tip through the queue, covering all tickets merged since the last run, and records the tip, the command and the tickets in `.andromedacli/state/central-tests.json`. `propose_release` does not run the full command again on a tip that already passed it.
+- One queue for the long test runs of the whole machine: heavy runs (the `merge` and `release` commands, and `ticket` runs when the project has no `testCommands.ticket` of its own) go one at a time, first come first served, so two full suites never slow each other down (the machine has 2 physical cores; the `recovery-http` test failed when they overlapped). A `ticket` command set in `testCommands.ticket` counts as the fast one and is not queued. The limit is 1; `ANDROMEDACONSOLE_TEST_CONCURRENCY` raises it. A waiting run shows as "Waiting for the test queue (n)" on the agent's ticket chip and `step_done` answers `running` with `queue: n`; the state also carries a `testQueue` snapshot. The timeout counts from the start of the run, and the slot is freed when a run ends, times out or fails; a validation whose agent is gone is dropped or stopped.
+- Central full run: after the merges into `project/<name>` have settled (120 s with no merge on its way) the console runs the `release` command once on the tip through the queue, covering all tickets merged since the last run, and records the tip, the command and the tickets in `.andromedaconsole/state/central-tests.json`. `propose_release` does not run the full command again on a tip that already passed it.
 - When the central run is red the console finds the ticket that broke it: the failing test files against the files each merged ticket changed, then a bisect over the merges (re-running only the failing files, vitest or jest, on a temporary checkout that is removed afterwards). The author gets the failing tests and the output tail (or, when its session is gone, one decision goes to the user's queue); when nobody can be blamed the decision carries the facts. The console never changes code. The full run happens on a temporary detached checkout of the tip, so merges are never blocked by it; when the merge and release commands are the same and the last merge already tested the tip, it is not run twice; a console start covers merges nobody has checked; a ticket handed over after a red run is not blamed again. Because an author is normally gone after a merge, the decision offers "Ask the main for a follow-up agent" (the main gets the goal, the failing tests and the output).
 - Archive of finished agents: an agent whose session ended for good (a merged ticket, a finished review or recovery) leaves the agents column by itself and is listed under "Archived (N)" in the status bar, with Unarchive and Unarchive all; nothing is deleted. A stopped agent (budget, loop, usage limit) stays, new work un-archives an agent, the flag survives a restart, and a small Archive button archives an idle agent with a delivered or merged ticket by hand (`POST /api/agents/<slug>/archive` and `/unarchive`). The agents counters and Alt+n ignore archived agents.
 - A project can set a different test command for each moment (`testCommands` in `project.json`, three fields in Options, This project): `ticket` (validation step, review re-run, recovery), `merge` (after a merge) and `release`; each falls back to the single test command, so nothing changes unless they are set. New npm scripts `test:ticket` (check + tests changed against the project branch) and `test:smoke` (check + 7 core files); neither writes the commit-gate stamp.
@@ -132,7 +135,7 @@ change that introduces the behaviour.
 - Agents: the "not started" chip says why (Claude Code never reported in, or it has not taken its goal); a working agent with no sign of life for longer than the silence threshold (Options, Budget and limits) shows a chip too (report only, nothing is stopped).
 - Queue: a permission can be answered "Always allow" or "Always deny": it is remembered for that agent and the exact same tool call until its session ends (the guard still applies); each agent's panel shows how many of its items wait for the user.
 - Options: the (i) hint is drawn by the page, half as wide and taller; in Models the refresh button is square and the catalog address box is as wide as the model menu; in Profiles the two notes sit at the bottom of the panel, full width; the new-profile name hint is one line with a typed-characters counter (0/40) under the box; the profile token budget is a slider like in Budget and limits, starting at the default.
-- Agents and main: the agent prompt now says that the goal message, the main's review notes and the console's answers are its instructions (Claude Code labels a plugin message as coming from a plugin, and the old wording made small models refuse the goal); the goal is also saved as `.andromedacli/goal-<name>.md` in the agent's checkout; the main is told the profiles that really exist (the old fixed list backend/dba/frontend was stale).
+- Agents and main: the agent prompt now says that the goal message, the main's review notes and the console's answers are its instructions (Claude Code labels a plugin message as coming from a plugin, and the old wording made small models refuse the goal); the goal is also saved as `.andromedaconsole/goal-<name>.md` in the agent's checkout; the main is told the profiles that really exist (the old fixed list backend/dba/frontend was stale).
 - Repository tooling: `npm run shot` (a screenshot of the real UI), `npm run hooks` (pre-commit: `npm run check` and a CHANGELOG line for a change to the product), and a Claude Code hook that refuses a git commit until `npm test` has run green since the last code change (`wip:` skips it).
 - The console never reads the PATH (or the registry) from the system: it only uses the PATH it was started with. The restart of the sessions no longer merges the Windows PATH in, the Prerequisites tab has no Recheck or Restart button (they could not show a program installed later) but a line saying to start the console again from a new terminal, and the restart question after Save is asked only for settings the sessions read at launch.
 - Options, Git: the non-repository case is two bold titles ("Initialize git" with its button, "Or clone an existing repository" with its box), each with its explanation in an (i) tooltip instead of lines of text.
@@ -170,11 +173,11 @@ change that introduces the behaviour.
 - The first-start wizard's project step shows only the folder (no name) and points to Options, Git when it is not a repository; its last button opens the one-field new-project dialog.
 - The new-project dialog asks only for the folder: the template (Java, web front end or generic) and the build/test/lint commands are picked from what the folder holds (`POST /api/projects` with `auto: true`), a folder that does not exist is created with a git repository (the dialog says so), and a name field appears only when the folder's name is taken or unusable. Commands, model and limits are changed in Options, Project tab.
 - "Plan" is now "project" everywhere (UI texts in English and Italian, prompts, API `/api/projects`, `project.json`, `projects.json`, `--project-root`, branches `project/<project>` and `agent/<project>/<name>`, the `.project` merge worktree). No migration: projects created before this change must be recreated.
-- New agents' worktrees (and the console's `.project` merge checkout) live under the project's `.andromedacli/worktrees/` (`<repo>/` one level down when the project folder holds several repos) instead of `<repo>.worktrees`; worktrees already made keep working where they are. Claude Code's folder trust now reaches them from the project folder.
+- New agents' worktrees (and the console's `.project` merge checkout) live under the project's `.andromedaconsole/worktrees/` (`<repo>/` one level down when the project folder holds several repos) instead of `<repo>.worktrees`; worktrees already made keep working where they are. Claude Code's folder trust now reaches them from the project folder.
 - The last open project can be closed: the console goes back to the welcome screen.
-- The close-project dialog has a box "also delete the project's data": it removes the project's worktrees, its `agent/<project>/*` and `project/<project>` branches and its `.andromedacli`, so the project opens again as new (`DELETE /api/projects/<name>?purge=1`).
-- Agents are launched with `--name "<agent> <project> AndromedaCli"` (same reason).
-- The main session is launched with `--name "<project> AndromedaCli"` (also on restart/resume), so Remote Control shows it instead of the default name.
+- The close-project dialog has a box "also delete the project's data": it removes the project's worktrees, its `agent/<project>/*` and `project/<project>` branches and its `.andromedaconsole`, so the project opens again as new (`DELETE /api/projects/<name>?purge=1`).
+- Agents are launched with `--name "<agent> <project> AndromedaConsole"` (same reason).
+- The main session is launched with `--name "<project> AndromedaConsole"` (also on restart/resume), so Remote Control shows it instead of the default name.
 - The guard refuses the main any Claude Code built-in subagent other than the read-only Explore, Plan and claude-code-guide types (rule `agent.builtin-subagent`), pointing it to `spawn_agent`; the mod now sends the subagent type and also guards the older `Task` tool name.
 - The main's prompt tells it to do every file-changing job through console agents (`spawn_agent`), not Claude Code's built-in subagents, which are invisible to the console (no worktree, ticket or budget).
 - Visual redesign of the whole UI: dark graphite surface with hairline seams instead of dimmed panels, one accent for focus, state dots with colour only for state, tab-style project and options navigation, themed terminals, a brand mark in the top bar and a narrow-window layout.
@@ -198,7 +201,7 @@ The phases below were built before the first tag, in the order they are listed (
 ## Phase 6: multiple projects, full resume, notifications, templates, options (2026-10-05)
 
 ### 6C: Multiple projects and tabs
-- One console now hosts several projects (one per project folder), each with its own main session, agents, tickets, queue and `.andromedacli/` folder, shown as tabs with a dot while its queue waits; `+ project` opens a project, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
+- One console now hosts several projects (one per project folder), each with its own main session, agents, tickets, queue and `.andromedaconsole/` folder, shown as tabs with a dot while its queue waits; `+ project` opens a project, a small close button closes one (nothing is deleted on disk), `Alt+Left` / `Alt+Right` switch, and the page title counts waiting questions.
 - `POST /api/projects`, `DELETE /api/projects/<name>`, `?project=<name>` on every `/api/*` request and on `/ws/ui` and `/ws/term/<slug>` (absent: the first project); `StateMessage.projects`; the open projects are remembered in `<configDir>/projects.json`.
 - The active-agent global limit counts agents of all projects; a freed slot in one project starts the queue of the others; the quota state, the sleep timer (state now in `<configDir>/state/sleep.json`) and the ledger are shared by all projects.
 
@@ -216,13 +219,13 @@ The phases below were built before the first tag, in the order they are listed (
 
 ### 6D: Templates and the new-project flow
 - Project templates: a folder with `template.json`, `main.md`, `rules.md` and `profiles/*.md`; shipped ones live in `templates/` (`backend-java`, `frontend-web`, `generic`), the user's in `<config dir>/templates/` (the user's wins on the same id); an invalid template is listed as unavailable with the reason. `GET /api/templates` lists them.
-- New project from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.andromedacli/profiles/`, writes `.andromedacli/main.md` and `.andromedacli/rules.md` and the project fields; what the user typed beats the detected commands, which beat the template's.
+- New project from a template (`applyTemplate`): creates the folder and a git repository with an empty first commit when asked (a commit identity is supplied only when the user has none), copies the profiles to `.andromedaconsole/profiles/`, writes `.andromedaconsole/main.md` and `.andromedaconsole/rules.md` and the project fields; what the user typed beats the detected commands, which beat the template's.
 - `GET /api/projects/detect?root=` proposes build, test and lint commands from `pom.xml`, Gradle or `package.json` (bounded reads, no process is run).
 - `POST /api/projects/save-template` saves the current project as a user template (a copy: later project changes never touch it; an existing id is refused unless `overwrite`).
 - New optional project fields (`project.json`, `PUT /api/project`): `buildCommand`, `lintCommand`, `profiles`, `model`, `agentTokens`, `maxActive`, `docs`, `secretPatterns`; the project's profiles limit the new-agent picker and `spawn_agent`, its model, token budget, active-agent limit and secret patterns sit behind the request's and the profile's own values.
-- The main's prompt gets `.andromedacli/main.md` and every session's prompt gets `.andromedacli/rules.md`; an agent is told which documents to update at the last step (`docs`).
+- The main's prompt gets `.andromedaconsole/main.md` and every session's prompt gets `.andromedaconsole/rules.md`; an agent is told which documents to update at the last step (`docs`).
 - New-project dialog (template, folder, name; commands prefilled from the folder) and a "save as template" dialog; the first-start wizard offers to create a project from a template.
-- SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.andromedacli/rules.md`, appended to every session's system prompt.
+- SPEC delta (21.2 step 3): the console does not install a project `CLAUDE.md`: an uncommitted file would dirty the user's checkout (the release check refuses on tracked changes) and would not reach the worktrees; the rules travel in `.andromedaconsole/rules.md`, appended to every session's system prompt.
 
 ### 6E: Options, remote model list, plugin catalog
 - The gear opens a tabbed Options dialog (models, profiles, budget and limits, names, project, git, guard, mod, notifications, language, prerequisites, plugins, server); each editable field saves on change and goes back when the server refuses it.
@@ -248,7 +251,7 @@ The phases below were built before the first tag, in the order they are listed (
 
 ### Added
 - Per-agent token budget: alert at 80% (WIP commit by the console, message to the agent and the main), restriction at 100%, orderly stop after the grace with the ticket in `suspended_budget`; tokens come from the Claude Code transcript (input + cache_creation + output) and are recorded in a monthly ledger.
-- The budget alert tells the agent to write its handover note to `.andromedacli/handover.md`; the console reads it (bounded, no symlinks) at the stop and gives it to the new agent.
+- The budget alert tells the agent to write its handover note to `.andromedaconsole/handover.md`; the console reads it (bounded, no symlinks) at the stop and gives it to the new agent.
 - Recovery: after a budget stop or a block the main can start a read-only recovery agent (`start_recovery`) that verifies the work, diagnoses the cause from the ledger and reports a remedy (`recovery_report`); the restart is a new agent on the same branch, at most 2 attempts, and a spend is always the user's decision (a `change_model` remedy asks as well).
 - Loop and block detection from the transcript: repeated identical calls, repeated identical errors and repeated compactions are corrected, then limited, then stopped (ticket `blocked`, recovery by the main) and keep escalating while the loop goes on; silence (any sign of life counts, the notice says whether the process is alive) and a long time without `step_done` only warn the main.
 - Subscription quota: the mod reports the limits (`session.measure`, `quota` event); at 70% the active-agent limit halves, at 85% nothing new starts and agents are told to close the step, at 95% they are restricted, committed and ended in priority order, the main last; a spend limit never drives the steps.
@@ -276,7 +279,7 @@ The phases below were built before the first tag, in the order they are listed (
 - Ticket pipeline (`tickets/flow.ts`): `in_progress` â†’ `delivered` â†’ `in_review` â†’ `approved` â†’ `merged` â†’ `released`, with
   `changes_requested`, `conflict` and `needs_user` on the side; an impossible change is refused with a code. The panel header
   shows it as a chip (`In review`, `Approved`, `Merged`, `Rework 1/2`â€¦), kept after the worktree is gone.
-- `report.md` per ticket (`.andromedacli/tickets/<name>/`), written by the console without a model: objective, checklist, files
+- `report.md` per ticket (`.andromedaconsole/tickets/<name>/`), written by the console without a model: objective, checklist, files
   (from git), tests (the console's own run), documentation, the agents' notes verbatim, the review. Headings follow the
   interface language (`report.*` keys); the squash commit message is English.
 - Main tools: `ticket_report` (facts from git and from the tests the console reruns on exactly the delivered commit),
@@ -322,18 +325,18 @@ The phases below were built before the first tag, in the order they are listed (
   mandatory skeleton (study, tests first, steps, validation, documentation), commits each closed step itself
   (`step n/N: title`, trailers `Agent:`, `Ticket:`, `Progetto:`), refuses secrets (`.env`, keys, credentials, configurable
   patterns), runs the project's test command at the validation step with a timeout, and pushes the branch when the last step
-  closes, telling the main. Steps close in order, one at a time; the checklist is also saved in `.andromedacli/checklist.md`.
+  closes, telling the main. Steps close in order, one at a time; the checklist is also saved in `.andromedaconsole/checklist.md`.
 - Guard: `POST /v1/guard` judges every `Bash`, `PowerShell`, `Write`, `Edit`, `NotebookEdit`, `Read`, `Grep` and `Glob` call
   with the caller's own role and worktree (git commit/push/force/tag/checkout/merge/reset, config tampering, paths outside the
   worktree and `.git`, secrets, wide deletes, download-and-run). The main has a shorter list. Fails closed for shell and
   writing tools when the console is unreachable. `guard.mode` `enforce` or `shadow` (allow and log); refusals are logged to
-  `.andromedacli/state/guard.jsonl`.
+  `.andromedaconsole/state/guard.jsonl`.
 - Settings dialog: a switch for `agents.bypassPermissions` (with a warning), the guard mode, and the project's test command;
   `PUT /api/config` takes them (and still the language), `PUT /api/project` the test command. Bypass and guard mode apply to
   sessions launched afterwards; running sessions keep what they started with.
 - Launch check: 90 s after an agent is launched the console verifies it reported in and took its goal; if not, the main gets a "Launch check:" message (also for agents started from the UI) and the panel shows "Not started yet" until the agent works. Asked for by the architect.
-- Build version: the latest tag reachable from `main` of the console's own repository (without the `v`; `package.json` version, now 0.0.1, until a tag exists) is shown over the splash picture and in the tab title (`AndromedaCli v0.0.1`).
-- Start-up splash (the AndromedaCli picture, `src/ui/splash.jpg`): shown about 2 s, then faded out; it never takes clicks or keys. The page title is the commercial name, AndromedaCli (the repository and package keep the internal name multiconsole).
+- Build version: the latest tag reachable from `main` of the console's own repository (without the `v`; `package.json` version, now 0.0.1, until a tag exists) is shown over the splash picture and in the tab title (`AndromedaConsole v0.0.1`).
+- Start-up splash (the AndromedaConsole picture, `src/ui/splash.jpg`): shown about 2 s, then faded out; it never takes clicks or keys. The page title is the commercial name, AndromedaConsole (the repository and package keep the internal name multiconsole).
 - Panel headers show the checklist progress (`3/7`) and two new states, `Studying` (no checklist yet) and `Blocked`.
 
 ### Fixed (found by the final review)
@@ -361,7 +364,7 @@ The phases below were built before the first tag, in the order they are listed (
   the agent starts by itself when a slot frees; lowering the limit stops nobody. One flow serves the UI button and the tool.
 - Question queue (drawer, `Alt+Q`, dot on the project tab): answers reach the waiting tool call without moving the focus.
 - "Read" panel (`Alt+L` or the Read button): the last 50 answers of each session as sanitised Markdown with normal
-  scrolling, filter and copy; kept on disk under `.andromedacli/state/reading/`.
+  scrolling, filter and copy; kept on disk under `.andromedaconsole/state/reading/`.
 - Profiles (`prompts/profiles/*.md`, project > user > shipped), the main's instructions (`prompts/main.md`) and the agent's
   (`prompts/agent.md`) naming the deferred tools by full name.
 - Tests: scheduler, registry, questions, reading, markdown sanitiser, `/v1` security, launch, profiles; browser e2e with a
@@ -392,7 +395,7 @@ The phases below were built before the first tag, in the order they are listed (
 - Browser UI (xterm.js): fixed main on the left, agents stacked on the right (full panels up to four, then bars),
   manual agent launch, status bar, `Alt+1..9` shortcuts. The keyboard focus never moves on its own.
 - Activity-name (slug) rules: format, length, generic names, Windows reserved names, uniqueness, accents transliterated.
-- Project state under `<repo>/.andromedacli/` (`project.json`, `state/agents.json`); the project keeps its original name.
+- Project state under `<repo>/.andromedaconsole/` (`project.json`, `state/agents.json`); the project keeps its original name.
 - Internationalisation through `.properties` bundles (`en`, `it`); languages are discovered from the files and can be
   switched at runtime without reloading.
 - Build gate `npm run check`: key/placeholder parity between languages, unused and undefined keys, user-facing error
@@ -426,11 +429,11 @@ Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` wi
 of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.
 
-[Unreleased]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.7...HEAD
-[0.0.7]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.6...v0.0.7
-[0.0.6]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.5...v0.0.6
-[0.0.5]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.4...v0.0.5
-[0.0.4]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.3...v0.0.4
-[0.0.3]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.2...v0.0.3
-[0.0.2]: https://github.com/FedericoMantovani89/andromedacli/compare/v0.0.1...v0.0.2
-[0.0.1]: https://github.com/FedericoMantovani89/andromedacli/releases/tag/v0.0.1
+[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.6...v0.0.7
+[0.0.6]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/FedericoMantovani89/andromedaconsole/releases/tag/v0.0.1

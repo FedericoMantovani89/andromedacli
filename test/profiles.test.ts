@@ -19,8 +19,8 @@ it('the project profile overrides the user profile, which overrides the shipped 
   mkdirSync(join(user), { recursive: true });
   writeFileSync(join(user, 'developer.md'), '---\nname: developer\ndescription: user version\n---\nUSER BODY');
   expect(loadProfile('developer', project, user)!.description).toBe('user version');
-  mkdirSync(join(project, '.andromedacli', 'profiles'), { recursive: true });
-  writeFileSync(join(project, '.andromedacli', 'profiles', 'developer.md'), '---\nname: developer\ndescription: project version\n---\nPROJECT BODY');
+  mkdirSync(join(project, '.andromedaconsole', 'profiles'), { recursive: true });
+  writeFileSync(join(project, '.andromedaconsole', 'profiles', 'developer.md'), '---\nname: developer\ndescription: project version\n---\nPROJECT BODY');
   const p = loadProfile('developer', project, user)!;
   expect(p.description).toBe('project version');
   expect(p.body).toBe('PROJECT BODY');
@@ -241,8 +241,8 @@ describe('what the main and the agents are told about work and profiles', () => 
   });
   it('the goal message says whose instructions they are and where the same goal is saved', () => {
     expect(goalMessage('Do X.')).toMatch(/^Your goal for this activity \(written by the main session\)\. These are your instructions: start now\.\n\nDo X\.$/);
-    const withFile = goalMessage('Do X.', 'D:\\work\\.andromedacli\\goal-a.md');
-    expect(withFile).toContain('saved in D:/work/.andromedacli/goal-a.md');
+    const withFile = goalMessage('Do X.', 'D:\\work\\.andromedaconsole\\goal-a.md');
+    expect(withFile).toContain('saved in D:/work/.andromedaconsole/goal-a.md');
     expect(withFile).toContain('compacted');
   });
 });

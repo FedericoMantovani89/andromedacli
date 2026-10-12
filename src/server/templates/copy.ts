@@ -11,7 +11,7 @@ export type CopyResult = { ok: true } | { ok: false; code: string; detail?: stri
  * Copies the settings of one project onto another (SPEC 21): its profiles, main.md and rules.md (files of the same name are replaced) and
  * the fields of project.json (test, build and lint commands, squash, model, token budget, agent limit, profiles on offer, docs, secret
  * patterns). A field the source does not have is cleared in the target, so the two end up alike. The name, the agents and the tickets are
- * never copied. The target's `.andromedacli` is created when missing.
+ * never copied. The target's `.andromedaconsole` is created when missing.
  */
 export function copyProjectSettings(fromRoot: string, toRoot: string, toName: string): CopyResult {
   try {
@@ -19,8 +19,8 @@ export function copyProjectSettings(fromRoot: string, toRoot: string, toName: st
     const source = from.project;
     const to = new ProjectStore(toRoot);
     to.init(toName);
-    const fromDir = join(fromRoot, '.andromedacli');
-    const toDir = join(toRoot, '.andromedacli');
+    const fromDir = join(fromRoot, '.andromedaconsole');
+    const toDir = join(toRoot, '.andromedaconsole');
     mkdirSync(toDir, { recursive: true });
     for (const f of ['main.md', 'rules.md']) if (existsSync(join(fromDir, f))) copyFileSync(join(fromDir, f), join(toDir, f));
     const profiles = join(fromDir, 'profiles');

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeJsonAtomic } from './fs-atomic';
+import { migrateConfigFolder } from './legacy-names';
 import { DEFAULT_SECRET_PATTERNS } from './git/secrets';
 import { DEFAULT_NOTIFICATIONS, NOTIFY_TYPES, type NotificationsConfig } from '../shared/notify';
 import { isObj } from '../shared/guards';
@@ -68,9 +69,14 @@ export const DEFAULT_CONFIG: Config = {
   telemetry: false,
 };
 
-/** %APPDATA%/andromedacli, or CONSOLE_CONFIG_DIR when set (tests, portable installs). */
-export const configDir = (): string =>
-  process.env.CONSOLE_CONFIG_DIR ?? join(process.env.APPDATA ?? homedir(), 'andromedacli');
+/** %APPDATA%/andromedaconsole, or CONSOLE_CONFIG_DIR when set (tests, portable installs). */
+export const configDir = (): string => {
+  if (process.env.CONSOLE_CONFIG_DIR) return process.env.CONSOLE_CONFIG_DIR;
+  const base = process.env.APPDATA ?? homedir();
+  if (!configMigrated) { configMigrated = true; migrateConfigFolder(base); }
+  return join(base, 'andromedaconsole');
+};
+let configMigrated = false;
 
 /** Same rule as `MODEL_RE` in agents/spawn.ts (not imported: spawn.ts reaches profiles.ts, which imports this file). */
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:[\]-]*$/;

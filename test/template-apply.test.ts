@@ -14,7 +14,7 @@ afterEach(() => {
   while (repos.length) removeDir(repos.pop()!.base);
 });
 const tmp = (): string => { const d = mkdtempSync(join(tmpdir(), 'tpl-apply-')); dirs.push(d); return d; };
-const projectOf = (root: string): any => JSON.parse(readFileSync(join(root, '.andromedacli', 'project.json'), 'utf8'));
+const projectOf = (root: string): any => JSON.parse(readFileSync(join(root, '.andromedaconsole', 'project.json'), 'utf8'));
 const base = (root: string, extra: Record<string, unknown> = {}) => ({ templateId: 'backend-java', root, name: 'shop-api', create: false, configDir: tmp(), ...extra });
 
 it('new folder with init: creates it, starts a repository with an empty first commit, copies the template and writes the project', async () => {
@@ -24,19 +24,19 @@ it('new folder with init: creates it, starts a repository with an empty first co
   expect(existsSync(join(root, '.git'))).toBe(true);
   expect(gitSync(root, 'log', '--format=%s')).toBe('chore: start');
   expect(gitSync(root, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
-  for (const f of ['main.md', 'rules.md', 'project.json']) expect(existsSync(join(root, '.andromedacli', f)), f).toBe(true);
-  expect(existsSync(join(root, '.andromedacli', 'state', 'agents.json'))).toBe(true);
+  for (const f of ['main.md', 'rules.md', 'project.json']) expect(existsSync(join(root, '.andromedaconsole', f)), f).toBe(true);
+  expect(existsSync(join(root, '.andromedaconsole', 'state', 'agents.json'))).toBe(true);
   expect(projectOf(root)).toMatchObject({
     name: 'shop-api', docs: ['README.md', 'CHANGELOG.md'], buildCommand: 'mvn -q -DskipTests package', testCommand: 'mvn test', squash: true,
   });
-  expect(readFileSync(join(root, '.andromedacli', 'rules.md'), 'utf8')).toMatch(/Java backend/);
+  expect(readFileSync(join(root, '.andromedaconsole', 'rules.md'), 'utf8')).toMatch(/Java backend/);
 });
 
 it('new folder without init: only the folder and the project files, no git repository', async () => {
   const root = join(tmp(), 'no git here');
   expect(await applyTemplate(base(root, { create: true }))).toEqual({ ok: true });
   expect(existsSync(join(root, '.git'))).toBe(false);
-  expect(existsSync(join(root, '.andromedacli', 'project.json'))).toBe(true);
+  expect(existsSync(join(root, '.andromedaconsole', 'project.json'))).toBe(true);
 });
 
 it('never writes a CLAUDE.md (it would dirty the user checkout and would not reach the worktrees)', async () => {
@@ -52,7 +52,7 @@ it('an existing repository is left as it is: no commit, no init', async () => {
   const before = gitSync(t.repo, 'rev-parse', 'HEAD');
   expect(await applyTemplate(base(t.repo))).toEqual({ ok: true });
   expect(gitSync(t.repo, 'rev-parse', 'HEAD')).toBe(before);
-  expect(existsSync(join(t.repo, '.andromedacli', 'main.md'))).toBe(true);
+  expect(existsSync(join(t.repo, '.andromedaconsole', 'main.md'))).toBe(true);
 });
 
 it('a folder that is not a repository stays one that is not, unless the user asked', async () => {
@@ -88,14 +88,14 @@ it('is idempotent: a second run changes nothing but keeps the project name, date
   const root = join(tmp(), 'idem');
   const o = base(root, { create: true, init: true });
   await applyTemplate(o);
-  const first = readFileSync(join(root, '.andromedacli', 'project.json'), 'utf8');
-  writeFileSync(join(root, '.andromedacli', 'state', 'agents.json'), JSON.stringify([{ slug: 'fix-login', profile: 'developer', createdAt: 'x' }]));
+  const first = readFileSync(join(root, '.andromedaconsole', 'project.json'), 'utf8');
+  writeFileSync(join(root, '.andromedaconsole', 'state', 'agents.json'), JSON.stringify([{ slug: 'fix-login', profile: 'developer', createdAt: 'x' }]));
   const head = gitSync(root, 'rev-parse', 'HEAD');
   expect(await applyTemplate({ ...o, name: 'another-name' })).toEqual({ ok: true });
-  expect(JSON.parse(readFileSync(join(root, '.andromedacli', 'project.json'), 'utf8'))).toEqual(JSON.parse(first)); // same content (key order may differ)
+  expect(JSON.parse(readFileSync(join(root, '.andromedaconsole', 'project.json'), 'utf8'))).toEqual(JSON.parse(first)); // same content (key order may differ)
   expect(projectOf(root).name).toBe('shop-api');
   expect(gitSync(root, 'rev-parse', 'HEAD')).toBe(head);
-  expect(JSON.parse(readFileSync(join(root, '.andromedacli', 'state', 'agents.json'), 'utf8'))).toHaveLength(1);
+  expect(JSON.parse(readFileSync(join(root, '.andromedaconsole', 'state', 'agents.json'), 'utf8'))).toHaveLength(1);
 });
 
 it('the generic template offers every profile (no restriction) and no docs', async () => {
@@ -104,7 +104,7 @@ it('the generic template offers every profile (no restriction) and no docs', asy
   const project = projectOf(root);
   expect(project.profiles).toBeUndefined();
   expect(project.docs).toBeUndefined();
-  expect(existsSync(join(root, '.andromedacli', 'profiles'))).toBe(false);
+  expect(existsSync(join(root, '.andromedaconsole', 'profiles'))).toBe(false);
 });
 
 it('refusals: unknown or invalid template, a relative or missing folder', async () => {
@@ -130,7 +130,7 @@ it('a user template is applied with its own files', async () => {
   const root = tmp();
   expect(await applyTemplate(base(root, { templateId: 'my-own', configDir }))).toEqual({ ok: true });
   expect(projectOf(root)).toMatchObject({ testCommand: 'make check', squash: false, secretPatterns: ['*.vault'], model: 'opus', agentTokens: 5000, maxActive: 2 });
-  expect(readFileSync(join(root, '.andromedacli', 'rules.md'), 'utf8')).toBe('My rules.');
-  expect(existsSync(join(root, '.andromedacli', 'main.md'))).toBe(false);
-  expect(readFileSync(join(root, '.andromedacli', 'profiles', 'backend.md'), 'utf8')).toContain('mine');
+  expect(readFileSync(join(root, '.andromedaconsole', 'rules.md'), 'utf8')).toBe('My rules.');
+  expect(existsSync(join(root, '.andromedaconsole', 'main.md'))).toBe(false);
+  expect(readFileSync(join(root, '.andromedaconsole', 'profiles', 'backend.md'), 'utf8')).toContain('mine');
 });

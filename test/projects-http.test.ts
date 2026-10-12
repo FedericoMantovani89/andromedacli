@@ -13,12 +13,12 @@ describe('POST /api/projects', () => {
     writeFileSync(join(java, 'pom.xml'), '<project/>');
     const made = await ui(s, '/api/projects', 'POST', { root: java, auto: true });
     expect(made.status).toBe(201);
-    const project = JSON.parse(readFileSync(join(java, '.andromedacli', 'project.json'), 'utf8'));
+    const project = JSON.parse(readFileSync(join(java, '.andromedaconsole', 'project.json'), 'utf8'));
     expect(project.testCommand).toMatch(/test/);
-    expect(existsSync(join(java, '.andromedacli', 'rules.md'))).toBe(true);
+    expect(existsSync(join(java, '.andromedaconsole', 'rules.md'))).toBe(true);
     const plain = mkdtempSync(join(tmpdir(), 'project-auto-g-'));
     expect((await ui(s, '/api/projects', 'POST', { root: plain, auto: true })).status).toBe(201);
-    expect(existsSync(join(plain, '.andromedacli', 'project.json'))).toBe(true);
+    expect(existsSync(join(plain, '.andromedaconsole', 'project.json'))).toBe(true);
   });
 
   it('copyFrom starts a project with the settings of an open one; copy-settings does it for an open project', async () => {
@@ -27,7 +27,7 @@ describe('POST /api/projects', () => {
     const dir = mkdtempSync(join(tmpdir(), 'project-copy-'));
     const made = await ui(s, '/api/projects', 'POST', { root: dir, name: 'copy-project', copyFrom: 'alpha-project' });
     expect([made.status, made.body.name]).toEqual([201, 'copy-project']);
-    const copied = JSON.parse(readFileSync(join(dir, '.andromedacli', 'project.json'), 'utf8'));
+    const copied = JSON.parse(readFileSync(join(dir, '.andromedaconsole', 'project.json'), 'utf8'));
     expect(copied).toMatchObject({ name: 'copy-project', testCommand: 'make check', model: 'opus', maxActive: 2 });
     const unknown = await ui(s, '/api/projects', 'POST', { root: mkdtempSync(join(tmpdir(), 'project-copy-')), copyFrom: 'nobody-here' });
     expect([unknown.status, unknown.body.code]).toEqual([404, 'project.notFound']);

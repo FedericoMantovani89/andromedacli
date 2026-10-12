@@ -52,8 +52,8 @@ export async function initRepo(root: string): Promise<ApplyResult> {
 
 /**
  * Makes a project from a template (SPEC 21.2): the folder if asked (a repository only on `init`), the template's profiles, main.md and rules.md
- * under `.andromedacli/`, and the project.json fields. Every step is idempotent. The project's own CLAUDE.md is never written: it would
- * dirty the user's checkout and would not reach the worktrees (the rules travel in `.andromedacli/rules.md` instead).
+ * under `.andromedaconsole/`, and the project.json fields. Every step is idempotent. The project's own CLAUDE.md is never written: it would
+ * dirty the user's checkout and would not reach the worktrees (the rules travel in `.andromedaconsole/rules.md` instead).
  */
 export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
   if (!SLUG_RE.test(o.templateId)) return { ok: false, code: 'template.notFound' };
@@ -77,7 +77,7 @@ export async function applyTemplate(o: ApplyOptions): Promise<ApplyResult> {
   }
 
   try {
-    const consoleDir = join(root, '.andromedacli');
+    const consoleDir = join(root, '.andromedaconsole');
     mkdirSync(consoleDir, { recursive: true });
     const profilesSrc = join(template.dir, 'profiles');
     if (existsSync(profilesSrc)) {

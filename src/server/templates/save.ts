@@ -47,7 +47,7 @@ export function saveTemplate(o: {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   writeJsonAtomic(join(dir, 'template.json'), data);
-  const consoleDir = join(o.projectRoot, '.andromedacli');
+  const consoleDir = join(o.projectRoot, '.andromedaconsole');
   for (const f of ['main.md', 'rules.md']) if (existsSync(join(consoleDir, f))) copyFileSync(join(consoleDir, f), join(dir, f));
   const profiles = join(consoleDir, 'profiles');
   if (existsSync(profiles)) {

@@ -25,7 +25,7 @@ async function until(f: () => Promise<boolean> | boolean, ms = 15000): Promise<b
   return false;
 }
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
-const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.andromedacli', 'worktrees', slug);
+const worktreeOf = (t: TestRepo, slug: string): string => join(t.base, 'my repo', '.andromedaconsole', 'worktrees', slug);
 const gitFails = (cwd: string, ...args: string[]): boolean => {
   try { execFileSync('git', args, { cwd, stdio: 'ignore' }); return false; } catch { return true; }
 };
@@ -39,7 +39,7 @@ async function boot(o: { config?: Record<string, unknown>; testCommand?: string 
   const s = await startServer({
     port: 0, projectRoot: t.repo, configDir, projectName: 'shop-api', claudeCommand: [process.execPath, fixture], modDir: null,
   });
-  const projectFile = join(t.repo, '.andromedacli', 'project.json');
+  const projectFile = join(t.repo, '.andromedaconsole', 'project.json');
   writeFileSync(projectFile, JSON.stringify({ ...JSON.parse(readFileSync(projectFile, 'utf8')), testCommand: o.testCommand ?? `node -e "require('fs').writeFileSync('validated.txt','ran')"` }));
   const call = async (token: string | undefined, path: string, method = 'GET', body?: unknown) => {
     const r = await fetch(`${s.url}${path}`, {
@@ -79,8 +79,8 @@ try {
     const started = await spawn('fix-login-timeout');
     check('the start-up splash is shown with the picture and does not take clicks', (await page.evaluate(() => { const el = document.getElementById('splash'); const img = el?.querySelector('img'); return Boolean(el && img && img.complete && img.naturalWidth > 0 && getComputedStyle(el).pointerEvents === 'none'); })) === true);
     check('the splash fades away by itself', await until(async () => await page.locator('#splash').isHidden(), 6000));
-    check('the tab title is the commercial name and the build version', /^AndromedaCli v\d+\.\d+\.\d+/.test(await page.title()), await page.title());
-    check('the splash shows the same version over the picture', (await page.locator('#splash-version').textContent())?.trim() === (await page.title()).replace('AndromedaCli ', ''), String(await page.locator('#splash-version').textContent()));
+    check('the tab title is the commercial name and the build version', /^AndromedaConsole v\d+\.\d+\.\d+/.test(await page.title()), await page.title());
+    check('the splash shows the same version over the picture', (await page.locator('#splash-version').textContent())?.trim() === (await page.title()).replace('AndromedaConsole ', ''), String(await page.locator('#splash-version').textContent()));
     check('spawn in a repository starts the agent', started.json.status === 'started', JSON.stringify(started.json));
     const wt = worktreeOf(t, 'fix-login-timeout');
     const branches = gitSync(t.repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');
@@ -182,7 +182,7 @@ try {
     check('git status is allowed', !(await denied('Bash', { command: 'git status' })));
     check('an edit inside the worktree is allowed', !(await denied('Edit', { file_path: join(wt, 'src', 'a.ts') })));
     check('npm test is allowed', !(await denied('PowerShell', { command: 'npm test' })));
-    const log = readFileSync(join(t.repo, '.andromedacli', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const log = readFileSync(join(t.repo, '.andromedaconsole', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     check('every denial is in guard.jsonl and allows are not', log.length === 6 && log.every((l: any) => l.outcome === 'denied'), String(log.length));
     await s.close();
   }
@@ -191,7 +191,7 @@ try {
     await spawn('fix-login-timeout');
     const r = await guard('fix-login-timeout', 'Bash', { command: 'git push --force' });
     check('shadow mode allows what enforce would deny', r.json.decision === 'allow');
-    const log = readFileSync(join(t.repo, '.andromedacli', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    const log = readFileSync(join(t.repo, '.andromedaconsole', 'state', 'guard.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
     check('and logs it as shadow-allowed', log.length === 1 && log[0].outcome === 'shadow-allowed' && log[0].rule === 'git.force', JSON.stringify(log));
     await s.close();
   }
@@ -248,7 +248,7 @@ try {
     await page.click('button[name="saveOptions"]');
     check('the switch is saved in config.json', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).agents?.bypassPermissions === true));
     check('the guard mode is saved', await until(() => JSON.parse(readFileSync(configFile, 'utf8')).guard?.mode === 'shadow'));
-    check('the test command is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'project.json'), 'utf8')).testCommand === 'npx vitest run'));
+    check('the test command is saved in the project', await until(() => JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'project.json'), 'utf8')).testCommand === 'npx vitest run'));
     check('the bypass change asks whether to restart the sessions', await until(async () => (await page.locator('.restart-dialog').count()) === 1));
     await page.click('button[name="restartNo"]');
     check('No closes the question and the dialog', await until(async () => await page.locator('#overlay').isHidden()));

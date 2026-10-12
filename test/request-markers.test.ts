@@ -30,8 +30,8 @@ it('finds nothing when the comment is gone, and nothing is asked when there are 
 });
 it('ignores the console folder, which names the id in the checklist file', async () => {
   const t = repo();
-  mkdirSync(join(t.repo, '.andromedacli'));
-  writeFileSync(join(t.repo, '.andromedacli', 'checklist.md'), '- [ ] 3. Answer TODO-7f3a15\n');
+  mkdirSync(join(t.repo, '.andromedaconsole'));
+  writeFileSync(join(t.repo, '.andromedaconsole', 'checklist.md'), '- [ ] 3. Answer TODO-7f3a15\n');
   expect(await findMarkers(t.repo, ['TODO-7f3a15'])).toEqual([]);
 });
 it('does not take a failing git for "no comment found"', async () => {

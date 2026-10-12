@@ -19,13 +19,13 @@ async function boot(o: { afterWorktree?: (slug: string) => void | Promise<void> 
   repos.push(t);
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } }, afterWorktreeCreated: o.afterWorktree });
   s.setLimits({ global: 20, perProject: 20 }); // fake agents never report events, so they stay active and would hold the slots
-  const file = join(t.repo, '.andromedacli', 'project.json');
+  const file = join(t.repo, '.andromedaconsole', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   return { s, t };
 }
 const tool = (s: Running, slug: string, name: string, body: unknown = {}) => mod(s, slug, `/v1/tools/${name}`, 'POST', body);
 const inbox = async (s: Running, slug: string): Promise<string[]> => (await mod(s, slug, '/v1/inbox')).body.messages.map((m: { text: string }) => m.text);
-const ticketFile = (t: TestRepo, slug: string): any => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', `${slug}.json`), 'utf8'));
+const ticketFile = (t: TestRepo, slug: string): any => JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'state', 'tickets', `${slug}.json`), 'utf8'));
 const agentsOf = async (s: Running): Promise<any[]> => (await ui(s, '/api/state')).body.agents;
 
 /** The Phase 3 flow, end to end: spawn, checklist, six steps, delivered. */
@@ -70,7 +70,7 @@ it('ticket_report gives the main the console\'s facts and the report text', asyn
   expect(r.body.facts.files.map((f: any) => f.path).sort()).toEqual(['README.md', 'math.js']);
   expect(r.body.report).toContain('## Objective');
   expect(r.body.report).toContain('Fix the login so negative ids are rejected');
-  expect(existsSync(join(t.repo, '.andromedacli', 'tickets', 'fix-login', 'report.md'))).toBe(true);
+  expect(existsSync(join(t.repo, '.andromedaconsole', 'tickets', 'fix-login', 'report.md'))).toBe(true);
   expect((await tool(s, 'shop-api', 'ticket_report', { name: 'nobody' })).body).toMatchObject({ status: 'refused', code: 'not_delivered' });
   expect((await tool(s, 'shop-api', 'ticket_report', {})).body).toEqual({ status: 'error', code: 'bad_request' });
 });
@@ -167,7 +167,7 @@ it('after two rework rounds the third failure puts a decision in the user\'s que
 it('red tests on the delivered commit never reach a reviewer: the console sends the ticket back', async () => {
   const { s, t } = await boot();
   await deliverTicket(s, t);
-  const file = join(t.repo, '.andromedacli', 'project.json');
+  const file = join(t.repo, '.andromedaconsole', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "console.log(\'1 failing\'); process.exit(1)"' }));
   const r = await tool(s, 'shop-api', 'request_review', { name: 'fix-login' });
   expect(r.body).toEqual({ status: 'ok', result: 'sent_back', round: 1 });

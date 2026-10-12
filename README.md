@@ -1,8 +1,8 @@
-# AndromedaCli
+# AndromedaConsole
 
 **Run several Claude Code agents safely: isolated worktrees, budgets, review and controlled merges.**
 
-AndromedaCli is a local web console for [Claude Code](https://docs.claude.com/en/docs/claude-code). On the left it shows a fixed **main** session you talk to. On the right it shows the **agents** the main starts for you: each one a real `claude` terminal, working in its own git worktree on its own branch, with a ticket, a token budget and a review before anything is merged. You stay in charge: agents never push to `main`, never touch each other's files, and anything that needs a human decision lands in one queue.
+AndromedaConsole is a local web console for [Claude Code](https://docs.claude.com/en/docs/claude-code). On the left it shows a fixed **main** session you talk to. On the right it shows the **agents** the main starts for you: each one a real `claude` terminal, working in its own git worktree on its own branch, with a ticket, a token budget and a review before anything is merged. You stay in charge: agents never push to `main`, never touch each other's files, and anything that needs a human decision lands in one queue.
 
 > The repository used to be called `multiconsole` (the old links redirect); your local folder may still carry that name.
 
@@ -12,10 +12,10 @@ AndromedaCli is a local web console for [Claude Code](https://docs.claude.com/en
 
 ## Why
 
-One coding agent can handle a task. Several at once create a different job: who is working, who is waiting for an answer, who is stuck, what it all costs, and whose changes may be merged. AndromedaCli makes that job visible and safe:
+One coding agent can handle a task. Several at once create a different job: who is working, who is waiting for an answer, who is stuck, what it all costs, and whose changes may be merged. AndromedaConsole makes that job visible and safe:
 
 - **See everything.** Real terminals (xterm.js) side by side, with a state dot for each agent (working, waiting for you, idle, blocked, dormant...).
-- **Isolation by default.** Every agent gets `<project>/.andromedacli/worktrees/<name>` on the branch `agent/<project>/<name>`; the console commits each checklist step, runs your tests and pushes only that branch.
+- **Isolation by default.** Every agent gets `<project>/.andromedaconsole/worktrees/<name>` on the branch `agent/<project>/<name>`; the console commits each checklist step, runs your tests and pushes only that branch.
 - **One place to answer.** Questions from agents reach you through the main, so you can answer from the Claude app over Remote Control when you are away. Merge decisions, budget decisions and the release confirmation arrive in the console's queue drawer, with desktop notifications.
 - **A brake that is not the model's good intentions.** A guard checks every file and shell tool call against explicit rules before it runs.
 - **Cost under control.** Per-agent token budgets, loop detection and subscription-limit handling (sleep until the window resets, wake only the main).
@@ -31,7 +31,7 @@ One coding agent can handle a task. Several at once create a different job: who 
 
 ## What you need
 
-- **Windows 10 or 11, and only Windows.** AndromedaCli is built for Windows on purpose: the terminals use ConPTY, the guard understands Windows and PowerShell commands and paths, notifications are native Windows toasts and the folder picker is a native window. There is no support for macOS or Linux, and none is planned.
+- **Windows 10 or 11, and only Windows.** AndromedaConsole is built for Windows on purpose: the terminals use ConPTY, the guard understands Windows and PowerShell commands and paths, notifications are native Windows toasts and the folder picker is a native window. There is no support for macOS or Linux, and none is planned.
 - **Node.js 22 or newer** and **git**.
 - **Claude Code** (`claude`) installed and logged in. Open the folder you will work on once with `claude` so you have accepted its workspace-trust dialog.
 
@@ -40,8 +40,8 @@ One coding agent can handle a task. Several at once create a different job: who 
 ## Quick start
 
 ```bash
-git clone https://github.com/FedericoMantovani89/andromedacli.git
-cd andromedacli
+git clone https://github.com/FedericoMantovani89/andromedaconsole.git
+cd andromedaconsole
 npm ci
 npm run build
 npm run console -- serve

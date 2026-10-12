@@ -119,7 +119,7 @@ async function start(): Promise<void> {
   } catch (e) {
     const t = translator();
     const busy = (e as NodeJS.ErrnoException).code === 'EADDRINUSE';
-    dialog.showErrorBox('AndromedaCli', busy ? t('app.portBusy', { port: PORT }) : errorMessage(e));
+    dialog.showErrorBox('AndromedaConsole', busy ? t('app.portBusy', { port: PORT }) : errorMessage(e));
     app.exit(1);
     return;
   }

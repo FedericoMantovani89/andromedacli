@@ -15,7 +15,7 @@ const quota = (s: Running, percentUsed: number, resetsAt?: string, kind = 'five_
   modEvent(s, 'shop-api', 'quota', { rateLimits: [{ kind, percentUsed, ...(resetsAt ? { resetsAt } : {}) }] });
 const spawn = (s: Running, name: string) => mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'make it work' });
 const agentOf = async (s: Running, slug: string): Promise<any> => (await state(s)).agents.find((a: any) => a.slug === slug);
-const ticketFile = (root: string, slug: string): string => join(root, '.andromedacli', 'state', 'tickets', `${slug}.json`);
+const ticketFile = (root: string, slug: string): string => join(root, '.andromedaconsole', 'state', 'tickets', `${slug}.json`);
 
 async function boot() {
   const fake = fakeSleepClock();

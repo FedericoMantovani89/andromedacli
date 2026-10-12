@@ -10,7 +10,7 @@ web
 Developers who run several Claude Code sessions at once on their own machine and want to see and steer them in one place. Long sessions, many hours in front of the console. Intended to be published as a product for external users.
 
 ## Product Purpose
-AndromedaCli is a local web console that runs and shows several Claude Code sessions: a fixed "main" on the left, manually launched agents on the right. It also handles the user's question queue, review and merge of agent work, budget and quota, multiple projects, notifications, templates and settings. Success: the user always knows which agent is doing what, what needs their answer, and what it costs.
+AndromedaConsole is a local web console that runs and shows several Claude Code sessions: a fixed "main" on the left, manually launched agents on the right. It also handles the user's question queue, review and merge of agent work, budget and quota, multiple projects, notifications, templates and settings. Success: the user always knows which agent is doing what, what needs their answer, and what it costs.
 
 ## Positioning
 One Node process owns every `claude` process; the browser only displays, so closing the tab never touches a session. Agent state comes from structured events, not from reading the terminal.
@@ -26,7 +26,7 @@ Runs on 127.0.0.1 with a per-start token. Real terminals (xterm.js) are the core
 - `npm run check` (literal-string, focus and i18n lints) is the build gate.
 
 ## Brand Commitments
-Commercial name AndromedaCli (the repository was renamed from `multiconsole` to `andromedacli` on 2026-10-12). The user gave total freedom on the visual identity, including the splash image and layout arrangement, as long as the SPEC behaviours above hold.
+Commercial name AndromedaConsole (the repository was renamed from `multiconsole` to `andromedaconsole` on 2026-10-12). The user gave total freedom on the visual identity, including the splash image and layout arrangement, as long as the SPEC behaviours above hold.
 
 ## Evidence on Hand
 Existing UI in `src/ui`, splash image `src/ui/splash.jpg`. No testimonials, customers or benchmarks exist; none must be invented.

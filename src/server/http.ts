@@ -74,7 +74,7 @@ export interface Context extends V1Context {
   reading: ReadingStore;
   /** Last launch arguments per session (a test seam; contains no secrets). */
   launchLog: Map<string, string[]>;
-  /** Where rendered system-prompt files are written (under the project's .andromedacli/state). */
+  /** Where rendered system-prompt files are written (under the project's .andromedaconsole/state). */
   promptsDir: string;
   bypass: boolean;
   language: string;
@@ -85,7 +85,7 @@ export interface Context extends V1Context {
   repos(): string[];
   /** Drops the remembered list of repositories (one was just made). */
   forgetRepos(): void;
-  /** Once per repository: keeps `.andromedacli/` out of its git status and installs the release hook. Never rejects. */
+  /** Once per repository: keeps `.andromedaconsole/` out of its git status and installs the release hook. Never rejects. */
   prepareRepo(path: string): Promise<void>;
   /** Build version (latest tag on main), shown on the splash and in the tab title. */
   version: string;
@@ -171,7 +171,7 @@ function profileNamesOf(projectRoot: string, userDir: string): string[] {
   return names;
 }
 
-/** A folder just became a repository: forget what was known about its repositories and keep `.andromedacli/` out of its status. */
+/** A folder just became a repository: forget what was known about its repositories and keep `.andromedaconsole/` out of its status. */
 async function afterRepoMade(ctx: Pick<Context, 'forgetRepos' | 'prepareRepo' | 'projectRoot' | 'broadcastState'>): Promise<void> {
   ctx.forgetRepos();
   await ctx.prepareRepo(ctx.projectRoot);

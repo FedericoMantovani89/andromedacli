@@ -156,9 +156,9 @@ describe('#queue= deep link', () => {
 
 describe('title counter and browser fallback', () => {
   it('prefixes the number of waiting items and never stacks prefixes', () => {
-    expect(titleWithCount('AndromedaCli v0.0.1', 2)).toBe('(2) AndromedaCli v0.0.1');
-    expect(titleWithCount('(2) AndromedaCli v0.0.1', 3)).toBe('(3) AndromedaCli v0.0.1');
-    expect(titleWithCount('(3) AndromedaCli v0.0.1', 0)).toBe('AndromedaCli v0.0.1');
+    expect(titleWithCount('AndromedaConsole v0.0.1', 2)).toBe('(2) AndromedaConsole v0.0.1');
+    expect(titleWithCount('(2) AndromedaConsole v0.0.1', 3)).toBe('(3) AndromedaConsole v0.0.1');
+    expect(titleWithCount('(3) AndromedaConsole v0.0.1', 0)).toBe('AndromedaConsole v0.0.1');
   });
   it('shows a browser notification only when enabled, granted and the tab is not in front', () => {
     const shown: unknown[] = [];

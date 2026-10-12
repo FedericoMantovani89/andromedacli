@@ -150,11 +150,11 @@ describe('isDocFile', () => {
 let dir: string;
 afterEach(() => { if (dir) removeDir(dir); });
 describe('writeReport', () => {
-  it('writes .andromedacli/tickets/<slug>/report.md and replaces an older one', () => {
+  it('writes .andromedaconsole/tickets/<slug>/report.md and replaces an older one', () => {
     dir = mkdtempSync(join(tmpdir(), 'rep-'));
     const file = writeReport(dir, 'add-multiply', 'first');
     expect(file).toBe(reportPath(dir, 'add-multiply'));
-    expect(file.replace(/\\/g, '/')).toMatch(/\.andromedacli\/tickets\/add-multiply\/report\.md$/);
+    expect(file.replace(/\\/g, '/')).toMatch(/\.andromedaconsole\/tickets\/add-multiply\/report\.md$/);
     writeReport(dir, 'add-multiply', 'second');
     expect(readFileSync(file, 'utf8')).toBe('second');
     expect(existsSync(`${file}.tmp`)).toBe(false);

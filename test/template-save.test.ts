@@ -19,10 +19,10 @@ function workingProject(): string {
   store.setTestCommand('make check');
   store.setSquash(false);
   store.setFields({ buildCommand: 'make', profiles: ['backend'], docs: ['README.md'], secretPatterns: ['*.vault'], model: 'opus', agentTokens: 5000, maxActive: 2 }, ['backend', 'dba', 'frontend']);
-  mkdirSync(join(root, '.andromedacli', 'profiles'), { recursive: true });
-  writeFileSync(join(root, '.andromedacli', 'profiles', 'backend.md'), '---\nname: backend\ndescription: mine\n---\nBODY');
-  writeFileSync(join(root, '.andromedacli', 'rules.md'), 'RULES');
-  writeFileSync(join(root, '.andromedacli', 'main.md'), 'MAIN');
+  mkdirSync(join(root, '.andromedaconsole', 'profiles'), { recursive: true });
+  writeFileSync(join(root, '.andromedaconsole', 'profiles', 'backend.md'), '---\nname: backend\ndescription: mine\n---\nBODY');
+  writeFileSync(join(root, '.andromedaconsole', 'rules.md'), 'RULES');
+  writeFileSync(join(root, '.andromedaconsole', 'main.md'), 'MAIN');
   return root;
 }
 
@@ -49,12 +49,12 @@ it('a later change to the project never touches the template; applying it makes 
   const configDir = tmp();
   saveTemplate({ projectRoot: root, project: new ProjectStore(root).project, configDir, id: 'my-stack' });
   new ProjectStore(root).setTestCommand('changed');
-  writeFileSync(join(root, '.andromedacli', 'rules.md'), 'CHANGED');
+  writeFileSync(join(root, '.andromedaconsole', 'rules.md'), 'CHANGED');
   expect(findTemplate('my-stack', { configDir })!.data!.commands.test).toBe('make check');
   const other = tmp();
   expect(await applyTemplate({ templateId: 'my-stack', root: other, name: 'copy-project', create: false, configDir })).toEqual({ ok: true });
-  expect(JSON.parse(readFileSync(join(other, '.andromedacli', 'project.json'), 'utf8'))).toMatchObject({ name: 'copy-project', testCommand: 'make check', squash: false, profiles: ['backend'] });
-  expect(readFileSync(join(other, '.andromedacli', 'rules.md'), 'utf8')).toBe('RULES');
+  expect(JSON.parse(readFileSync(join(other, '.andromedaconsole', 'project.json'), 'utf8'))).toMatchObject({ name: 'copy-project', testCommand: 'make check', squash: false, profiles: ['backend'] });
+  expect(readFileSync(join(other, '.andromedaconsole', 'rules.md'), 'utf8')).toBe('RULES');
 });
 
 it('refuses a bad id, and an existing one unless overwrite is set', () => {

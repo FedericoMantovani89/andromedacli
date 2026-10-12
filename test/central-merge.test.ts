@@ -69,7 +69,7 @@ it('a ticket merged by the real MergeService is covered by the central run, and 
   await central.idle();
 
   expect(cwds).toHaveLength(1);
-  expect(cwds[0]).not.toBe(join(t.repo, '.andromedacli', 'worktrees', '.project')); // a stable checkout of the tip, not the project worktree
+  expect(cwds[0]).not.toBe(join(t.repo, '.andromedaconsole', 'worktrees', '.project')); // a stable checkout of the tip, not the project worktree
   expect(toAuthor).toHaveLength(1);
   expect(toAuthor[0]!.slug).toBe('a-job');
   expect(toAuthor[0]!.text).toContain('test/a.test.ts');

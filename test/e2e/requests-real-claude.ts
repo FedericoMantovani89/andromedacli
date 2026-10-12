@@ -27,7 +27,7 @@ const { startServer } = await import('../../src/server/index');
 
 const configDir = mkdtempSync(join(tmpdir(), 'real-req-cfg-'));
 writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: 'en', git: { worktrees: false }, claude: { command: ['claude', '--model', 'haiku'] } }));
-rmSync(join(projectRoot, '.andromedacli'), { recursive: true, force: true });
+rmSync(join(projectRoot, '.andromedaconsole'), { recursive: true, force: true });
 for (const f of ['notes.txt', 'result.txt']) rmSync(join(projectRoot, f), { force: true });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -102,7 +102,7 @@ try {
 } finally {
   stopAllowing = true;
   await s.close();
-  rmSync(join(projectRoot, '.andromedacli'), { recursive: true, force: true });
+  rmSync(join(projectRoot, '.andromedaconsole'), { recursive: true, force: true });
   for (const f of ['notes.txt', 'result.txt']) rmSync(join(projectRoot, f), { force: true });
 }
 const failed = results.filter(([, ok]) => !ok).length;

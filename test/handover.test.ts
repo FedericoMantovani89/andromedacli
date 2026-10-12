@@ -13,12 +13,12 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'handover-'));
   wt = join(root, 'wt');
   outside = join(root, 'outside');
-  mkdirSync(join(wt, '.andromedacli'), { recursive: true });
+  mkdirSync(join(wt, '.andromedaconsole'), { recursive: true });
   mkdirSync(outside);
 });
 afterEach(() => { removeDir(root); });
 
-const note = (text: string): void => writeFileSync(join(wt, '.andromedacli', 'handover.md'), text);
+const note = (text: string): void => writeFileSync(join(wt, '.andromedaconsole', 'handover.md'), text);
 
 describe('readHandoverNote', () => {
   it('returns undefined when there is no file', () => {
@@ -53,18 +53,18 @@ describe('readHandoverNote', () => {
     expect(readHandoverNote(wt)).toBe('è'.repeat(4000));
   });
 
-  it('refuses a .andromedacli junction pointing outside the worktree', () => {
+  it('refuses a .andromedaconsole junction pointing outside the worktree', () => {
     writeFileSync(join(outside, 'handover.md'), 'secret');
-    rmSync(join(wt, '.andromedacli'), { recursive: true });
-    symlinkSync(outside, join(wt, '.andromedacli'), 'junction');
+    rmSync(join(wt, '.andromedaconsole'), { recursive: true });
+    symlinkSync(outside, join(wt, '.andromedaconsole'), 'junction');
     expect(readHandoverNote(wt)).toBeUndefined();
   });
 
-  it('accepts a .andromedacli junction that stays inside the worktree', () => {
+  it('accepts a .andromedaconsole junction that stays inside the worktree', () => {
     mkdirSync(join(wt, 'real'));
     writeFileSync(join(wt, 'real', 'handover.md'), 'inside');
-    rmSync(join(wt, '.andromedacli'), { recursive: true });
-    symlinkSync(join(wt, 'real'), join(wt, '.andromedacli'), 'junction');
+    rmSync(join(wt, '.andromedaconsole'), { recursive: true });
+    symlinkSync(join(wt, 'real'), join(wt, '.andromedaconsole'), 'junction');
     expect(readHandoverNote(wt)).toBe('inside');
   });
 });

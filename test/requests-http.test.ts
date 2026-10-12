@@ -19,7 +19,7 @@ async function boot(): Promise<{ s: Running; t: TestRepo }> {
   repos.push(t);
   clock = Date.now();
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } }, requestNow: () => clock, tickMs: 50 });
-  const file = join(t.repo, '.andromedacli', 'project.json');
+  const file = join(t.repo, '.andromedaconsole', 'project.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "process.exit(0)"' }));
   return { s, t };
 }
@@ -112,10 +112,10 @@ it('the requests and the waiting step are written to disk (what a restart reads 
   const { s, t } = await boot();
   await twoAgents(s);
   const id = await ask(s, { step: 3 });
-  const file = join(t.repo, '.andromedacli', 'state', 'requests.json');
+  const file = join(t.repo, '.andromedaconsole', 'state', 'requests.json');
   expect(existsSync(file)).toBe(true);
   expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject([{ id, from: 'fe-pages', to: 'be-orders', state: 'open' }]);
-  expect(JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', 'fe-pages.json'), 'utf8')).steps[2].waitingOn).toEqual({ requestId: id, to: 'be-orders' });
+  expect(JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'state', 'tickets', 'fe-pages.json'), 'utf8')).steps[2].waitingOn).toEqual({ requestId: id, to: 'be-orders' });
 });
 
 it('an asker stopped by the usage limit keeps its request: after the resume the answer still unlocks the waiting step', async () => {
@@ -125,7 +125,7 @@ it('an asker stopped by the usage limit keeps its request: after the resume the 
   await tool(s, 'fe-pages', 'step_done', { n: 2 });
   const id = await ask(s, { step: 3 });
   await modEvent(s, 'fe-pages', 'session.start'); // its session id is recorded, so it can be resumed
-  const ticket = (): string => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', 'fe-pages.json'), 'utf8')).status;
+  const ticket = (): string => JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'state', 'tickets', 'fe-pages.json'), 'utf8')).status;
   await modEvent(s, 'shop-api', 'quota', { rateLimits: [{ kind: 'five_hour', percentUsed: 96 }] });
   await until(() => ticket() === 'suspended_limit');
   await until(async () => (await agent(s, 'fe-pages'))?.status === 'exited');

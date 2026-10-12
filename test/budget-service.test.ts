@@ -355,8 +355,8 @@ describe('BudgetService fix wave', () => {
 
   it('the alert tells the agent where to write the handover note, before the limit refuses writing', async () => {
     const { ALERT_TEXT, HANDOVER_FILE } = await import('../src/server/budget/service');
-    expect(HANDOVER_FILE).toBe('.andromedacli/handover.md');
-    expect(ALERT_TEXT).toContain('.andromedacli/handover.md');
+    expect(HANDOVER_FILE).toBe('.andromedaconsole/handover.md');
+    expect(ALERT_TEXT).toContain('.andromedaconsole/handover.md');
     expect(ALERT_TEXT).toContain('step_done');
   });
 

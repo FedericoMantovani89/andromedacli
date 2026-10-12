@@ -7,8 +7,8 @@ import { ProjectStore } from '../src/server/project-store';
 const repo = () => mkdtempSync(join(tmpdir(), 'project-'));
 it('init creates project.json and an empty agents.json', () => {
   const root = repo(); const s = new ProjectStore(root); s.init('shop-api');
-  expect(existsSync(join(root, '.andromedacli', 'project.json'))).toBe(true);
-  expect(existsSync(join(root, '.andromedacli', 'state', 'agents.json'))).toBe(true);
+  expect(existsSync(join(root, '.andromedaconsole', 'project.json'))).toBe(true);
+  expect(existsSync(join(root, '.andromedaconsole', 'state', 'agents.json'))).toBe(true);
   expect(s.project.name).toBe('shop-api');
   expect(s.listAgents()).toEqual([]);
 });

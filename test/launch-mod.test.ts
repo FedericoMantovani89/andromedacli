@@ -7,11 +7,11 @@ const base = {
 };
 
 it('loads the mod and the profile prompt, with forward-slash paths', () => {
-  const l = buildClaudeLaunch({ ...base, pluginDir: 'D:\\work\\mod', appendPromptFile: 'D:\\work\\.andromedacli\\p.md' });
+  const l = buildClaudeLaunch({ ...base, pluginDir: 'D:\\work\\mod', appendPromptFile: 'D:\\work\\.andromedaconsole\\p.md' });
   const i = l.args.indexOf('--plugin-dir');
   expect(l.args[i + 1]).toBe('D:/work/mod');
   const j = l.args.indexOf('--append-system-prompt-file');
-  expect(l.args[j + 1]).toBe('D:/work/.andromedacli/p.md');
+  expect(l.args[j + 1]).toBe('D:/work/.andromedaconsole/p.md');
 });
 it('omits both flags when not given (fake agents, mod disabled)', () => {
   const l = buildClaudeLaunch(base);

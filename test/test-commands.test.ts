@@ -85,7 +85,7 @@ it('a template saved from a project carries testCommands, and applying and copyi
   expect(t.data!.commands).toMatchObject({ test: 'npm test', testTicket: 'fast', testMerge: 'smoke', testRelease: 'full' });
   const other = folder();
   expect(await applyTemplate({ templateId: 'with-tests', root: other, name: 'copy', create: false, configDir })).toEqual({ ok: true });
-  expect(JSON.parse(readFileSync(join(other, '.andromedacli', 'project.json'), 'utf8')).testCommands).toEqual({ ticket: 'fast', merge: 'smoke', release: 'full' });
+  expect(JSON.parse(readFileSync(join(other, '.andromedaconsole', 'project.json'), 'utf8')).testCommands).toEqual({ ticket: 'fast', merge: 'smoke', release: 'full' });
   const third = folder();
   expect(copyProjectSettings(root, third, 'third')).toEqual({ ok: true });
   expect(new ProjectStore(third).project.testCommands).toEqual({ ticket: 'fast', merge: 'smoke', release: 'full' });

@@ -39,8 +39,8 @@ it('setFields stores, replaces and clears every field, and a bad one changes not
 
 it('fields() is empty for a damaged project.json instead of throwing', () => {
   const root = mkdtempSync(join(tmpdir(), 'pf-'));
-  mkdirSync(join(root, '.andromedacli'));
-  writeFileSync(join(root, '.andromedacli', 'project.json'), '{nope');
+  mkdirSync(join(root, '.andromedaconsole'));
+  writeFileSync(join(root, '.andromedaconsole', 'project.json'), '{nope');
   expect(new ProjectStore(root).fields()).toEqual({});
 });
 
@@ -113,11 +113,11 @@ it('secretPatterns of the project are added to the global ones for the guard', a
 it('budget: the profile beats the project default, which beats the configured one', async () => {
   const t = makeRepo({ remote: true });
   repos.push(t);
-  mkdirSync(join(t.repo, '.andromedacli', 'profiles'), { recursive: true });
-  writeFileSync(join(t.repo, '.andromedacli', 'profiles', 'no-budget.md'), '---\nname: no-budget\ndescription: no budget of its own\n---\nBODY');
+  mkdirSync(join(t.repo, '.andromedaconsole', 'profiles'), { recursive: true });
+  writeFileSync(join(t.repo, '.andromedaconsole', 'profiles', 'no-budget.md'), '---\nname: no-budget\ndescription: no budget of its own\n---\nBODY');
   const s = await bootServer({ projectRoot: t.repo, config: { git: { worktrees: true } } });
   await put(s, { agentTokens: 5000 });
-  const limitOf = (slug: string): number => JSON.parse(readFileSync(join(t.repo, '.andromedacli', 'state', 'tickets', `${slug}.json`), 'utf8')).budget?.limit;
+  const limitOf = (slug: string): number => JSON.parse(readFileSync(join(t.repo, '.andromedaconsole', 'state', 'tickets', `${slug}.json`), 'utf8')).budget?.limit;
   expect((await spawn(s, 'project-default', { profile: 'no-budget' })).body.status).toBe('started');
   await until(() => { try { return limitOf('project-default') !== undefined; } catch { return false; } });
   expect(limitOf('project-default')).toBe(5000);

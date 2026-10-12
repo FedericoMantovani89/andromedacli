@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     });
     const link = server.loginUrl(); // a single-use code, not the token: the address is useless once the page has opened
     console.log(`Console: ${link}`);
-    if (projectRoot) console.log(`Project folder: ${projectRoot} (state in ${join(projectRoot, '.andromedacli')})`);
+    if (projectRoot) console.log(`Project folder: ${projectRoot} (state in ${join(projectRoot, '.andromedaconsole')})`);
     if (!args.noOpen) openBrowser(link);
     const stop = () => { void server.close().then(() => process.exit(0)); };
     process.on('SIGINT', stop);

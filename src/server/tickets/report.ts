@@ -41,10 +41,10 @@ export function isDocFile(path: string): boolean {
 
 export function reportPath(root: string, slug: string): string {
   if (!SLUG_RE.test(slug)) throw new Error('ticket.badSlug');
-  return join(root, '.andromedacli', 'tickets', slug, 'report.md');
+  return join(root, '.andromedaconsole', 'tickets', slug, 'report.md');
 }
 
-/** Writes `.andromedacli/tickets/<slug>/report.md` through a temporary file, so a reader never sees half of it. */
+/** Writes `.andromedaconsole/tickets/<slug>/report.md` through a temporary file, so a reader never sees half of it. */
 export function writeReport(root: string, slug: string, text: string): string {
   const file = reportPath(root, slug);
   mkdirSync(join(file, '..'), { recursive: true });
