@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { parseCliArgs, projectNameFromDir } from './cli-args';
 import { configDir } from './config';
+import { hardenExecutableSearch } from './exe-search';
 import { startServer } from './index';
 import { runDoctor } from './prereq/doctor';
 import { errorMessage } from '../shared/guards';
@@ -14,6 +15,7 @@ function openBrowser(url: string): void {
 }
 
 async function main(): Promise<void> {
+  hardenExecutableSearch(); // `doctor` runs `git --version` too, with the folder it was started in as the working folder
   let args;
   try {
     args = parseCliArgs(process.argv.slice(2), process.cwd());

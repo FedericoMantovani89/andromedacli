@@ -14,6 +14,7 @@ import { ProjectStore, type TestMoment } from './project-store';
 import { testCommandFor } from './test-commands';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
+import { hardenExecutableSearch } from './exe-search';
 import { detectProject } from './templates/detect';
 import { createToken, LoginCodes, SessionTokens } from './security';
 import { AgentRegistry } from './agents/registry';
@@ -1122,6 +1123,7 @@ const sameFolder = (a: string, b: string): boolean => (process.platform === 'win
  * first, then the projects remembered in `<configDir>/projects.json` whose folder still exists; each has its own runtime and main session.
  */
 export async function startServer(o: StartOptions): Promise<RunningServer> {
+  hardenExecutableSearch(); // before the first git or claude is started
   const configPath = join(o.configDir, 'config.json');
   const { config } = loadConfig(configPath);
   const token = createToken();

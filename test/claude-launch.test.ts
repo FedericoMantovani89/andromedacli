@@ -13,6 +13,9 @@ it('sets the console variables and keeps unrelated ones', () => {
     CONSOLE_URL: 'http://127.0.0.1:7391', CONSOLE_TOKEN: 'T', CONSOLE_ROLE: 'main', CONSOLE_AGENT: 'shop-api', KEEP: 'y',
   });
 });
+it('sets NoDefaultCurrentDirectoryInExePath so cmd.exe does not run a claude.cmd that sits in the working folder', () => {
+  expect(buildClaudeLaunch(base).env.NoDefaultCurrentDirectoryInExePath).toBe('1');
+});
 it('strips inherited Claude Code markers (they disable transcript saving)', () => {
   const { env } = buildClaudeLaunch(base);
   expect(env).not.toHaveProperty('CLAUDE_CODE_CHILD_SESSION');

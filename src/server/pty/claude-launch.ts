@@ -33,6 +33,7 @@ export function buildClaudeLaunch(o: LaunchOptions): { file: string; args: strin
   for (const [k, v] of Object.entries(o.baseEnv)) {
     if (v !== undefined && !STRIP.test(k)) env[k] = v;
   }
+  env.NoDefaultCurrentDirectoryInExePath = '1'; // cmd.exe would run a claude.cmd that sits in the working folder before the real one
   env.CONSOLE_URL = o.url;
   env.CONSOLE_TOKEN = o.token;
   env.CONSOLE_ROLE = o.role;
