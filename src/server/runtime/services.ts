@@ -32,6 +32,10 @@ import type { RecoveryService } from '../tickets/recovery';
 import type { BudgetService } from '../budget/service';
 import type { Restrictions } from '../budget/restrictions';
 import type { LoopService } from '../budget/loop-service';
+import type { GuardLog } from '../guard/log';
+import type { Notifier } from '../notify/notifier';
+import type { Presence } from '../notify/presence';
+import type { NotificationService } from '../notify/service';
 import type { Container } from './container';
 import type { Env } from './env';
 
@@ -104,7 +108,14 @@ export interface Services {
   persister: AgentPersister;
   ticketStatusOf: (slug: string) => TicketStatus | undefined;
   onQuotaReading: (rateLimits: unknown) => void;
-  // temporary bridge to a local of createProjectRuntime (removed with the area that takes it over)
+  // http-context (runtime/http-context.ts)
+  broadcast: () => void;
+  guardLog: GuardLog;
+  notifier: Notifier;
+  presence: Presence;
+  notify: NotificationService;
   ctx: Context;
+  // temporary bridge to a local of createProjectRuntime (removed with the area that takes it over)
+  refreshSilence: () => void;
 }
 export type ProjectContainer = Container<Services>;

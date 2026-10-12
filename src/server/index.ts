@@ -5,28 +5,22 @@ import type { AddressInfo } from 'node:net';
 import { createRequestHandler, type Context, type HostContext } from './http';
 import { attachWebSockets } from './ws';
 import { loadBundles, type Bundles } from './i18n-bundles';
-import { loadConfig, type Config } from './config';
+import { loadConfig } from './config';
 import { PROJECT_NAME_RE, ProjectError, type AddProjectOptions, type ProjectsApi } from './projects-api';
 import { projectNameFromDir } from './cli-args';
-import { ModelCatalog } from './catalog/models';
-import { PluginCatalog } from './catalog/plugins';
 import { ProjectStore } from './project-store';
 import { PtyManager } from './pty/pty-manager';
 import { hardenExecutableSearch } from './exe-search';
 import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
 import { createToken, LoginCodes } from './security';
-import { describeKey } from './questions/describe';
 import { appRoot, resourcePath } from './paths';
 import { UiAssets } from './ui-assets';
 import type { UpdateControl } from '../shared/update';
-import { spawnAgent } from './agents/spawn';
 import { TestQueue } from './tickets/test-queue';
 import { createTranslator } from '../shared/i18n';
 import { resolveVersion } from './version';
-import { evaluate } from './guard/rules';
 import { repoPathOf } from './git/repos';
-import { GuardLog } from './guard/log';
 import { HelperUsage, type HelperUse } from './helper-usage';
 import { runChecks, type Runner } from './prereq/checks';
 import type { ProjectTab, PrereqResult } from '../shared/protocol';
@@ -35,12 +29,10 @@ import { QuotaState } from './budget/quota';
 import { SleepTimer, type SleepClock, type SleepState } from './budget/sleep';
 import { writeJsonAtomic } from './fs-atomic';
 import { InstallService, type InstallEntry } from './prereq/install';
-import { NullNotifier, ToastNotifier, type Notifier } from './notify/notifier';
-import { Presence } from './notify/presence';
-import { NotificationService, realNotifyClock, type NotifyClock } from './notify/service';
+import type { Notifier } from './notify/notifier';
+import type { NotifyClock } from './notify/service';
 import { renderRestartNotice, restoreAgents } from './agents/restore';
 import { createFolderPicker, type PickFolderResult } from './pick-folder';
-import { cleanupWorktree } from './git/cleanup';
 import { readJsonFile } from './json-file';
 import { errorMessage } from '../shared/guards';
 import { Container } from './runtime/container';
@@ -50,6 +42,7 @@ import { registerTests } from './runtime/tests';
 import { registerAgents } from './runtime/agents';
 import { registerTicketFlow } from './runtime/ticket-flow';
 import { registerBudget, WAKE_MESSAGE } from './runtime/budget';
+import { registerHttpContext } from './runtime/http-context';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -126,12 +119,8 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
-const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
 /** The one message the main gets when a usage limit resets (SPEC 18.4). */
 export { WAKE_MESSAGE };
-/** How long one step_done request waits for the step (the validation can take tens of minutes): the host cuts a request that stays open for about a minute. */
-const STEP_DONE_WAIT_MS = 15_000;
 
 /** The per-project part of the console: everything bound to one folder (Phase 6C: a project runtime; `startServer` hosts the first one). */
 async function createProjectRuntime(shared: Shared, p: { projectRoot: string; projectName: string }): Promise<ProjectRuntime> {
@@ -145,6 +134,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   registerAgents(c);
   registerTicketFlow(c);
   registerBudget(c);
+  registerHttpContext(c);
   const stateProblems = c.get('stateProblems');
   const store = c.get('store');
   const previousRunWasClean = c.get('previousRunWasClean');
@@ -203,7 +193,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const forgetRepos = c.get('forgetRepos');
   const prepareRepo = c.get('prepareRepo');
   const staleChecker = c.get('staleChecker');
-  const guardLog = new GuardLog(join(o.projectRoot, '.andromedaconsole', 'state', 'guard.jsonl'));
+  const guardLog = c.get('guardLog');
   const steps = c.get('steps');
   // Requests between agents (SPEC 10). Persisted per project: a restart keeps ids, deadlines and the waiting steps.
   const requestStore = c.get('requestStore');
@@ -213,289 +203,15 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const scheduler = c.get('scheduler');
   const launchMain = c.get('launchMain');
   // The port, the prerequisite checks and the language are console-wide (see `shared`); any change pushes to every UI socket.
-  const broadcast = (): void => shared.broadcastAll();
+  const broadcast = c.get('broadcast');
   for (const rel of repos()) await prepareRepo(repoPathOf(o.projectRoot, rel));
 
   // Notifications (SPEC 20): the server raises a native toast for what needs the user, also with the browser closed.
-  const notifyClock = o.notifyClock ?? realNotifyClock;
-  const notifier: Notifier = o.notifier ?? (process.env.CONSOLE_TEST === '1' || process.env.VITEST ? new NullNotifier() : new ToastNotifier());
-  const presence = new Presence(() => notifyClock.now());
-  const notify = new NotificationService({
-    config: () => config.notifications, notifier, presence, clock: notifyClock,
-    translate: () => reportLanguage().t,
-    clickUrl: (itemId) => `http://127.0.0.1:${shared.getPort()}/?code=${shared.loginCode()}&project=${encodeURIComponent(projectName)}${itemId ? `#queue=${encodeURIComponent(itemId)}` : ''}`,
-    isPending: (id) => questions.pending().some((q) => q.id === id),
-    pushBrowser: (m) => shared.pushToProject(projectName, m),
-    changed: () => broadcast(),
-  });
+  const notifier = c.get('notifier');
+  const presence = c.get('presence');
+  const notify = c.get('notify');
 
-  const ctx: Context = {
-    getPort: () => shared.getPort(),
-    utilityPtys: shared.utilityPtys, installer: shared.installer, update: () => o.updates?.state(),
-    notifier, presence, notify,
-    get notificationsConfig() { return config.notifications; },
-    applyNotifications: (n) => { config.notifications = n; },
-    version: o.version ?? resolveVersion(appRoot()),
-    testPosition: (slug) => shared.testQueue.position(slug),
-    testQueue: () => shared.testQueue.snapshot(),
-    stateProblems,
-    token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, requests, launchWatch, review, recovery,
-    budget, restrictions, loop, ledger, quotaState, sleep, wake: waker,
-    afterWorktreeCreated: o.afterWorktreeCreated,
-    get git() { return runtime.git; },
-    get budgetConfig() { return config.budget; },
-    get guardMode() { return runtime.guardMode; },
-    detectedTestCommand,
-    modDir: o.modDir === null ? undefined : (o.modDir ?? (config.mod.enabled ? resourcePath('mod') : undefined)),
-    promptsDir: join(o.projectRoot, '.andromedaconsole', 'state', 'prompts'),
-    guard: (slug, tool, input) => {
-      // Which optional helpers the shell commands use (only counters are kept): the Prerequisites tab shows whether they are used.
-      if ((tool === 'Bash' || tool === 'PowerShell') && typeof input.command === 'string') shared.helperUsage.record(input.command);
-      const rt = registry.get(slug);
-      const role = rt?.role ?? 'agent';
-      // The judge is the caller's own worktree and role, taken from its session: nothing in the request body can change them.
-      const verdict = evaluate({ role: role === 'main' ? 'main' : 'agent', tool, input }, {
-        readOnly: rt?.readOnly === true,
-        worktree: role !== 'main' && rt?.git ? rt.git.worktree : o.projectRoot, repo: o.projectRoot,
-        branch: rt?.git?.branch ?? '', projectBranch: `project/${projectName}`, secretPatterns: secretPatterns(),
-        restricted: restrictions.get(slug),
-      });
-      if (verdict.decision === 'allow') return verdict;
-      const mode = sessionGuardMode.get(slug) ?? runtime.guardMode;
-      const shadow = mode === 'shadow';
-      const detail = [input.command, input.file_path, input.notebook_path, input.path].find((v): v is string => typeof v === 'string') ?? '';
-      guardLog.append({ slug, role: role === 'main' ? 'main' : 'agent', tool, rule: verdict.rule, reason: verdict.reason, mode, outcome: shadow ? 'shadow-allowed' : 'denied', detail });
-      return shadow ? { decision: 'allow' } : verdict;
-    },
-    afterTool: () => broadcast(),
-    // A guard question or a console tool call is a sign of life too: a long turn without events is not a silence.
-    activity: (slug) => { const role = registry.get(slug)?.role; if (role !== undefined && role !== 'main') { loop.detector.onModEvent(slug); refreshSilence(); } },
-    handleModEvent: (slug, e) => {
-      // The account's limits are not agent activity: they never reach the registry nor reset the loop detector's silence. Never awaited.
-      if (e.type === 'quota') {
-        // One reading of the account's limits for every project: each project's service applies the steps to its own agents.
-        for (const r of shared.runtimes) r.onQuota(e.data?.rateLimits);
-        return;
-      }
-      if (e.type === 'session.start') resumedAwaitingStart.delete(slug);
-      // The turn ended: a question its tool call was waiting on (for example an aborted turn) has no asker any more.
-      if (e.type === 'turn.complete') { questions.dropFrom(slug); permissions.forgetPending(slug); }
-      // A sign of life ends a silence before the registry's change is broadcast, or the panel would show the old silence (SPEC 32.2).
-      if (registry.get(slug) !== undefined && registry.get(slug)?.role !== 'main') loop.detector.onModEvent(slug);
-      registry.onModEvent(slug, e);
-      // The assistant's final text of a turn feeds the "read" panel (never read from the terminal).
-      if (e.type === 'turn.complete' && typeof e.data?.answer === 'string') reading.add(slug, e.data.answer);
-      if (e.type === 'turn.start') turns.set(slug, (turns.get(slug) ?? 0) + 1);
-      const isAgent = registry.get(slug)?.role === 'agent';
-      // The budget reads the transcript after each turn, and the loop detector looks at the events it read. Never awaited: the mod must not wait for the console.
-      if (e.type === 'turn.complete' && isAgent) {
-        void (async () => {
-          const events = await budget.onTurnComplete(slug, { sessionId: e.sessionId, turn: turns.get(slug) ?? 0 });
-          await loop.onEvents(slug, events);
-          broadcast();
-        })().catch((err) => budget.reportFailure(slug, err));
-      }
-    },
-    tools: {
-      list_agents: async (caller) => {
-        // The main also sees what only it can settle (escalated requests, questions to it): a restart or a lost message forgets nothing.
-        const held = caller === projectName ? requests.forMain() : [];
-        return {
-          agents: registry.list().map((a) => ({
-            slug: a.slug, profile: a.profile, role: a.role, state: a.state,
-            ...(a.goal ? { goal: a.goal.length > 300 ? `${a.goal.slice(0, 300)}…` : a.goal } : {}),
-            ...(a.state === 'queued' ? { queuedPosition: scheduler.position(a.slug) } : {}),
-            // Where the ticket is when it is not simply being written (suspended, delivered...): the main decides what to resume from it.
-            ...(() => { const t = a.role === 'agent' ? ticketStatusOf(a.slug) : undefined; return t && t !== 'in_progress' ? { ticket: t } : {}; })(),
-          })),
-          ...(held.length > 0 ? { requests: held } : {}),
-        };
-      },
-      resume_agent: async (_slug, body) => {
-        const names = (body as { names?: unknown } | null)?.names;
-        if (!Array.isArray(names) || names.length === 0 || names.length > 50 || !names.every((n): n is string => typeof n === 'string' && n !== '')) {
-          return { status: 'error', code: 'bad_request' };
-        }
-        return resumer.resume(names);
-      },
-      // Phase 6A, SPEC 9.9: the console saves the work, pushes the branch and only then removes the folder; never a branch.
-      worktree_cleanup: async (_slug, body) => {
-        const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; action?: unknown };
-        if (typeof b.name !== 'string' || b.name === '' || b.action !== 'remove') return { status: 'error', code: 'bad_request' };
-        return cleanupWorktree({
-          repo: registry.get(b.name)?.git?.repo ?? resolve(o.projectRoot), project: projectName, secretPatterns: secretPatterns(),
-          agentGit: (s) => (registry.get(s)?.role === 'agent' ? registry.get(s)?.git : undefined),
-          // A running agent, one waiting for a slot, or one under review (its branch must not move) is never touched.
-          isActive: (s) => ptys.status(s) === 'running' || registry.get(s)?.state === 'queued' || ticketStatusOf(s) === 'in_review',
-          removed: (s) => { registry.setGit(s, undefined); store.updateAgent(s, { worktree: undefined, stale: undefined }); broadcast(); },
-        }, b.name);
-      },
-      ask_user: async (slug, body) => {
-        const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
-        if (typeof b.question !== 'string' || b.question.trim() === '') return { status: 'error', code: 'bad_request' };
-        const options = Array.isArray(b.options) ? b.options.filter((o): o is string => typeof o === 'string').slice(0, 8).map((o) => o.slice(0, 200)) : undefined;
-        const permission = b.kind === 'permission';
-        const tool = typeof b.tool === 'string' ? b.tool : '';
-        // The whole input as the mod saw it ("always" is exact). No key (the input was too long to keep): never remembered.
-        const key = typeof b.key === 'string' ? b.key : '';
-        // What the user is shown is built here from that key, so it is the call that gets remembered, not a text the client chose.
-        const detail = (key !== '' ? describeKey(key) : undefined) ?? (typeof b.detail === 'string' ? b.detail : '');
-        // SPEC 32.3: an "always" answer given earlier for this exact call is answered at once, never shown (the guard still runs separately).
-        const known = permission ? permissions.recall(slug, tool, key) : undefined;
-        if (known) return questions.answerNow({ from: slug }, known);
-        let askedId = '';
-        const asked = questions.ask({
-          from: slug, text: b.question, options: options && options.length > 0 ? options : undefined, multiSelect: b.multiSelect === true,
-          kind: permission ? 'permission' : 'question',
-          tool: tool || undefined, detail: detail || undefined, canRemember: key.trim() !== '',
-        }, permission ? (answer) => {
-          permissions.untrack(askedId);
-          const verdict = answer === 'allow_always' ? 'allow' : answer === 'deny_always' ? 'deny' : undefined;
-          if (!verdict) return;
-          permissions.remember(slug, tool, key, verdict);
-          // Identical requests of the same agent already waiting (parallel tool calls) get the same answer.
-          for (const sibling of permissions.siblings(slug, tool, key, askedId)) { permissions.untrack(sibling); questions.answer(sibling, verdict); }
-        } : undefined);
-        askedId = asked.id;
-        if (permission) permissions.track(asked.id, slug, tool, key);
-        return asked;
-      },
-      checklist_set: async (slug, body) => {
-        const items = (body as { items?: unknown } | null)?.items;
-        if (!Array.isArray(items)) return { status: 'error', code: 'bad_request' };
-        // A restricted agent may only close its step: a new checklist would let it escape the restriction with an empty step.
-        if (restrictions.get(slug)) return { status: 'refused', code: 'restricted' };
-        return steps.checklistSet(slug, items as string[]);
-      },
-      step_done: async (slug, body) => {
-        const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
-        if (typeof b.n !== 'number' || !Number.isInteger(b.n)) return { status: 'error', code: 'bad_request' };
-        return steps.stepDone(slug, {
-          n: b.n, note: typeof b.note === 'string' ? b.note : undefined, skip: b.skip === true,
-        }, { waitMs: STEP_DONE_WAIT_MS }); // longer than this and the host drops the request; the mod asks again on "running"
-      },
-      send_message: async (slug, body) => requests.send(slug, body),
-      report_blocked: async (slug, body) => {
-        const reason = (body as { reason?: unknown } | null)?.reason;
-        if (typeof reason !== 'string' || reason.trim() === '') return { status: 'error', code: 'bad_request' };
-        steps.reportBlocked(slug, reason.trim().slice(0, 500));
-        return { status: 'ok' };
-      },
-      ticket_report: async (_slug, body) => {
-        const name = (body as { name?: unknown } | null)?.name;
-        if (typeof name !== 'string' || name === '') return { status: 'error', code: 'bad_request' };
-        const r = await review.ticketReport(name, { rerun: (body as { rerun?: unknown }).rerun === true });
-        return r.ok ? { status: 'ok', facts: r.facts, report: r.report, reportFile: r.reportFile } : { status: 'refused', code: r.code, ...(r.detail ? { detail: r.detail } : {}) };
-      },
-      request_review: async (_slug, body) => {
-        const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; model?: unknown };
-        if (typeof b.name !== 'string' || b.name === '') return { status: 'error', code: 'bad_request' };
-        const r = await review.requestReview(b.name, { model: typeof b.model === 'string' && b.model !== '' ? b.model : undefined });
-        if (!r.ok) return { status: 'refused', code: r.code, ...(r.detail ? { detail: r.detail } : {}) };
-        const { ok: _ok, status: result, ...rest } = r;
-        return { status: 'ok', result, ...rest };
-      },
-      send_back_ticket: async (_slug, body) => {
-        const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; note?: unknown };
-        if (typeof b.name !== 'string' || b.name === '' || typeof b.note !== 'string') return { status: 'error', code: 'bad_request' };
-        const r = await review.sendBack(b.name, b.note);
-        if (!r.ok) return { status: 'refused', code: r.code };
-        const { ok: _ok, status: result, ...rest } = r;
-        return { status: 'ok', result, ...rest };
-      },
-      review_verdict: async (slug, body) => {
-        const r = await review.reviewVerdict(slug, body);
-        if (!r.ok) return r.code === 'bad_request' ? { status: 'error', code: 'bad_request' } : { status: 'refused', code: r.code };
-        const { ok: _ok, ...rest } = r;
-        return { status: 'ok', ...rest };
-      },
-      propose_release: async () => release.proposeRelease(),
-      start_recovery: async (_slug, body) => {
-        const name = (body as { name?: unknown } | null)?.name;
-        if (typeof name !== 'string' || name === '') return { status: 'error', code: 'bad_request' };
-        const r = await recovery.start(name);
-        if (!r.ok) return { status: 'refused', code: r.code, ...(r.detail ? { detail: r.detail } : {}) };
-        const { ok: _ok, ...rest } = r;
-        return { status: 'ok', ...rest };
-      },
-      recovery_report: async (slug, body) => {
-        const r = await recovery.report(slug, body);
-        if (!r.ok) return r.code === 'bad_request' ? { status: 'error', code: 'bad_request' } : { status: 'refused', code: r.code };
-        const { ok: _ok, ...rest } = r;
-        return { status: 'ok', ...rest };
-      },
-      merge_ticket: async (_slug, body) => {
-        const name = (body as { name?: unknown } | null)?.name;
-        if (typeof name !== 'string' || name === '') return { status: 'error', code: 'bad_request' };
-        return merge.mergeTicket(name);
-      },
-      spawn_agent: async (_slug, body) => {
-        const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
-        if (typeof b.name !== 'string' || typeof b.profile !== 'string' || typeof b.goal !== 'string' || b.goal.trim() === '') {
-          return { status: 'error', code: 'bad_request' };
-        }
-        // An optional token budget for this ticket: an integer between 1000 and 100 000 000, anything else is refused.
-        if (b.budget !== undefined && !(typeof b.budget === 'number' && Number.isInteger(b.budget) && b.budget >= 1000 && b.budget <= 100_000_000)) {
-          return { status: 'error', code: 'bad_request' };
-        }
-        const out = await spawnAgent(ctx, { slug: b.name, profile: b.profile, goal: b.goal, model: typeof b.model === 'string' ? b.model : undefined, source: 'main', ...(b.budget !== undefined ? { budget: b.budget as number } : {}), ...(typeof b.repo === 'string' ? { repo: b.repo } : {}) });
-        if (!out.ok) return { status: 'error', code: out.code, ...(out.params ? { params: out.params } : {}) };
-        return out.status === 'started' ? { status: 'started', name: out.slug } : { status: 'queued', name: out.slug, position: out.position };
-      },
-    },
-    projectName,
-    projectRoot: o.projectRoot,
-    claudeCommand: o.claudeCommand ?? config.claude.command,
-    ...(o.prereqRunner ? { commandRunner: o.prereqRunner } : {}),
-    get bypass() { return runtime.bypass; },
-    get language() { return shared.language(); },
-    bundles,
-    testMode: process.env.CONSOLE_TEST === '1',
-    configPath,
-    repos, forgetRepos, prepareRepo,
-    getPrereq: () => shared.getPrereq(),
-    getHelperUse: () => shared.helperUsage.state(),
-    ensurePrereq: () => shared.ensurePrereq(),
-    refreshPrereq: () => shared.refreshPrereq(),
-    setLanguage: (l) => { shared.setLanguage(l); },
-    applySettings: (s) => {
-      if (s.bypass !== undefined) runtime.bypass = s.bypass;
-      if (s.guardMode !== undefined) runtime.guardMode = s.guardMode;
-    },
-    noteLaunch: (slug) => {
-      sessionGuardMode.set(slug, runtime.guardMode);
-      return { bypass: runtime.bypass };
-    },
-    needsSetup: () => !existsSync(configPath),
-    broadcastState: () => broadcast(),
-    projects: shared.projectsApi,
-    models: new ModelCatalog({ configDir: o.configDir, config: () => config.models }),
-    plugins: new PluginCatalog({ configDir: o.configDir, config: () => config.plugins }),
-    applyConfig: (next, applied) => {
-      // In place, per sub-object: closures that read `config.budget` / `runtime.git` keep seeing the live object.
-      if (isPlain(applied.agents)) {
-        // The request settings are read on every use (RequestService deps), so copying them is enough.
-        for (const key of ['maxActiveGlobal', 'maxActivePerProject', 'requestTimeoutMinutes', 'requestMaxHops'] as const) {
-          if (key in applied.agents) config.agents[key] = next.agents[key];
-        }
-        limits.global = config.agents.maxActiveGlobal;
-        limits.perProject = config.agents.maxActivePerProject;
-        for (const r of shared.runtimes) r.parts.scheduler.release();
-      }
-      if (isPlain(applied.budget)) {
-        const { loop, quota, ...flat } = next.budget;
-        Object.assign(config.budget, flat);
-        Object.assign(config.budget.loop, loop);
-        Object.assign(config.budget.quota, quota);
-      }
-      if (isPlain(applied.git)) {
-        for (const key of Object.keys(applied.git) as (keyof Config['git'])[]) Object.assign(runtime.git, { [key]: next.git[key] });
-      }
-      if (isPlain(applied.models)) Object.assign(config.models, next.models);
-      if (isPlain(applied.plugins)) Object.assign(config.plugins, next.plugins);
-    },
-  };
-  c.provide('ctx', () => ctx);
+  const ctx = c.get('ctx');
 
   // The HTTP and WebSocket servers are console-wide (see `startServer`); a reading entry goes to the sockets of this project only.
   reading.on((slug, entry) => shared.pushToProject(projectName, { type: 'reading', slug, entry }));
@@ -544,6 +260,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     silenceShown = now;
     broadcast();
   };
+  c.provide('refreshSilence', () => refreshSilence);
   // Only the grace period can move a budget step without a turn: checked on a timer that never keeps the process alive.
   const budgetTick = setInterval(() => {
     void budget.tick().catch((err) => budget.reportFailure('all agents', err));
