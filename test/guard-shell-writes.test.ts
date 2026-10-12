@@ -45,6 +45,14 @@ describe('bash: writes outside the worktree', () => {
     [`cp f.txt ${WT}/sub/`, 'ALLOW'],
     ['cp ../shared/a.txt .', 'ALLOW'],
     ['npm test 2>&1 | tee test.log', 'ALLOW'],
+    // A link is written where its name is, not where it points (`ln -s ../node_modules node_modules`).
+    ['ln -s ../shared link', 'ALLOW'],
+    [`ln -s a ${OUT}/link`, OUTSIDE_RULE],
+    // Standard streams are not files; `&>` and `>&` redirect both streams to a file.
+    ['echo x > /dev/stderr', 'ALLOW'],
+    ['npm test &> out.txt', 'ALLOW'],
+    [`npm test &> ${OUT}/o.txt`, OUTSIDE_RULE],
+    [`npm test >& ${OUT}/o.txt`, OUTSIDE_RULE],
     // Windows cmd switches (`/s`, `/q`) are not paths.
     ['rd /s /q dist', 'ALLOW'],
     ['del /q /f out.txt', 'ALLOW'],
@@ -67,6 +75,7 @@ describe('powershell: writes outside the worktree', () => {
     ['Set-Content out.txt "/some/text"', 'ALLOW'],
     ['Set-Content -Path out.txt -Value "C:\\Windows\\x"', 'ALLOW'],
     ['Push-Location src; Set-Content a.txt hi', 'ALLOW'],
+    ['mklink /D link ..\\shared', 'ALLOW'],
     ['Get-Content src\\a.ts', 'ALLOW'],
   ];
   it.each(rows)('%s -> %s', (c, e) => expect(verdict(c, { tool: 'PowerShell' })).toBe(e));

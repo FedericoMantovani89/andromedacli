@@ -13,7 +13,9 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, 'g')
 export function runValidation(o: { cwd: string; command: string; timeoutMs: number; signal?: AbortSignal }): Promise<ValidationResult> {
   return new Promise((resolve) => {
     if (o.signal?.aborted) return resolve({ ok: false, code: null, tail: '', cancelled: true });
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('CONSOLE_')));
+    // Not passed on: the console's own variables, and its protection of the program search (see exe-search.ts). The project's
+    // command is written for a plain Windows shell, where `mvnw.cmd test` finds mvnw.cmd in the project folder.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('CONSOLE_') && k.toLowerCase() !== 'nodefaultcurrentdirectoryinexepath'));
     let out = '';
     let timedOut = false;
     let cancelled = false;

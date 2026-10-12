@@ -2,7 +2,13 @@ import { tmpdir } from 'node:os';
 import { isInside } from './paths';
 import { commandName } from './shell';
 
-const NULL_TARGET = /^(\/dev\/null|nul|\$null|&\d+)$/i;
+/** Not files: the null devices and the standard streams. */
+const NULL_TARGET = /^(\/dev\/(null|stdout|stderr|tty)|nul|\$null|&\d+)$/i;
+/** `>`, `>>`, `2>`, `&>`, `>&`: a redirection whose target is the next word. */
+const OP = /^(?:\d*|&)>>?&?$/;
+/** `>file`, `2>file`, `&>file`, `>>file`, `>&file` (but not `2>&1`): the target is attached. */
+const ATTACHED = /^(?:\d*|&)>>?([^&>].*)$/;
+const ATTACHED_AMP = /^>&([^\d&>].*)$/;
 const isFlag = (t: string): boolean => /^-/.test(t);
 const PATH_PARAMS = /^-(path|filepath|literalpath|destination)$/i;
 const VALUE_PARAMS = /^-(value|encoding|itemtype|stream|inputobject)$/i;
@@ -11,16 +17,17 @@ const SWITCH = /^\/[A-Za-z?][A-Za-z0-9:,.-]*$/;
 
 /** Commands that write, move or delete every non-flag word they are given. */
 const ALL = new Set([
-  'tee', 'touch', 'mkdir', 'md', 'ln', 'mklink',
+  'tee', 'touch', 'mkdir', 'md',
   'rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'unlink',
   'mv', 'move', 'move-item', 'mi',
 ]);
 /** Commands whose first word is the file written; the words after it are values (`Set-Content f.txt text`). */
 const FIRST = new Set([
   'set-content', 'sc', 'add-content', 'ac', 'out-file', 'clear-content', 'clc', 'new-item', 'ni', 'rename-item', 'ren', 'rni',
+  'mklink', // `mklink [/D] link target`: the link is written, not the target
 ]);
-/** Copy commands: only the last word, the destination, is written. */
-const LAST = new Set(['cp', 'copy', 'copy-item', 'cpi']);
+/** Copy commands: only the last word, the destination, is written. `ln -s target link`: the link is the last word. */
+const LAST = new Set(['cp', 'copy', 'copy-item', 'cpi', 'ln']);
 /** `xcopy src dst`, `robocopy src dst`: the second word. */
 const SECOND = new Set(['xcopy', 'robocopy']);
 
@@ -29,8 +36,10 @@ export function redirectTargets(argv: string[]): string[] {
   const out: string[] = [];
   const rest = argv.slice(1);
   rest.forEach((t, i) => {
-    if (/^\d*>>?$/.test(t) && rest[i + 1] !== undefined) out.push(rest[i + 1]!);
-    else if (/^\d*>>?[^&>]/.test(t)) out.push(t.replace(/^\d*>>?/, ''));
+    const next = rest[i + 1];
+    if (OP.test(t)) { if (next !== undefined && !/^\d+$/.test(next)) out.push(next); return; }
+    const attached = ATTACHED.exec(t) ?? ATTACHED_AMP.exec(t);
+    if (attached) out.push(attached[1]!);
   });
   return out;
 }
@@ -44,8 +53,8 @@ export function writeTargets(argv: string[]): string[] {
   let named = false;
   for (let i = 0; i < rest.length; i++) {
     const t = rest[i]!;
-    if (/^\d*>>?$/.test(t)) { i++; continue; } // a redirect operator and its target (already collected)
-    if (/^\d*>>?[^&>]/.test(t) || /^\d*>&/.test(t)) continue;
+    if (OP.test(t)) { i++; continue; } // a redirect operator and its target (already collected)
+    if (/^(?:\d*|&)?>/.test(t)) continue; // a redirection with its target attached (collected above)
     if (VALUE_PARAMS.test(t)) { i++; continue; }
     if (PATH_PARAMS.test(t)) { if (rest[i + 1] !== undefined) { out.push(rest[i + 1]!); named = true; } i++; continue; }
     if (isFlag(t)) continue;
