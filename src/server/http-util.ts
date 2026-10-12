@@ -22,8 +22,7 @@ export function readRaw(req: IncomingMessage, limit: number): Promise<{ bytes: B
       if (size > limit) { tooLarge = true; chunks.length = 0; } else if (!tooLarge) chunks.push(c);
     });
     req.on('end', () => resolve({ bytes: Buffer.concat(chunks), tooLarge }));
-    req.on('error', reject);
-  });
+    req.on('error', reject);  });
 }
 
 /** Reads a JSON body of at most `limit` bytes; rejects on oversize or malformed JSON. */

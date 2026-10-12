@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJsonAtomic } from '../fs-atomic';
 import { readJsonState, setAside, type StateReport } from '../json-file';
@@ -65,6 +65,11 @@ export class TicketStore {
     if (s.status !== 'ok') return undefined;
     const t = s.value as Ticket | null;
     if (typeof t !== 'object' || t === null || !Array.isArray(t.steps)) { setAside(file, this.report); return undefined; } // a damaged file must not take the console down
+    if (t.slug !== slug) { const healed = { ...t, slug }; writeJsonAtomic(file, healed); return this.normalize(healed); } // a crash between the move and the rewrite of a rename
+    return this.normalize(t);
+  }
+
+  private normalize(t: Ticket): Ticket {
     // Phase 3 files have no pipeline fields.
     return { ...t, round: typeof t.round === 'number' ? t.round : 0, recoveries: typeof t.recoveries === 'number' ? t.recoveries : 0, verdicts: Array.isArray(t.verdicts) ? t.verdicts : [] };
   }
@@ -206,9 +211,8 @@ export class TicketStore {
     const t = this.existing(from);
     const target = this.file(to);
     if (existsSync(target)) throw new Error('ticket.exists');
-    const moved = this.save({ ...t, slug: to });
-    rmSync(this.file(from), { force: true });
-    return moved;
+    renameSync(this.file(from), target); // the file moves first (one atomic rename), then the slug inside it follows
+    return this.save({ ...t, slug: to });
   }
 
   progress(slug: string): TicketProgress | undefined {

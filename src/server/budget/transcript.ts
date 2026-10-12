@@ -37,6 +37,17 @@ function textOf(content: unknown): string {
  * Turns the Claude Code transcript (a JSONL file) into usage, tool and compaction events. Deterministic: no model reads it.
  * It remembers a byte offset per file and the message ids already counted: the same id appears on one line per content block.
  */
+export const MAX_SEEN = 5000;
+/** Remembers a counted message id; past the limit the oldest ones are forgotten (an id repeats only within a short stretch of the file). */
+export function remember(seen: Set<string>, id: string): void {
+  seen.add(id);
+  while (seen.size > MAX_SEEN) {
+    const oldest = seen.values().next().value;
+    if (oldest === undefined) break;
+    seen.delete(oldest);
+  }
+}
+
 export class TranscriptReader {
   private readonly state = new Map<string, { offset: number; seen: Set<string> }>();
 
@@ -76,7 +87,7 @@ export class TranscriptReader {
         if (!isObj(row)) continue;
         this.collect(row, events, usageIndex, st.seen);
       }
-      for (const e of events) if (e.kind === 'usage') st.seen.add(e.messageId);
+      for (const e of events) if (e.kind === 'usage') remember(st.seen, e.messageId);
       return { ok: true, events };
     } catch (err) {
       const code = err instanceof Error && 'code' in err && err.code === 'ENOENT' ? 'missing' : 'unreadable';

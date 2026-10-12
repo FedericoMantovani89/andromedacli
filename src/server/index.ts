@@ -820,7 +820,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
         const b = (typeof body === 'object' && body !== null ? body : {}) as { name?: unknown; action?: unknown };
         if (typeof b.name !== 'string' || b.name === '' || b.action !== 'remove') return { status: 'error', code: 'bad_request' };
         return cleanupWorktree({
-          repo: registry.get(b.name)?.git?.repo ?? resolve(o.projectRoot), project: projectName, secretPatterns: runtime.git.secretPatterns,
+          repo: registry.get(b.name)?.git?.repo ?? resolve(o.projectRoot), project: projectName, secretPatterns: secretPatterns(),
           agentGit: (s) => (registry.get(s)?.role === 'agent' ? registry.get(s)?.git : undefined),
           // A running agent, one waiting for a slot, or one under review (its branch must not move) is never touched.
           isActive: (s) => ptys.status(s) === 'running' || registry.get(s)?.state === 'queued' || ticketStatusOf(s) === 'in_review',
