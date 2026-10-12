@@ -10,6 +10,7 @@ change that introduces the behaviour.
 
 ### Changed
 - Internal: the assembly of a project is now a typed container with one file per area (state, tests, agents, tickets, budget, http), instead of one 900-line function; behavior is unchanged.
+- The page is served with a Content-Security-Policy (own scripts only, connections to this server only, no framing), `nosniff` and no referrer.
 - Internal: the project folder is canonicalised (8.3 short names expanded) when a project opens and before git worktree paths are compared; the POSIX-only branches of the ticket test runner are gone.
 - `npm run test:ticket` finds the `project/<name>` branch by itself (`TICKET_BASE` overrides it); `start-console.bat` is now in the repository and uses `--project-root`; `node-notifier` is 11 (no `uuid` advisory); the mod manifest author is `andromedaconsole`.
 - Internal: everything that depends on undocumented Claude Code details (launch flags, transcript files, tested version) now lives in `src/server/claude-code/`; `test/e2e/claude-contract.ts` checks it against the real `claude` (version, flags, mod validation). The mod is type-checked in `npm run check` when Claude Code has written its types beside it.

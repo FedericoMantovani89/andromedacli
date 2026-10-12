@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { createToken, tokensEqual, isAllowedHost, isAllowedOrigin, extractToken, LoginCodes } from '../src/server/security';
+import { createToken, tokensEqual, isAllowedHost, isAllowedOrigin, extractToken, LoginCodes, PAGE_CSP } from '../src/server/security';
 
 it('creates distinct url-safe tokens of at least 32 chars', () => {
   const a = createToken(), b = createToken();
@@ -49,4 +49,11 @@ it('keeps at most `max` login codes alive: the oldest goes first', () => {
   expect(codes.redeem(a)).toBe(false);
   expect(codes.redeem(b)).toBe(true);
   expect(codes.redeem(c)).toBe(true);
+});
+it('the page policy allows no foreign origin, no inline script and no framing', () => {
+  expect(PAGE_CSP).toContain("script-src 'self'");
+  expect(PAGE_CSP).not.toMatch(/script-src[^;]*unsafe/);
+  expect(PAGE_CSP).toContain("frame-ancestors 'none'");
+  expect(PAGE_CSP).toContain("object-src 'none'");
+  expect(PAGE_CSP).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/);
 });

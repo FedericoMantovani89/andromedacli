@@ -5,7 +5,7 @@ import { buildClaudeLaunch } from './claude-code/launch';
 import { PtyManager } from './pty/pty-manager';
 import { ProjectStore } from './project-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';
-import { extractToken, isAllowedHost, isAllowedOrigin, tokensEqual, type LoginCodes } from './security';
+import { extractToken, PAGE_CSP, isAllowedHost, isAllowedOrigin, tokensEqual, type LoginCodes } from './security';
 import { validateSlug } from '../shared/slug';
 import { type HostInfo, type ProjectTab, type PrereqResult, type SessionInfo, type StateMessage } from '../shared/protocol';
 import { applyConfigPatch, loadConfig } from './config';
@@ -301,7 +301,7 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     if (req.method === 'GET' && path === '/') {
       const index = host.assets.get('index.html');
       if (!index) return fail(res, 404, 'not_found');
-      res.writeHead(200, { 'content-type': index.type, 'cache-control': 'no-cache' }); // the page carries the version and links the hashed chunks
+      res.writeHead(200, { 'content-type': index.type, 'cache-control': 'no-cache', 'content-security-policy': PAGE_CSP, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); // the page carries the version and links the hashed chunks
       res.end(renderIndex(index.body.toString('utf8'), host.version));
       return;
     }

@@ -77,3 +77,13 @@ export function extractToken(headers: IncomingHttpHeaders, url: URL): string | u
   if (auth?.startsWith('Bearer ')) return auth.slice(7);
   return url.searchParams.get('token') ?? undefined;
 }
+
+/**
+ * Content-Security-Policy of the page: only the console's own scripts run (no inline script, no eval, no foreign origin), the page
+ * talks only to this server (HTTP and WebSocket) and cannot be framed. Inline styles stay allowed: the terminal and the markdown view
+ * set them. `blob:` serves the microphone recording of the dictation.
+ */
+export const PAGE_CSP = [
+  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", "media-src 'self' blob:",
+  "connect-src 'self' ws://127.0.0.1:* ws://localhost:*", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');
