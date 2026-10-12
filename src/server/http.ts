@@ -43,6 +43,7 @@ import type { LoopService } from './budget/loop-service';
 import type { Ledger } from './budget/ledger';
 import type { QuotaState } from './budget/quota';
 import type { SleepTimer } from './budget/sleep';
+import type { StateProblems } from './state-problems';
 import { handleDictationRoute } from './dictation-api';
 import { typeIntoSession } from './dictation';
 import { failProject, handleProjectsRoute, type ProjectsApi } from './projects-api';
@@ -108,6 +109,8 @@ export interface Context extends V1Context {
   quotaState: QuotaState;
   /** Sleep until a usage limit lifts (SPEC 18.4). */
   sleep: SleepTimer;
+  /** What this project's stores set aside because they could not read it (listed in the state until dismissed). */
+  stateProblems: StateProblems;
   /** Console-wide terminals that are not agent sessions (assisted installs, Phase 6F); served on /ws/term/<id> after the project's own. */
   utilityPtys: PtyManager;
   /** Assisted installation of prerequisites: console-wide, one install at a time. */
@@ -260,6 +263,7 @@ export function buildState(ctx: Context): StateMessage {
     queue: ctx.questions.pending(),
     ...(ctx.projects ? { projects: ctx.projects.list() } : {}),
     notifications: { toast: ctx.notify.toast(), config: ctx.notificationsConfig },
+    ...(() => { const p = ctx.stateProblems.list(); return p.length > 0 ? { stateProblems: p } : {}; })(),
   };
 }
 
@@ -432,6 +436,12 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
     }
 
     // "Resume now": one probe at once instead of waiting for the reset time. The token check above already ran.
+    if (req.method === 'POST' && path === '/api/state-problems/dismiss') {
+      ctx.stateProblems.clear();
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     if (req.method === 'POST' && path === '/api/sleep/resume') {
       ctx.sleep.resumeNow();
       res.writeHead(204);

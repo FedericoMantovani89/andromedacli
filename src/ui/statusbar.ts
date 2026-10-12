@@ -7,6 +7,8 @@ import { bindText, k, setTitle, t } from './i18n-client';
 interface Bar {
   /** Shown while agents run without permission prompts (bypass). */
   bypass: HTMLElement;
+  /** Shown while a state file the console could not read sits set aside; a click dismisses all of them. */
+  problem: HTMLElement;
   budget: HTMLElement;
   quota: HTMLElement;
   /** A newer version of the desktop app (SPEC 33.4): the text and the one button of the phase (download, or restart). */
@@ -39,6 +41,12 @@ function build(el: HTMLElement): Bar {
   bypass.hidden = true;
   bindText(bypass, k('statusbar.bypass'));
   setTitle(bypass, k('settings.bypass.warning'));
+  const problem = document.createElement('button');
+  problem.type = 'button';
+  problem.className = 'statusbar-problem';
+  problem.hidden = true;
+  problem.addEventListener('mousedown', (ev) => ev.preventDefault()); // clicking never takes the keyboard from where it is
+  problem.addEventListener('click', () => { void api('/api/state-problems/dismiss', { method: 'POST' }).catch(() => undefined); });
   const budget = span();
   // The project has no budget of its own (only agents and tickets do): no limit is set, which reads as infinite, not as "n/a".
   budget.append(label(k('statusbar.budget')), gap(), label(k('statusbar.budgetUnlimited')));
@@ -68,14 +76,14 @@ function build(el: HTMLElement): Bar {
   archived.className = 'statusbar-archived';
   archived.hidden = true;
   archived.addEventListener('mousedown', (ev) => ev.preventDefault());
-  const bar: Bar = { bypass, budget, quota, update, updateBtn, sleep, resume, agents, archived, suspended };
+  const bar: Bar = { bypass, problem, budget, quota, update, updateBtn, sleep, resume, agents, archived, suspended };
   archived.addEventListener('click', () => openArchiveDialog(() => bar.latest));
   updateBtn.addEventListener('click', () => {
     if (bar.updateAction) void api(`/api/update/${bar.updateAction}`, { method: 'POST' }).catch(() => undefined);
   });
   // The update chip is the last thing in the bar, at its far right edge (margin-left: auto on the text in styles.css).
   update.className = 'statusbar-update-text';
-  el.replaceChildren(bypass, budget, quota, sleep, resume, agents, archived, suspended, update, updateBtn);
+  el.replaceChildren(bypass, problem, budget, quota, sleep, resume, agents, archived, suspended, update, updateBtn);
   return bar;
 }
 
@@ -141,6 +149,9 @@ export function renderStatusBar(el: HTMLElement, state: StateMessage): void {
   const bar = bars.get(el) ?? build(el);
   bars.set(el, bar);
   bar.bypass.hidden = !state.settings?.bypassPermissions;
+  const newest = state.stateProblems?.[state.stateProblems.length - 1];
+  bar.problem.hidden = newest === undefined;
+  if (newest) bindText(bar.problem, 'statusbar.stateProblem', { file: newest.file, movedTo: newest.movedTo });
   // The quota percent is absent when unknown: n/a, never zero.
   bar.quota.replaceChildren();
   if (state.quota && Number.isFinite(state.quota.percent)) {

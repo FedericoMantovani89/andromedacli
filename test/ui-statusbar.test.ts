@@ -74,7 +74,7 @@ describe('sleep indicator and the resume button', () => {
     renderStatusBar(el, make());
     const sleep = byKey(el, 'statusbar.sleep');
     expect(sleep).toBeUndefined();
-    const button = el.querySelector<HTMLButtonElement>('button')!;
+    const button = el.querySelector<HTMLButtonElement>('.statusbar-resume')!;
     expect(button.hidden).toBe(true); // nothing to resume without a sleep
     expect(button.disabled).toBe(true);
     renderStatusBar(el, make({ sleep: { until: '2026-10-05T12:00:05.000Z', phase: 'sleeping', attempt: 0, weekly: false } }));
@@ -100,7 +100,7 @@ describe('sleep indicator and the resume button', () => {
     expect(byKey(el, 'statusbar.sleepWeekly')).toBeDefined();
     renderStatusBar(el, make({ sleep: { phase: 'probing', attempt: 1, weekly: false } }));
     expect(byKey(el, 'statusbar.sleepProbing')).toBeDefined();
-    expect(el.querySelector<HTMLButtonElement>('button')!.disabled).toBe(true);
+    expect(el.querySelector<HTMLButtonElement>('.statusbar-resume')!.disabled).toBe(true);
     renderStatusBar(el, make());
   });
   it('an unknown time is n/a, never a made-up one', () => {
@@ -114,7 +114,7 @@ describe('sleep indicator and the resume button', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { method?: string }) => { calls.push({ url, method: init.method }); return { status: 204, json: async () => { throw new Error('empty'); } }; }));
     const el = document.createElement('div');
     renderStatusBar(el, make({ sleep: { until: '2026-10-05T12:00:05.000Z', phase: 'sleeping', attempt: 0, weekly: false } }));
-    el.querySelector<HTMLButtonElement>('button')!.click();
+    el.querySelector<HTMLButtonElement>('.statusbar-resume')!.click();
     await new Promise((r) => setTimeout(r, 0));
     expect(calls).toEqual([{ url: '/api/sleep/resume', method: 'POST' }]);
     renderStatusBar(el, make());
@@ -122,11 +122,11 @@ describe('sleep indicator and the resume button', () => {
   it('the nodes are stable across pushes (a focused button is never replaced)', () => {
     const el = document.createElement('div');
     renderStatusBar(el, make());
-    const button = el.querySelector('button');
+    const button = el.querySelector('.statusbar-resume');
     const children = [...el.children];
     renderStatusBar(el, make({ quota: { percent: 80, kind: 'five_hour' }, sleep: { until: '2026-10-05T12:00:05.000Z', phase: 'sleeping', attempt: 0, weekly: false } }));
     renderStatusBar(el, make());
-    expect(el.querySelector('button')).toBe(button);
+    expect(el.querySelector('.statusbar-resume')).toBe(button);
     expect([...el.children]).toEqual(children);
   });
 });
@@ -150,7 +150,7 @@ describe('fix wave', () => {
     const el = document.createElement('div');
     renderStatusBar(el, make({ sleep: { until: '2026-10-05T12:00:05.000Z', phase: 'sleeping', attempt: 0, weekly: false } }));
     const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-    el.querySelector<HTMLButtonElement>('button')!.dispatchEvent(ev);
+    el.querySelector<HTMLButtonElement>('.statusbar-resume')!.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
     renderStatusBar(el, make());
   });
@@ -201,5 +201,45 @@ describe('update item (SPEC 33.4)', () => {
     const ev = new MouseEvent('mousedown', { cancelable: true, bubbles: true });
     buttons(el)[0]!.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
+  });
+});
+
+describe('state problems', () => {
+  const problem = (file: string, movedTo: string) => ({ file, movedTo, at: '2026-10-12T10:00:00.000Z' });
+
+  it('shows nothing when no file was set aside', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make());
+    expect(el.querySelector<HTMLElement>('.statusbar-problem')!.hidden).toBe(true);
+  });
+
+  it('shows the newest problem with its file and where it went (Review Focus 5)', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make({ stateProblems: [problem('a.json', 'a.json.corrupt-1'), problem('.andromedaconsole/state/agents.json', '.andromedaconsole/state/agents.json.corrupt-2')] }));
+    const chip = el.querySelector<HTMLElement>('.statusbar-problem')!;
+    expect(chip.hidden).toBe(false);
+    expect(chip.dataset.i18n).toBe('statusbar.stateProblem');
+    expect(params(chip)).toEqual({ file: '.andromedaconsole/state/agents.json', movedTo: '.andromedaconsole/state/agents.json.corrupt-2' });
+  });
+
+  it('clicking it asks the console to forget all of them, and a mousedown never moves the keyboard', async () => {
+    const calls: { url: string; method?: string }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: { method?: string }) => { calls.push({ url, method: init.method }); return { status: 204, json: async () => { throw new Error('empty'); } }; }));
+    const el = document.createElement('div');
+    renderStatusBar(el, make({ stateProblems: [problem('a.json', 'a.json.corrupt-1')] }));
+    const chip = el.querySelector<HTMLElement>('.statusbar-problem')!;
+    const down = new MouseEvent('mousedown', { cancelable: true });
+    chip.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    chip.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([{ url: '/api/state-problems/dismiss', method: 'POST' }]);
+  });
+
+  it('is hidden again when the list is empty', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make({ stateProblems: [problem('a.json', 'a.json.corrupt-1')] }));
+    renderStatusBar(el, make());
+    expect(el.querySelector<HTMLElement>('.statusbar-problem')!.hidden).toBe(true);
   });
 });

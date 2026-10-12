@@ -728,6 +728,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
     version: o.version ?? resolveVersion(appRoot()),
     testPosition: (slug) => shared.testQueue.position(slug),
     testQueue: () => shared.testQueue.snapshot(),
+    stateProblems,
     token, ptys, store, tokens, inbox, registry, scheduler, launchLog, questions, reading, tickets, steps, requests, launchWatch, review, recovery,
     budget, restrictions, loop, ledger, quotaState, sleep, wake: waker,
     afterWorktreeCreated: o.afterWorktreeCreated,

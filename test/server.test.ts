@@ -372,3 +372,13 @@ it('serves the page with the build version in the tab title and over the splash'
   expect(html).toMatch(/<span id="splash-version">v\d+\.\d+\.\d+[^<]*<\/span>/);
   expect(html).not.toContain('%VERSION%');
 });
+
+it('a damaged agents.json is set aside at start, listed in the state, and dismissed by the page', async () => {
+  const s = await boot(goodRunner, { agentsJson: '[{"slug":"a-1"' });
+  const before = await request(s, '/api/state');
+  expect(before.body.stateProblems).toHaveLength(1);
+  expect(before.body.stateProblems[0]).toMatchObject({ file: '.andromedaconsole/state/agents.json' });
+  expect(before.body.stateProblems[0].movedTo).toMatch(/^\.andromedaconsole\/state\/agents\.json\.corrupt-/);
+  expect((await request(s, '/api/state-problems/dismiss', { method: 'POST' })).status).toBe(204);
+  expect((await request(s, '/api/state')).body.stateProblems).toBeUndefined();
+});

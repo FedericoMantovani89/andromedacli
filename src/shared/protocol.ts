@@ -121,6 +121,8 @@ export interface StateMessage {
   update?: UpdateState;
   /** Phase 6B: whether a native toast can be shown (`unknown` until checked, shown as n/a) and the notification settings. */
   notifications?: { toast: ToastStatus; config: NotificationsConfig };
+  /** State files the console could not read and set aside (newest last); absent when there are none. The page offers to dismiss them. */
+  stateProblems?: { file: string; movedTo: string; at: string }[];
 }
 
 /** One tab: `waiting` is the length of that project's queue (a dot when above zero). */
