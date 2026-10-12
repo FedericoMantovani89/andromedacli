@@ -31,9 +31,9 @@ const TEMPLATE_SUFFIX = /\.(example|sample|template|dist)$/i;
 const FILE_READERS = new Set([
   'cat', 'type', 'less', 'more', 'head', 'tail', 'cp', 'copy', 'mv', 'move', 'scp', 'get-content', 'gc', 'select-string', 'sls',
   'grep', 'egrep', 'fgrep', 'rg', 'base64', 'xxd', 'od', 'strings', 'sed', 'awk', 'tar', 'zip', '7z', 'compress-archive',
-  'source', '.', 'copy-item', 'cpi', 'move-item', 'mi', 'xcopy', 'robocopy', 'bat', 'nl', 'tac', 'cut', 'sort', 'diff', 'cmp',
+  'source', '.', 'copy-item', 'cpi', 'move-item', 'mi', 'xcopy', 'robocopy', 'bat', 'nl', 'tac', 'cut', 'sort', 'diff', 'cmp', 'findstr',
 ]);
-const PATTERN_FIRST = new Set(['grep', 'egrep', 'fgrep', 'rg', 'select-string', 'sls', 'sed', 'awk']);
+const PATTERN_FIRST = new Set(['grep', 'egrep', 'fgrep', 'rg', 'select-string', 'sls', 'sed', 'awk', 'findstr']);
 const WRITERS = new Set([
   'cp', 'copy', 'mv', 'move', 'rm', 'del', 'erase', 'tee', 'sed', 'set-content', 'sc', 'out-file', 'add-content', 'ac',
   'new-item', 'ni', 'remove-item', 'ri', 'copy-item', 'cpi', 'move-item', 'mi', 'touch', 'mkdir', 'rd', 'rmdir', 'ln', 'xcopy', 'echo',
@@ -213,17 +213,32 @@ function secretTargets(argv: string[]): string[] {
   const isGit = name === 'git';
   if (FILE_READERS.has(name) || (isGit && ['add', 'show', 'diff', 'blame'].includes(parseGit(argv).sub))) {
     let args = isGit ? parseGit(argv).args : rest;
-    args = args.filter((t) => !isFlag(t) && !/^\d*>/.test(t) && !/^&?>/.test(t));
+    args = args.filter((t) => !isFlag(t) && !/^\d*>/.test(t) && !/^&?>/.test(t) && !(name === 'findstr' && /^\/[A-Za-z](:.*)?$/.test(t)));
     if (PATTERN_FIRST.has(name) && !argv.some((t) => t === '-e' || t === '-f' || t === '--regexp')) args = args.slice(1);
     out.push(...args);
+    // `git show HEAD:.env` names the file after the colon (a one-letter "revision" is a drive letter, not a revision).
+    if (isGit) out.push(...args.map((a) => /^[^:\\/]{2,}:(.+)$/.exec(a)?.[1]).filter((x): x is string => x !== undefined));
   }
   return out;
 }
 
+/** A name as Windows sees it: no alternate data stream (`.env::$DATA`, `.env:x`), and no trailing dots or spaces (`.env.`, `.env `). */
+export function normalizeSecretPath(raw: string): string {
+  const p = raw.replace(/^["']|["']$/g, '');
+  const cut = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+  const dir = p.slice(0, cut + 1);
+  let name = p.slice(cut + 1);
+  const colon = name.indexOf(':');
+  if (colon > 0) name = name.slice(0, colon);
+  const trimmed = name.replace(/[. ]+$/, '');
+  return dir + (trimmed === '' ? name : trimmed);
+}
+
 const isSecret = (path: string, patterns: string[]): boolean => {
-  const base = baseName(path.replace(/^["']|["']$/g, ''));
+  const p = normalizeSecretPath(path);
+  const base = baseName(p);
   if (TEMPLATE_SUFFIX.test(base)) return false;
-  return findSecrets([path.replace(/^["']|["']$/g, '')], patterns).length > 0;
+  return findSecrets([p], patterns).length > 0;
 };
 
 /** `.git/hooks/...` and the console's own `console-hooks` folder (the release token lives there). */
