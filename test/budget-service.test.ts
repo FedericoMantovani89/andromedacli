@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BudgetService, type BudgetDeps } from '../src/server/budget/service';
 import { Ledger } from '../src/server/budget/ledger';
-import { TranscriptReader } from '../src/server/budget/transcript';
+import { TranscriptReader } from '../src/server/claude-code/transcript';
 import { TicketStore } from '../src/server/tickets/store';
 import { DEFAULT_CONFIG } from '../src/server/config';
 import { budgetAnswerHandler } from '../src/server/budget/answers';

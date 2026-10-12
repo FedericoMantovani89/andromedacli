@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
-import { buildClaudeLaunch } from './pty/claude-launch';
+import { buildClaudeLaunch } from './claude-code/launch';
 import { PtyManager } from './pty/pty-manager';
 import { ProjectStore } from './project-store';
 import { bundlePayload, type Bundles } from './i18n-bundles';

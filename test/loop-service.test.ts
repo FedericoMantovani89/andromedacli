@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { LoopDetector } from '../src/server/budget/loop-detector';
 import { LoopService, type LoopDeps } from '../src/server/budget/loop-service';
 import { Restrictions } from '../src/server/budget/restrictions';
-import type { TranscriptEvent } from '../src/server/budget/transcript';
+import type { TranscriptEvent } from '../src/server/claude-code/transcript';
 import { callSignature } from '../src/server/guard/rules';
 import { DEFAULT_CONFIG } from '../src/server/config';
 import { TicketStore } from '../src/server/tickets/store';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LoopDetector, type LoopConfig } from '../src/server/budget/loop-detector';
 import { callSignature } from '../src/server/guard/rules';
-import type { TranscriptEvent } from '../src/server/budget/transcript';
+import type { TranscriptEvent } from '../src/server/claude-code/transcript';
 
 const MIN = 60_000;
 const CFG: LoopConfig = { sameCall: 5, sameError: 3, compactions: 2, stepMinutes: 30, silenceMinutes: 5 };

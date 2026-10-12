@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Context } from '../http';
-import { buildClaudeLaunch, SESSION_ID_RE } from '../pty/claude-launch';
+import { buildClaudeLaunch, SESSION_ID_RE } from '../claude-code/launch';
 import { hasGitignore } from '../git/gitignore';
 import { helperToolsText } from '../helper-tools';
 import { loadProfile, renderAgentPrompt, type Profile } from '../profiles';

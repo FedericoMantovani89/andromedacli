@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 
 process.env.CONSOLE_TEST = '1';
 const { startServer } = await import('../../src/server/index');
-const { transcriptPath } = await import('../../src/server/budget/transcript');
+const { transcriptPath } = await import('../../src/server/claude-code/transcript');
 
 const root = resolve(import.meta.dirname, '..', '..');
 const fixture = join(root, 'test', 'fixtures', 'fake-agent.cjs').replace(/\\/g, '/');

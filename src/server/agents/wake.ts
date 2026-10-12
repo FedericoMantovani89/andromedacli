@@ -1,5 +1,5 @@
 import type { AgentRegistry } from './registry';
-import { SESSION_ID_RE } from '../pty/claude-launch';
+import { SESSION_ID_RE } from '../claude-code/launch';
 
 export type WakeReason = 'user' | 'work' | 'main';
 

@@ -4,7 +4,7 @@ import { LaunchWatch } from '../agents/launch-watch';
 import { AgentRegistry } from '../agents/registry';
 import { Scheduler } from '../agents/scheduler';
 import { failQueuedStart, launchAgent } from '../agents/spawn';
-import { defaultProjectsDir, transcriptPath } from '../budget/transcript';
+import { defaultProjectsDir, transcriptPath } from '../claude-code/transcript';
 import type { QuotaStep } from '../budget/quota';
 import { discoverRepos, repoPathOf } from '../git/repos';
 import { GitignoreAsked, hasGitignore } from '../git/gitignore';
@@ -13,7 +13,7 @@ import { commonDir, excludeConsoleFolder, removeWorktree } from '../git/worktree
 import { installReleaseHook } from '../git/release-hook';
 import { helperToolsText } from '../helper-tools';
 import { languageName, listProfileNames, pickableProfiles, renderMainPrompt } from '../profiles';
-import { buildClaudeLaunch, SESSION_ID_RE } from '../pty/claude-launch';
+import { buildClaudeLaunch, SESSION_ID_RE } from '../claude-code/launch';
 import { readHandoverNote } from '../tickets/handover';
 import { PtyManager } from '../pty/pty-manager';
 import { SessionTokens } from '../security';

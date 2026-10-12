@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { buildClaudeLaunch } from '../src/server/pty/claude-launch';
+import { buildClaudeLaunch } from '../src/server/claude-code/launch';
 
 const base = {
   command: ['claude'], role: 'main' as const, slug: 'shop-api', project: 'shop-api',

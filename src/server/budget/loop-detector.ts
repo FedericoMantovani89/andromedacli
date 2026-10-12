@@ -1,5 +1,5 @@
 import { callSignature } from '../guard/rules';
-import type { TranscriptEvent } from './transcript';
+import type { TranscriptEvent } from '../claude-code/transcript';
 
 export type LoopSignal = 'same_call' | 'same_error' | 'compactions' | 'no_step' | 'silence';
 export interface LoopFinding {

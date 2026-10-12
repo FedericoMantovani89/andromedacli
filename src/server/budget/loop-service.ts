@@ -1,6 +1,6 @@
 import type { TicketStore } from '../tickets/store';
 import type { LoopDetector, LoopFinding } from './loop-detector';
-import type { TranscriptEvent } from './transcript';
+import type { TranscriptEvent } from '../claude-code/transcript';
 import { KeyedQueue } from '../keyed-queue';
 import { errorMessage } from '../../shared/guards';
 import { MainTeller } from '../main-teller';

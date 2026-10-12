@@ -1,6 +1,6 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { UsageEvent } from './transcript';
+import type { UsageEvent } from '../claude-code/transcript';
 
 export interface LedgerEntry {
   ts: string; project: string;

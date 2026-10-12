@@ -2,7 +2,7 @@ import { appendFileSync, copyFileSync, mkdtempSync, rmSync, truncateSync, writeF
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { encodeProjectDir, pickTranscript, TranscriptReader, transcriptPath } from '../src/server/budget/transcript';
+import { encodeProjectDir, pickTranscript, TranscriptReader, transcriptPath } from '../src/server/claude-code/transcript';
 
 const sample = join(__dirname, 'fixtures', 'transcript-sample.jsonl');
 const tmp = () => mkdtempSync(join(tmpdir(), 'h-tr-'));

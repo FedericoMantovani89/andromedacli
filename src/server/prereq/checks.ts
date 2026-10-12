@@ -16,8 +16,7 @@ export type Runner = (cmd: string, args: string[], timeoutMs: number) => Promise
 
 /** Minimum versions (SPEC 29.3; Node minimum decided in Phase 1, SPEC 27.21). */
 export const MINIMUM = { node: '22', claude: '2.1.287' } as const;
-/** The newest Claude Code a real contract run (the `test/e2e/*-real-claude.ts` scripts) was last made with: a newer one works until proven otherwise, and `doctor` says it is untested. */
-export const TESTED_CLAUDE_MAX = '2.1.294';
+export { TESTED_CLAUDE_MAX } from '../claude-code/compat';
 const CHECK_TIMEOUT_MS = 8000;
 
 export function compareVersions(a: string, b: string): number {

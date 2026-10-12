@@ -5,7 +5,7 @@ import type { AgentRecord } from '../project-store';
 import type { AgentRegistry, Role } from './registry';
 import type { TicketStore, Ticket } from '../tickets/store';
 import { canMove, type TicketStatus } from '../tickets/flow';
-import { SESSION_ID_RE } from '../pty/claude-launch';
+import { SESSION_ID_RE } from '../claude-code/launch';
 
 export type InterruptedReason = 'no_worktree' | 'no_session' | 'turn_lost';
 export interface RestoredAgent { slug: string; ticket?: TicketStatus }

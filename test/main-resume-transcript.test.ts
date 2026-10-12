@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { transcriptPath } from '../src/server/budget/transcript';
+import { transcriptPath } from '../src/server/claude-code/transcript';
 import { bootServer, until } from './helpers';
 
 const SID = '7487d159-b5c4-4f4f-8624-992be7e584c7';

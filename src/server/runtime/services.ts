@@ -11,7 +11,7 @@ import type { RequestStore } from '../requests/store';
 import type { LaunchWatch } from '../agents/launch-watch';
 import type { Scheduler } from '../agents/scheduler';
 import type { QuotaService, QuotaStep } from '../budget/quota';
-import type { TranscriptReader } from '../budget/transcript';
+import type { TranscriptReader } from '../claude-code/transcript';
 import type { ResumeService, WakeResult } from '../agents/resume';
 import type { WakeService } from '../agents/wake';
 import type { AgentPersister } from '../agents/persist';

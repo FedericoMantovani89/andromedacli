@@ -1,7 +1,7 @@
 import type { BudgetConfig } from '../config';
 import type { TicketStore } from '../tickets/store';
 import type { AgentRegistry } from './registry';
-import { SESSION_ID_RE } from '../pty/claude-launch';
+import { SESSION_ID_RE } from '../claude-code/launch';
 import { errorMessage } from '../../shared/guards';
 import { MainTeller } from '../main-teller';
 

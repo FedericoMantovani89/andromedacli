@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { autoClose, bootServer, mod, modEvent, state, ui, until, type Running } from './helpers';
 import { gitSync, makeRepo, removeDir, type TestRepo, worktreePathFor } from './git-helpers';
-import { transcriptPath } from '../src/server/budget/transcript';
+import { transcriptPath } from '../src/server/claude-code/transcript';
 import { ALERT_TEXT } from '../src/server/budget/service';
 import { CONSOLE_FROM } from '../src/server/questions/queue';
 

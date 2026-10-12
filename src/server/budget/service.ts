@@ -1,7 +1,7 @@
 import type { BudgetConfig } from '../config';
 import type { TicketStore } from '../tickets/store';
 import { turnEntry, type Ledger, type LedgerScope } from './ledger';
-import type { ToolUseEvent, TranscriptEvent, TranscriptReader, UsageEvent } from './transcript';
+import type { ToolUseEvent, TranscriptEvent, TranscriptReader, UsageEvent } from '../claude-code/transcript';
 import { KeyedQueue } from '../keyed-queue';
 import { errorMessage } from '../../shared/guards';
 import { MainTeller } from '../main-teller';

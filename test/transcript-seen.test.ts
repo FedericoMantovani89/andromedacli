@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { MAX_SEEN, remember } from '../src/server/budget/transcript';
+import { MAX_SEEN, remember } from '../src/server/claude-code/transcript';
 
 it('remembers the ids it was given', () => {
   const seen = new Set<string>();

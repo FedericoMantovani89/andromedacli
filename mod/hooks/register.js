@@ -6,7 +6,13 @@
 // Safety: the mod only acts when it was launched by the console (CONSOLE_URL and CONSOLE_TOKEN set). No hook ever
 // throws into the session; a failure is swallowed and the session carries on as if the mod were not there.
 
+/** @typedef {import('claude-code').EngineInterface} Engine */
+/** @typedef {any} Ev an event as the engine delivers it (its fields differ per event name) */
+/** @typedef {(e: Ev) => any} Next */
+/** @typedef {(engine: Engine, e: Ev, next: Next) => any} Hook */
+
 let started = false; // the poller and the tools are set up once per process, even if session.start fires again
+/** @type {{ url: string, token: string, role: string, agent: string, sid: string } | null} */
 let ctx = null; // { url, token, role, agent, sid } once session.start has run inside a console session
 
 const POLL_MS = 2000;
@@ -14,9 +20,10 @@ const QUESTION_WAIT_SECONDS = 15; // each long-poll stays short; the loop below 
 const MAX_CONSOLE_FAILURES = 20; // consecutive unreachable-console answers before a waiting tool gives up
 
 /** Calls the console. Never throws: returns { ok, status, json } or { ok: false } when it is unreachable. */
-async function call($, method, path, body) {
+async function call(/** @type {Engine} */ $, /** @type {string} */ method, /** @type {string} */ path, /** @type {unknown} */ body = undefined) {
   if (!ctx) return { ok: false };
   try {
+    /** @type {Record<string, string>} */
     const headers = { authorization: 'Bearer ' + ctx.token };
     if (body !== undefined) headers['content-type'] = 'application/json';
     const r = await $.http.fetch(ctx.url + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -28,12 +35,13 @@ async function call($, method, path, body) {
   }
 }
 
-async function postEvent($, type, data) {
+async function postEvent(/** @type {Engine} */ $, /** @type {string} */ type, /** @type {unknown} */ data) {
+  if (!ctx) return;
   await call($, 'POST', '/v1/events', { type, sessionId: ctx.sid, data });
 }
 
 /** Delivers the console's messages (goals, answers) as new turns; acknowledges before injecting so none repeats. */
-function startInboxPoll($) {
+function startInboxPoll(/** @type {Engine} */ $) {
   let busy = false;
   $.clock.every(POLL_MS, async () => {
     if (busy || !ctx) return;
@@ -54,6 +62,7 @@ function startInboxPoll($) {
   });
 }
 
+/** @type {Record<string, string[]>} */
 const TOOLS_BY_ROLE = {
   main: ['spawn_agent', 'list_agents', 'send_message', 'ticket_report', 'request_review', 'send_back_ticket', 'merge_ticket', 'propose_release', 'start_recovery', 'resume_agent', 'worktree_cleanup'],
   agent: ['list_agents', 'send_message', 'checklist_set', 'step_done', 'report_blocked'],
@@ -61,6 +70,7 @@ const TOOLS_BY_ROLE = {
   recovery: ['list_agents', 'recovery_report'],
 };
 
+/** @type {Record<string, { description: string, inputSchema: any }>} */
 const TOOL_SPECS = {
   spawn_agent: {
     description: 'Launch a new agent for one activity. Returns { status: "started" | "queued", position? } or an error code. '
@@ -228,13 +238,16 @@ const TOOL_SPECS = {
   },
 };
 
-async function registerRoleTools($) {
+async function registerRoleTools(/** @type {Engine} */ $) {
+  if (!ctx) return;
   for (const name of TOOLS_BY_ROLE[ctx.role] || []) {
-    await $.tool.register({ name, description: TOOL_SPECS[name].description, inputSchema: TOOL_SPECS[name].inputSchema });
+    const spec = TOOL_SPECS[name];
+    if (!spec) continue;
+    await $.tool.register({ name, description: spec.description, inputSchema: spec.inputSchema });
   }
 }
 
-async function onSessionStart($, e, next) {
+async function onSessionStart(/** @type {Engine} */ $, /** @type {Ev} */ e, /** @type {Next} */ next) {
   try {
     const url = await $.env.get('CONSOLE_URL');
     const token = await $.env.get('CONSOLE_TOKEN');
@@ -258,7 +271,7 @@ async function onSessionStart($, e, next) {
   return next(e);
 }
 
-async function onSimpleEvent($, type, data, e, next) {
+async function onSimpleEvent(/** @type {Engine} */ $, /** @type {string} */ type, /** @type {unknown} */ data, /** @type {Ev} */ e, /** @type {Next} */ next) {
   try {
     if (ctx) await postEvent($, type, data);
   } catch (err) { /* never into the session */ }
@@ -266,7 +279,7 @@ async function onSimpleEvent($, type, data, e, next) {
 }
 
 /** Waits for the human's answer with short long-polls, so no single call is long and nothing hangs forever. */
-async function askConsole($, question, options, multiSelect, extra) {
+async function askConsole(/** @type {Engine} */ $, /** @type {string} */ question, /** @type {string[] | undefined} */ options, /** @type {boolean} */ multiSelect, /** @type {Record<string, unknown> | undefined} */ extra = undefined) {
   const created = await call($, 'POST', '/v1/tools/ask_user', { question, options, multiSelect, ...extra });
   if (!created.ok || !created.json || !created.json.id) return { ok: false, reason: 'the console is not reachable' };
   const id = created.json.id;
@@ -286,7 +299,7 @@ async function askConsole($, question, options, multiSelect, extra) {
 }
 
 /** What each console tool sends: only the fields the console knows, never the whole event. */
-function toolBody(name, e) {
+function toolBody(/** @type {string} */ name, /** @type {Ev} */ e) {
   if (name === 'spawn_agent') return { name: e.name, profile: e.profile, goal: e.goal, model: e.model, repo: e.repo };
   if (name === 'send_message') return { to: e.to, type: e.type, text: e.text, in_reply_to: e.in_reply_to, step: typeof e.step === 'string' ? Number(e.step) : e.step, because: e.because };
   if (name === 'checklist_set') return { items: e.items };
@@ -308,7 +321,7 @@ function toolBody(name, e) {
  * The validation can take tens of minutes and the host drops a request that stays open that long. The console runs it on its own and
  * answers each request within seconds with "running"; asking again joins the same run. A lost answer is asked again too.
  */
-async function stepDoneUntilEnd($, e) {
+async function stepDoneUntilEnd(/** @type {Engine} */ $, /** @type {Ev} */ e) {
   let failures = 0;
   for (;;) {
     const r = await call($, 'POST', '/v1/tools/step_done', toolBody('step_done', e));
@@ -322,7 +335,7 @@ async function stepDoneUntilEnd($, e) {
   }
 }
 
-async function onConsoleTool($, name, e) {
+async function onConsoleTool(/** @type {Engine} */ $, /** @type {string} */ name, /** @type {Ev} */ e) {
   try {
     if (!ctx) return { deny: 'This session is not connected to the console.' };
     if (name === 'ask_user') {
@@ -342,18 +355,19 @@ async function onConsoleTool($, name, e) {
  * An agent never asks the human itself: its question goes to the main (send_message), which shows it with its own native dialog, so it
  * can be answered from Remote Control too. Other sessions (reviewer, recovery) still go to the console queue instead of a dialog nobody watches.
  */
-async function onNativeQuestion($, e, next) {
+async function onNativeQuestion(/** @type {Engine} */ $, /** @type {Ev} */ e, /** @type {Next} */ next) {
   try {
     if (ctx && ctx.role === 'agent') {
       return { deny: 'You cannot ask the user directly. Ask the main session instead: mcp__console-mod__send_message {type: "question", to: <the main, see list_agents>, text} with the question and, if it has fixed choices, every option written out; the answer arrives later as a message.' };
     }
     if (!ctx || ctx.role === 'main' || !Array.isArray(e.questions) || e.questions.length === 0) return next(e);
+    /** @type {Record<string, string>} */
     const answers = {};
     for (const q of e.questions) {
-      const labels = Array.isArray(q.options) ? q.options.map((o) => String(o.label)) : undefined;
+      const labels = Array.isArray(q.options) ? q.options.map((/** @type {Ev} */ o) => String(o.label)) : undefined;
       const a = await askConsole($, String(q.question), labels, Boolean(q.multiSelect));
       if (!a.ok) return next(e); // console unreachable: let the normal dialog appear
-      answers[q.question] = a.answer;
+      answers[q.question] = String(a.answer);
     }
     return { result: { questions: e.questions, answers } };
   } catch (err) {
@@ -362,7 +376,7 @@ async function onNativeQuestion($, e, next) {
 }
 
 /** What a tool call would do, in a line a person can judge: the command, the file, or its arguments. */
-function describeInput(input) {
+function describeInput(/** @type {Ev} */ input) {
   if (input && typeof input === 'object') {
     if (typeof input.command === 'string') return input.command;
     if (typeof input.file_path === 'string') return input.file_path;
@@ -372,7 +386,7 @@ function describeInput(input) {
 }
 
 /** The whole input as one string, so "always" is exact even when the line shown to the user is cut; too long: no key, nothing is remembered. */
-function permissionKey(input) {
+function permissionKey(/** @type {Ev} */ input) {
   try {
     const s = JSON.stringify(input);
     return typeof s === 'string' && s.length <= 20000 ? s : undefined;
@@ -384,7 +398,7 @@ function permissionKey(input) {
  * console queue instead and the human's answer becomes the verdict. Anything but an explicit "allow" is a deny; if the
  * console cannot be reached the engine's own dialog stands. The main is left alone: the user is typing in it.
  */
-async function onToolCheck($, e, next) {
+async function onToolCheck(/** @type {Engine} */ $, /** @type {Ev} */ e, /** @type {Next} */ next) {
   const verdict = await next(e);
   try {
     if (!ctx || ctx.role === 'main' || !e.tool_use_id || !verdict || verdict.decision !== 'ask') return verdict;
@@ -401,7 +415,7 @@ async function onToolCheck($, e, next) {
 }
 
 /** The account's limits (SPEC 18.1) are the one thing only the engine knows: send them as they are, the console decides. */
-async function onMeasure($, e, next) {
+async function onMeasure(/** @type {Engine} */ $, /** @type {Ev} */ e, /** @type {Next} */ next) {
   try {
     if (ctx) {
       const usage = await $.session.usage();
@@ -411,10 +425,10 @@ async function onMeasure($, e, next) {
   return next(e);
 }
 
-const RISKY_TOOLS =['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
+const RISKY_TOOLS = ['Bash', 'PowerShell', 'Write', 'Edit', 'NotebookEdit'];
 
 /** Only the fields the console judges: a command or a path, never file contents. */
-function guardInput(tool, e) {
+function guardInput(/** @type {string} */ tool, /** @type {Ev} */ e) {
   if (tool === 'Agent' || tool === 'Task') return typeof e.subagent_type === 'string' ? { subagent_type: e.subagent_type } : {};
   const key = tool === 'Bash' || tool === 'PowerShell' ? 'command' : tool === 'NotebookEdit' ? 'notebook_path' : tool === 'Grep' || tool === 'Glob' ? 'path' : 'file_path';
   return typeof e[key] === 'string' ? { [key]: e[key] } : {};
@@ -426,7 +440,7 @@ const GUARD_UNREACHABLE = 'The console guard is not reachable, so this tool is r
  * Asks the console before a tool runs (SPEC 14). The rules live on the server; this only obeys the verdict. If the console cannot
  * be reached (or answers something unexpected), the tools that change things are refused and the reading tools carry on.
  */
-async function guardCall($, tool, e, next) {
+async function guardCall(/** @type {Engine} */ $, /** @type {string} */ tool, /** @type {Ev} */ e, /** @type {Next} */ next) {
   const risky = RISKY_TOOLS.indexOf(tool) !== -1;
   try {
     if (!ctx) return next(e); // not a console session: nothing to guard
@@ -440,6 +454,7 @@ async function guardCall($, tool, e, next) {
   return risky ? { deny: GUARD_UNREACHABLE } : next(e);
 }
 
+/** @param {(event: string, ...rest: Array<Hook | object>) => void} on the engine's `on`, typed loosely: its tool-name union does not list this mod's own tools */
 export const register = (on) => {
   on('session.start', ($, e, next) => onSessionStart($, e, next));
   on('session.end', ($, e, next) => onSimpleEvent($, 'session.end', {}, e, next));
