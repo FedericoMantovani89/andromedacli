@@ -31,9 +31,9 @@ const gap = (): HTMLElement => { const s = span(); s.textContent = ' '; return s
 
 function build(el: HTMLElement): Bar {
   const label = (key: string): HTMLElement => { const l = span(); bindText(l, key); return l; };
-  const na = (): HTMLElement => label('common.notAvailable'); // no data source: "n/a", never a zero (P7)
   const budget = span();
-  budget.append(label(k('statusbar.budget')), gap(), na());
+  // The project has no budget of its own (only agents and tickets do): no limit is set, which reads as infinite, not as "n/a".
+  budget.append(label(k('statusbar.budget')), gap(), label(k('statusbar.budgetUnlimited')));
   const quota = span();
   const update = span();
   update.hidden = true;
@@ -44,10 +44,11 @@ function build(el: HTMLElement): Bar {
   updateBtn.addEventListener('mousedown', (ev) => ev.preventDefault()); // clicking never takes the keyboard from where it is
   const sleep = span();
   sleep.hidden = true;
-  // Always visible (SPEC 18.4), usable only while the console sleeps; clicking it never takes the keyboard from where it is.
+  // Shown only while the console sleeps (nothing to resume otherwise); clicking it never takes the keyboard from where it is.
   const resume = document.createElement('button');
   resume.type = 'button';
   resume.className = 'statusbar-resume';
+  resume.hidden = true;
   resume.disabled = true;
   bindText(resume, 'statusbar.resumeNow');
   resume.addEventListener('mousedown', (ev) => ev.preventDefault());
@@ -110,6 +111,7 @@ function paintUpdate(bar: Bar, u: StateMessage['update']): void {
 function paintSleep(bar: Bar): void {
   const s = bar.sleepState;
   bar.sleep.hidden = s === undefined;
+  bar.resume.hidden = s === undefined;
   bar.resume.disabled = s === undefined || s.phase === 'probing';
   if (!s) {
     // Hidden and empty: a stale key would be retranslated for nothing.

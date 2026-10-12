@@ -94,10 +94,15 @@ function createWindow(url: string, port: number): BrowserWindow {
 
 async function start(): Promise<void> {
   await app.whenReady();
-  // The page asks for nothing but a clean copy to the clipboard and the browser's own notifications: every other permission is refused.
-  const allowed = (permission: string): boolean => permission === 'clipboard-sanitized-write' || permission === 'notifications';
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(allowed(permission)));
-  session.defaultSession.setPermissionCheckHandler((_contents, permission) => allowed(permission));
+  // The page asks for a clean copy to the clipboard, the browser's own notifications and the microphone (voice dictation, audio only, never the
+  // camera, and only for the console's own address): every other permission is refused.
+  const allowed = (permission: string, origin: string, mediaTypes: readonly string[] | undefined): boolean =>
+    permission === 'clipboard-sanitized-write' || permission === 'notifications'
+    || (permission === 'media' && isInternalUrl(origin, PORT) && mediaTypes !== undefined && mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio'));
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback, details) =>
+    callback(allowed(permission, details.requestingUrl, 'mediaTypes' in details ? (details as { mediaTypes?: string[] }).mediaTypes : undefined)));
+  session.defaultSession.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) =>
+    allowed(permission, requestingOrigin, permission === 'media' ? [(details as { mediaType?: string }).mediaType ?? ''] : undefined));
   // Looking for a new version only makes sense in the installed app, never in development (SPEC 33.4); CONSOLE_NO_UPDATES=1 switches it off.
   const updates = app.isPackaged && process.env.CONSOLE_NO_UPDATES !== '1' ? createUpdates({ confirmStop, stopServer: () => gate.stop() }) : undefined;
   try {

@@ -19,6 +19,27 @@ export function unarchiveAgent(d: { registry: AgentRegistry }, slug: string): Ar
   return { ok: true };
 }
 
+export type DeleteOutcome = { ok: true } | { ok: false; code: 'not_found' | 'agent.notArchived' };
+
+/**
+ * Deletes an archived agent from the list (the user's clean-up of the archive): the record, the session, the terminal's scrollback and the
+ * session token go. Its worktree, branch, ticket, report and ledger stay: they belong to the work, not to the list.
+ */
+export async function deleteArchived(d: { registry: AgentRegistry; forget(slug: string): Promise<void> }, slug: string): Promise<DeleteOutcome> {
+  const a = d.registry.get(slug);
+  if (!a) return { ok: false, code: 'not_found' };
+  if (a.role === 'main' || !a.archived) return { ok: false, code: 'agent.notArchived' };
+  await d.forget(slug);
+  return { ok: true };
+}
+
+/** Deletes every archived agent ("Delete all" in the archive list). */
+export async function deleteAllArchived(d: { registry: AgentRegistry; forget(slug: string): Promise<void> }): Promise<{ count: number; slugs: string[] }> {
+  const slugs = d.registry.list().filter((a) => a.role !== 'main' && a.archived).map((a) => a.slug);
+  for (const s of slugs) await d.forget(s);
+  return { count: slugs.length, slugs };
+}
+
 /** Archives, in one go, every agent that `canArchive` allows right now (the "Archive all finished" button). Nothing is closed or deleted. */
 export function archiveFinished(d: { registry: AgentRegistry; ticketStatus(slug: string): string | undefined }): { count: number; slugs: string[] } {
   const slugs = d.registry.list()

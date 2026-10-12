@@ -31,7 +31,7 @@ export function syncArchiveButton(root: HTMLElement, state: Activity, ticket: Se
 }
 
 /** The open dialog's list and button, kept so a state push can refresh them without rebuilding the dialog. */
-let open: { list: HTMLElement; all: HTMLButtonElement; finished: HTMLButtonElement; dialog: HTMLElement } | undefined;
+let open: { list: HTMLElement; all: HTMLButtonElement; deleteAll: HTMLButtonElement; finished: HTMLButtonElement; dialog: HTMLElement } | undefined;
 
 const unarchive = (slug: string): Promise<unknown> => api(`/api/agents/${slug}/unarchive`, { method: 'POST' }).catch(() => undefined);
 
@@ -59,7 +59,12 @@ function paintRows(list: HTMLElement, archived: SessionInfo[]): void {
     restore.type = 'button';
     bindText(restore, k('archive.unarchive'));
     restore.addEventListener('click', () => { void unarchive(a.slug); });
-    row.append(name, profile, ticket, when, restore);
+    const remove = el('button');
+    remove.type = 'button';
+    remove.className = 'archive-delete';
+    bindText(remove, k('archive.delete'));
+    remove.addEventListener('click', () => { void api(`/api/agents/${a.slug}`, { method: 'DELETE' }).catch(() => undefined); });
+    row.append(name, profile, ticket, when, restore, remove);
     return row;
   }));
 }
@@ -70,9 +75,11 @@ export function refreshArchiveDialog(state: StateMessage): void {
   const archived = archivedAgents(state.agents);
   paintRows(open.list, archived);
   open.all.disabled = archived.length === 0;
+  open.deleteAll.disabled = archived.length === 0;
+  if (archived.length === 0) open.dialog.querySelector('.archive-confirm.delete')?.remove();
   const n = archivableAgents(state.agents).length;
   open.finished.disabled = n === 0;
-  if (n === 0) open.dialog.querySelector('.archive-confirm')?.remove();
+  if (n === 0) open.dialog.querySelector('.archive-confirm.archive')?.remove();
 }
 
 /** The archive list (a dialog like the other ones): who is archived, and a button to bring each one, or all, back. */
@@ -100,18 +107,18 @@ export function openArchiveDialog(getState: () => StateMessage | undefined): voi
   finished.type = 'button';
   finished.className = 'archive-finished';
   bindText(finished, k('archive.archiveFinished'));
-  finished.addEventListener('click', () => {
-    dialog.querySelector('.archive-confirm')?.remove();
-    const count = archivableAgents(getState()?.agents ?? []).length;
+  /** A question line above the buttons: the one that was open goes, Cancel closes this one, Yes runs `onYes`. */
+  const ask = (kind: 'archive' | 'delete', count: number, textKey: string, yesKey: string, onYes: () => void): void => {
+    dialog.querySelectorAll('.archive-confirm').forEach((n) => n.remove());
     if (count === 0) return;
-    const line = el('div', 'archive-confirm');
+    const line = el('div', `archive-confirm ${kind}`);
     const text = el('span');
-    bindText(text, 'archive.confirmFinished', { count });
+    bindText(text, textKey, { count });
     const yes = el('button');
     yes.type = 'button';
     yes.className = 'archive-confirm-yes';
-    bindText(yes, 'archive.confirmYes');
-    yes.addEventListener('click', () => { line.remove(); void api('/api/agents/archive-finished', { method: 'POST' }).catch(() => undefined); });
+    bindText(yes, yesKey);
+    yes.addEventListener('click', () => { line.remove(); onYes(); });
     const no = el('button');
     no.type = 'button';
     no.className = 'archive-confirm-no';
@@ -119,12 +126,25 @@ export function openArchiveDialog(getState: () => StateMessage | undefined): voi
     no.addEventListener('click', () => line.remove());
     line.append(text, yes, no);
     actions.before(line);
+  };
+  finished.addEventListener('click', () => {
+    ask('archive', archivableAgents(getState()?.agents ?? []).length, k('archive.confirmFinished'), k('archive.confirmYes'),
+      () => { void api('/api/agents/archive-finished', { method: 'POST' }).catch(() => undefined); });
   });
-  actions.append(finished, all, close);
+  // Deleting is not undone: the list is cleaned in one go only after a question.
+  const deleteAll = el('button');
+  deleteAll.type = 'button';
+  deleteAll.className = 'archive-delete-all';
+  bindText(deleteAll, k('archive.deleteAll'));
+  deleteAll.addEventListener('click', () => {
+    ask('delete', archivedAgents(getState()?.agents ?? []).length, k('archive.confirmDeleteAll'), k('archive.confirmDeleteYes'),
+      () => { void api('/api/agents/delete-archived', { method: 'POST' }).catch(() => undefined); });
+  });
+  actions.append(finished, all, deleteAll, close);
   dialog.append(title, list, actions);
   overlay.replaceChildren(dialog);
   overlay.hidden = false;
-  open = { list, all, finished, dialog };
+  open = { list, all, deleteAll, finished, dialog };
   const s = getState();
   if (s) refreshArchiveDialog(s);
 }

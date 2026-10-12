@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { archiveAgent, archiveFinished, unarchiveAgent } from '../src/server/agents/archive';
+import { archiveAgent, archiveFinished, deleteAllArchived, deleteArchived, unarchiveAgent } from '../src/server/agents/archive';
 import { AgentPersister } from '../src/server/agents/persist';
 import { AgentRegistry } from '../src/server/agents/registry';
 import { restoreAgents } from '../src/server/agents/restore';
@@ -119,6 +119,31 @@ describe('archiveAgent / unarchiveAgent', () => {
     expect(archiveAgent(d, 'main')).toEqual({ ok: false, code: 'agent.notArchivable' });
     expect(archiveAgent(d, 'w')).toEqual({ ok: false, code: 'agent.notArchivable' });
     expect(unarchiveAgent({ registry }, 'nobody')).toEqual({ ok: false, code: 'not_found' });
+  });
+});
+
+describe('deleteArchived / deleteAllArchived', () => {
+  const finish = (slug: string): void => { start(slug); registry.markFinished(slug); registry.onProcessExit(slug); };
+  it('deletes an archived agent through forget, and refuses the unknown, the main and one that is not archived', async () => {
+    registry.register({ slug: 'main', role: 'main', profile: 'main' });
+    finish('a');
+    start('w');
+    const forgotten: string[] = [];
+    const d = { registry, forget: async (s: string) => { forgotten.push(s); registry.remove(s); } };
+    expect(await deleteArchived(d, 'nobody')).toEqual({ ok: false, code: 'not_found' });
+    expect(await deleteArchived(d, 'main')).toEqual({ ok: false, code: 'agent.notArchived' });
+    expect(await deleteArchived(d, 'w')).toEqual({ ok: false, code: 'agent.notArchived' });
+    expect(await deleteArchived(d, 'a')).toEqual({ ok: true });
+    expect(forgotten).toEqual(['a']);
+    expect(registry.get('a')).toBeUndefined();
+    expect(registry.get('w')).toBeDefined();
+  });
+  it('"delete all" takes only the archived ones', async () => {
+    finish('a'); finish('b'); start('w');
+    const d = { registry, forget: async (s: string) => { registry.remove(s); } };
+    expect(await deleteAllArchived(d)).toEqual({ count: 2, slugs: ['a', 'b'] });
+    expect(registry.list().map((x) => x.slug)).toEqual(['w']);
+    expect(await deleteAllArchived(d)).toEqual({ count: 0, slugs: [] });
   });
 });
 

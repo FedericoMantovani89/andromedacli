@@ -18,7 +18,7 @@ import type { ModelCatalog } from './catalog/models';
 import type { PluginCatalog } from './catalog/plugins';
 import { fail, readBodyOr400, readObjectBody, send } from './http-util';
 import { handleV1, type V1Context } from './v1';
-import { archiveAgent, archiveFinished, unarchiveAgent } from './agents/archive';
+import { archiveAgent, archiveFinished, deleteAllArchived, deleteArchived, unarchiveAgent } from './agents/archive';
 import { spawnAgent } from './agents/spawn';
 import type { Scheduler } from './agents/scheduler';
 import type { ReadingStore } from './reading/store';
@@ -449,6 +449,26 @@ export function createRequestHandler(source: Context | ProjectResolver, host: Ho
       const slug = archive[1]!;
       const ticketStatus = (s: string): string | undefined => { try { return ctx.tickets.get(s)?.status; } catch { return undefined; } };
       const out = archive[2] === 'archive' ? archiveAgent({ registry: ctx.registry, ticketStatus }, slug) : unarchiveAgent({ registry: ctx.registry }, slug);
+      if (!out.ok) return out.code === 'not_found' ? fail(res, 404, 'not_found') : fail(res, 409, out.code);
+      ctx.broadcastState();
+      return send(res, 200, { ok: true });
+    }
+
+    // Deleting archived agents from the list (the archive dialog): record and session go, the work (worktree, ticket, ledger) stays.
+    const forgetAgent = async (s: string): Promise<void> => {
+      await ctx.ptys.discard(s);
+      ctx.tokens.revoke(s);
+      ctx.registry.remove(s);
+      ctx.store.removeAgent(s);
+    };
+    if (req.method === 'POST' && path === '/api/agents/delete-archived') {
+      const out = await deleteAllArchived({ registry: ctx.registry, forget: forgetAgent });
+      if (out.count > 0) ctx.broadcastState();
+      return send(res, 200, out);
+    }
+    const deleteOne = /^\/api\/agents\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(path);
+    if (req.method === 'DELETE' && deleteOne) {
+      const out = await deleteArchived({ registry: ctx.registry, forget: forgetAgent }, deleteOne[1]!);
       if (!out.ok) return out.code === 'not_found' ? fail(res, 404, 'not_found') : fail(res, 409, out.code);
       ctx.broadcastState();
       return send(res, 200, { ok: true });

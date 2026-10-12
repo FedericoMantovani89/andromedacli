@@ -168,9 +168,10 @@ input[type="checkbox"] { accent-color: var(--accent); }
 /* Archive: the small header button and the list of archived agents. */
 .panel-archive { font: inherit; font-size: 11px; padding: 0 7px; line-height: 16px; }
 .panel-archive[hidden] { display: none; }
+.panel-compact { font: inherit; font-size: 11px; padding: 0 7px; line-height: 16px; }
 .archive-dialog { display: grid; gap: 12px; }
 .archive-list { display: grid; gap: 4px; max-height: 50vh; overflow: auto; }
-.archive-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 13px; }
+.archive-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; font-size: 13px; }
 .archive-name { overflow: hidden; text-overflow: ellipsis; }
 .archive-profile, .archive-ticket, .archive-when, .archive-empty { color: var(--muted); font-size: 12px; }
 

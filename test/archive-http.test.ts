@@ -22,6 +22,20 @@ it('the archive routes need the token, name a known agent, and refuse an agent t
   expect((await ui(s, '/api/agents/fix-login/unarchive', 'POST')).status).toBe(200);
 });
 
+it('DELETE /api/agents/<slug> needs the token, names a known agent and refuses one that is not archived', async () => {
+  const s = await bootServer();
+  s.setLimits({ global: 9, perProject: 9 });
+  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
+  await modEvent(s, 'fix-login', 'session.start');
+  expect((await req(s, '/api/agents/fix-login', { method: 'DELETE' })).status).toBe(401);
+  expect((await ui(s, '/api/agents/nobody', 'DELETE')).status).toBe(404);
+  const live = await ui(s, '/api/agents/fix-login', 'DELETE');
+  expect(live.status).toBe(409);
+  expect(live.body.code).toBe('agent.notArchived');
+  expect((await req(s, '/api/agents/delete-archived', { method: 'POST' })).status).toBe(401);
+  expect((await ui(s, '/api/agents/delete-archived', 'POST')).body).toEqual({ count: 0, slugs: [] });
+});
+
 it('the state carries no archived flag for an agent at work', async () => {
   const s = await bootServer();
   s.setLimits({ global: 9, perProject: 9 });

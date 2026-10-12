@@ -5,6 +5,17 @@ import { bindText } from './i18n-client';
 import { errorText } from './new-agent';
 import { el } from './dom';
 
+/** The panel's counterpart of the bar's Expand: folds an agent's panel back into a bar. Never on the main. */
+export function createCompactButton(slug: string, onCompact: (slug: string) => void): HTMLButtonElement {
+  const b = el('button');
+  b.type = 'button';
+  b.className = 'panel-compact';
+  bindText(b, 'panel.compact');
+  b.addEventListener('mousedown', (ev) => ev.preventDefault()); // a button here must not take the keyboard
+  b.addEventListener('click', (ev) => { ev.stopPropagation(); onCompact(slug); });
+  return b;
+}
+
 /** How many of the agent's last entries the panel prints. */
 const MAX_ENTRIES = 6;
 
@@ -12,7 +23,7 @@ const MAX_ENTRIES = 6;
  * The expanded panel of a dormant agent. It has no process, so it has no terminal: it prints what the agent last said (the entries of the
  * read panel, in full, not the cut line of the bar) so the user can read it before waking the agent, and has the Wake up button.
  */
-export function createDormantPanel(info: SessionInfo): HTMLElement {
+export function createDormantPanel(info: SessionInfo, onCompact?: (slug: string) => void): HTMLElement {
   const root = el('div', 'panel panel-dormant');
 
   const header = el('div', 'panel-header');
@@ -39,6 +50,7 @@ export function createDormantPanel(info: SessionInfo): HTMLElement {
     }).catch(() => { wake.disabled = false; });
   });
   header.append(title, meta, state, error, wake);
+  if (onCompact) header.append(createCompactButton(info.slug, onCompact));
 
   const body = el('div', 'panel-dormant-body');
   const none = el('span');

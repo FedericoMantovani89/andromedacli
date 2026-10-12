@@ -9,7 +9,7 @@ import { errorText } from './new-agent';
 import { bindText, k } from './i18n-client';
 import { setIconButton } from './icons';
 import { createArchiveButton, syncArchiveButton } from './archive';
-import { createDormantPanel } from './dormant-panel';
+import { createCompactButton, createDormantPanel } from './dormant-panel';
 import { STATE_KEYS, applyBudget, applyLoop, applyProgress, applyRequests, applyTicket, applyWaiting } from './chips';
 import { SCROLLBACK, TERM_OPTIONS } from './term-theme';
 import { FocusState, focusActiveTerminal, refreshActiveStyles, type PanelHandle } from './focus';
@@ -49,7 +49,7 @@ interface Panel extends PanelHandle {
 }
 
 /** One terminal panel: an xterm.js instance wired to /ws/term/<slug>. The server owns the process and the scrollback. */
-function createPanel(info: SessionInfo, onActivate: (slug: string) => void, project: string | undefined): Panel {
+function createPanel(info: SessionInfo, onActivate: (slug: string) => void, project: string | undefined, onCompact?: (slug: string) => void): Panel {
   const root = document.createElement('div');
   root.className = 'panel';
   root.dataset.slug = info.slug;
@@ -108,6 +108,7 @@ function createPanel(info: SessionInfo, onActivate: (slug: string) => void, proj
     header.append(micBtn);
   }
   header.append(readBtn, createArchiveButton(info.slug));
+  if (onCompact) header.append(createCompactButton(info.slug, onCompact));
 
   const host = document.createElement('div');
   host.className = 'panel-term';
@@ -183,6 +184,8 @@ export class Workspace {
   private readonly panels = new Map<string, Panel>();
   private readonly focus: FocusState;
   private expanded: string | null = null;
+  /** Agents the user folded into a bar with Compact; Expand brings them back. */
+  private readonly collapsed = new Set<string>();
   private mainId = '';
   private lastMain: SessionInfo | undefined;
   private lastAgents: SessionInfo[] = [];
@@ -243,7 +246,7 @@ export class Workspace {
     // Agents without a process yet (waiting in the queue) are always bars; the rest follow the 4-panels rule.
     const live = agents.filter((a) => a.status !== 'pending');
     const layout = [
-      ...computeAgentLayout(live.map((a) => a.slug), this.expanded),
+      ...computeAgentLayout(live.map((a) => a.slug), this.expanded, 4, this.collapsed),
       ...agents.filter((a) => a.status === 'pending').map((a) => ({ slug: a.slug, mode: 'bar' as const })),
     ];
     // The "+ new agent" control is always the first thing in the agents column, whatever the number of agents.
@@ -253,7 +256,7 @@ export class Workspace {
       if (item.mode === 'panel' && info.state === 'dormant') {
         this.dropPanel(item.slug);
         let d = this.dormantPanels.get(item.slug);
-        if (!d) { d = createDormantPanel(info); this.dormantPanels.set(item.slug, d); }
+        if (!d) { d = createDormantPanel(info, (s) => this.compact(s)); this.dormantPanels.set(item.slug, d); }
         children.push(d);
       } else if (item.mode === 'panel') {
         this.dormantPanels.delete(item.slug);
@@ -285,11 +288,18 @@ export class Workspace {
   private ensurePanel(info: SessionInfo): Panel {
     let p = this.panels.get(info.slug);
     if (!p) {
-      p = createPanel(info, (slug) => this.activate(slug), this.project);
+      p = createPanel(info, (slug) => this.activate(slug), this.project, info.role === 'main' ? undefined : (s) => this.compact(s));
       this.panels.set(info.slug, p);
       this.focus.onPanelAdded(info.slug);
     }
     return p;
+  }
+
+  /** Compact on a panel: the agent becomes a bar (its terminal is dropped, the server keeps the scrollback). */
+  private compact(slug: string): void {
+    this.collapsed.add(slug);
+    if (this.expanded === slug) this.expanded = null;
+    this.update(this.lastMain!, this.lastAgents);
   }
 
   private dropPanel(slug: string): void {
@@ -355,7 +365,7 @@ export class Workspace {
     if (!pending) { // a queued agent has no terminal to expand yet
       const expand = document.createElement('button');
       bindText(expand, 'panel.expand');
-      expand.addEventListener('click', () => { this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
+      expand.addEventListener('click', () => { this.collapsed.delete(info.slug); this.expanded = info.slug; this.update(this.lastMain!, this.lastAgents); });
       el.append(expand);
     }
     this.bars.set(info.slug, { el, state, progress, stalled, ticket, budget, loop, waiting, requestsWaiting, requestsOwed, pending, dormant, stale });

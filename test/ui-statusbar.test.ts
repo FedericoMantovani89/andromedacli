@@ -23,9 +23,17 @@ describe('quota item', () => {
     renderStatusBar(el, make());
     expect(byKey(el, 'statusbar.quotaLabel')).toBeDefined();
     expect(byKey(el, 'statusbar.quota')).toBeUndefined();
-    expect(el.querySelectorAll('[data-i18n="common.notAvailable"]').length).toBeGreaterThanOrEqual(2); // the budget and the quota
+    expect(el.querySelectorAll('[data-i18n="common.notAvailable"]').length).toBe(1); // the quota only: the project budget is unlimited
     renderStatusBar(el, make({ quota: { percent: 5, kind: 'five_hour' } }));
     expect(params(byKey(el, 'statusbar.quota')!)).toEqual({ percent: 5 });
+  });
+});
+
+describe('project budget', () => {
+  it('reads as unlimited, not n/a, while the project has no budget', () => {
+    const el = document.createElement('div');
+    renderStatusBar(el, make());
+    expect(byKey(el, 'statusbar.budgetUnlimited')).toBeDefined();
   });
 });
 
@@ -52,8 +60,8 @@ describe('sleep indicator and the resume button', () => {
     const sleep = byKey(el, 'statusbar.sleep');
     expect(sleep).toBeUndefined();
     const button = el.querySelector<HTMLButtonElement>('button')!;
-    expect(button.hidden).toBe(false); // always visible (SPEC 18.4) ...
-    expect(button.disabled).toBe(true); // ... usable only while sleeping
+    expect(button.hidden).toBe(true); // nothing to resume without a sleep
+    expect(button.disabled).toBe(true);
     renderStatusBar(el, make({ sleep: { until: '2026-10-05T12:00:05.000Z', phase: 'sleeping', attempt: 0, weekly: false } }));
     const shown = byKey(el, 'statusbar.sleep')!;
     expect(shown.hidden).toBe(false);
@@ -65,9 +73,9 @@ describe('sleep indicator and the resume button', () => {
     // the countdown moves on its own between state pushes
     vi.advanceTimersByTime(5000);
     expect(params(byKey(el, 'statusbar.sleep')!).remaining).toBe('2:00:00');
-    // the sleep goes when the state says so; the button stays, disabled
+    // the sleep goes when the state says so; the button goes with it
     renderStatusBar(el, make());
-    expect(button.hidden).toBe(false);
+    expect(button.hidden).toBe(true);
     expect(button.disabled).toBe(true);
     expect(byKey(el, 'statusbar.sleep')).toBeUndefined();
   });
