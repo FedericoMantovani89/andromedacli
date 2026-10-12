@@ -10,8 +10,7 @@ import { PROJECT_NAME_RE, ProjectError, type AddProjectOptions, type ProjectsApi
 import { projectNameFromDir } from './cli-args';
 import { ModelCatalog } from './catalog/models';
 import { PluginCatalog } from './catalog/plugins';
-import { ProjectStore, type TestMoment } from './project-store';
-import { testCommandFor } from './test-commands';
+import { ProjectStore } from './project-store';
 import { PtyManager } from './pty/pty-manager';
 import { buildClaudeLaunch, SESSION_ID_RE } from './pty/claude-launch';
 import { hardenExecutableSearch } from './exe-search';
@@ -33,7 +32,7 @@ import { ReviewService } from './tickets/review';
 import { RecoveryService, replacementCheckout } from './tickets/recovery';
 import { MergeService } from './tickets/merge';
 import { ReleaseService } from './tickets/release';
-import { TestQueue, type TestRunner } from './tickets/test-queue';
+import { TestQueue } from './tickets/test-queue';
 import { CentralRun } from './tickets/central';
 import { createCentralGit } from './tickets/central-git';
 import { installReleaseHook } from './git/release-hook';
@@ -79,6 +78,7 @@ import { errorMessage } from '../shared/guards';
 import { Container } from './runtime/container';
 import type { Services, ProjectContainer } from './runtime/services';
 import { registerState } from './runtime/state';
+import { registerTests } from './runtime/tests';
 import type { Shared, ProjectRuntime } from './runtime/types';
 export type { ProjectRuntime } from './runtime/types';
 
@@ -174,14 +174,17 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   const c: ProjectContainer = new Container<Services>();
   c.provide('env', () => ({ shared, o, configPath, config, token, bundles, ledger, quotaState, sleep, sleepClock, runtime, limits }));
   registerState(c);
+  registerTests(c);
   const stateProblems = c.get('stateProblems');
   const store = c.get('store');
   const previousRunWasClean = c.get('previousRunWasClean');
   const projectName = c.get('projectName');
   const ptys = new PtyManager();
+  c.provide('ptys', () => ptys);
   const tokens = new SessionTokens();
   const inbox = c.get('inbox');
   const registry = new AgentRegistry();
+  c.provide('registry', () => registry);
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
   const savedMainSession = store.readMainSession();
   // Claude Code keeps no transcript for a session that never got a prompt: resuming that id fails with "No conversation found", so such an id starts fresh.
@@ -194,28 +197,10 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   // `limits` and `runtime` (the settings read when a session is launched) are console-wide: see `shared`.
   const secretPatterns = c.get('secretPatterns');
   // The guard mode a session was launched under: a later change in Settings does not reach sessions already running.
-  // The test command the console runs: the one saved for the project, else the one its files suggest (pom.xml, build.gradle, package.json).
-  let detectedTest: { at: number; value: string | undefined } | undefined;
-  const detectedTestCommand = (): string | undefined => {
-    if (!detectedTest || Date.now() - detectedTest.at > 5000) detectedTest = { at: Date.now(), value: detectProject(resolve(o.projectRoot)).test };
-    return detectedTest.value;
-  };
-  // With the tests inhibited there is no command at all: the merge, the release and the recovery then run nothing (they already skip an empty one).
-  const testsDisabled = (): boolean => { try { return store.project.testsDisabled === true; } catch { return false; } };
-  // One command per moment: the project's own for `ticket` (validation step, review re-run, recovery), `merge` or `release`, else its single command.
-  const testCommandAt = (moment: TestMoment) => (): string | undefined => testCommandFor(moment, { project: () => store.project, detected: detectedTestCommand });
-  /**
-   * The test runs go through the machine's queue. A run is heavy (it takes the queue's one slot) unless it is a `ticket` run with its own
-   * command: a project that defines `testCommands.ticket` says that command is the fast, pointed one. `merge`, `release` and the central
-   * run are always heavy; a ticket that falls back to the full `testCommand` is heavy too.
-   */
-  const testRunnerAt = (moment: TestMoment): TestRunner => (r) => shared.testQueue.run({
-    cwd: r.cwd, command: r.command, timeoutMs: r.timeoutMs,
-    heavy: moment !== 'ticket' || !store.project.testCommands?.ticket?.trim(),
-    label: `${moment}:${r.owner ?? projectName}`,
-    ...(r.owner !== undefined ? { owner: r.owner } : {}),
-    ...(r.watchOwner && r.owner !== undefined ? { ownerAlive: () => registry.get(r.owner!)?.state !== 'finished' && ptys.status(r.owner!) === 'running' } : {}),
-  });
+  const detectedTestCommand = c.get('detectedTestCommand');
+  const testsDisabled = c.get('testsDisabled');
+  const testCommandAt = c.get('testCommandAt');
+  const testRunnerAt = c.get('testRunnerAt');
   const sessionGuardMode = new Map<string, 'enforce' | 'shadow'>([[projectName, config.guard.mode]]);
   const tickets = c.get('tickets');
   const launchWatch = new LaunchWatch({ registry, delayMs: () => o.launchCheckMs ?? 90_000, notifyMain: (text) => { inbox.push(projectName, text); broadcast(); } });
@@ -236,11 +221,7 @@ async function createProjectRuntime(shared: Shared, p: { projectRoot: string; pr
   };
   /** The repository a ticket belongs to, as a spawn request field (nothing for a project folder that is itself the repository). */
   const repoOfTicket = (slug: string): { repo?: string } => { const repo = tickets.get(slug)?.repo; return repo === undefined ? {} : { repo }; };
-  const reportLanguage = () => {
-    const language = shared.language();
-    const lang = language !== 'auto' && bundles.has(language) ? language : 'en';
-    return { lang, t: createTranslator({ lang, messages: bundles.get(lang) ?? {}, fallback: bundles.get('en') }) };
-  };
+  const reportLanguage = c.get('reportLanguage');
   const ticketQueue = new KeyedQueue(); // one queue per ticket, shared by every service that changes it
   const review = new ReviewService({
     queue: ticketQueue,
