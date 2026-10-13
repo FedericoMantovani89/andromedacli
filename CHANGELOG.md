@@ -8,6 +8,8 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-10-13
+
 ## [0.0.8] - 2026-10-13
 
 - The main may call `ticket_report`, `request_review`, `send_back_ticket`, `merge_ticket` and `propose_release` without a permission prompt (they were missing from its allowed tools, so without bypass the review flow stopped at a prompt).
@@ -441,7 +443,8 @@ Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` wi
 of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.
 
-[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.8...HEAD
+[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.9...HEAD
+[0.0.9]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.5...v0.0.6
