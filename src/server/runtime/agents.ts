@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { LaunchWatch } from '../agents/launch-watch';
 import { AgentRegistry } from '../agents/registry';
 import { Scheduler } from '../agents/scheduler';
-import { failQueuedStart, launchAgent } from '../agents/spawn';
+import { failQueuedStart, launchAgent, MAIN_TOOLS } from '../agents/spawn';
 import { defaultProjectsDir, transcriptPath } from '../claude-code/transcript';
 import type { QuotaStep } from '../budget/quota';
 import { discoverRepos, repoPathOf } from '../git/repos';
@@ -178,7 +178,7 @@ export function registerAgents(c: ProjectContainer): void {
         command: ctx.claudeCommand, role: 'main', slug: projectName, project: projectName,
         url: `http://127.0.0.1:${shared.getPort()}`, token: tokens.issue(projectName), bypass: ctx.bypass, baseEnv: process.env,
         pluginDir: ctx.modDir, displayName: `${projectName} AndromedaConsole`,
-        allowedTools: ctx.modDir ? ['mcp__console-mod__spawn_agent', 'mcp__console-mod__list_agents', 'mcp__console-mod__ask_user', 'mcp__console-mod__send_message', 'mcp__console-mod__start_recovery', 'mcp__console-mod__resume_agent', 'mcp__console-mod__worktree_cleanup', ...(config.notifications.mainPush ? ['PushNotification'] : [])] : undefined,
+        allowedTools: ctx.modDir ? [...MAIN_TOOLS, ...(config.notifications.mainPush ? ['PushNotification'] : [])] : undefined,
         appendPromptFile: renderMainPrompt({ project: projectName, workLanguage: languageName(config.language), outDir: ctx.promptsDir, projectRoot: o.projectRoot, repos: repos(), profiles: pickableProfiles(store.fields().profiles, listProfileNames(o.projectRoot, join(o.configDir, 'profiles'))), helpers: helperToolsText(shared.getPrereq()), mainPush: config.notifications.mainPush,
           noGitignore: new GitignoreAsked(join(o.projectRoot, '.andromedaconsole', 'state', 'gitignore-asked.json')).take(repos().filter((rel) => !hasGitignore(repoPathOf(o.projectRoot, rel)))) }),
         ...(resumeId !== undefined ? { resumeId } : {}),

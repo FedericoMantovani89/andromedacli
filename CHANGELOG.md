@@ -10,6 +10,7 @@ change that introduces the behaviour.
 
 ## [0.0.8] - 2026-10-13
 
+- The main may call `ticket_report`, `request_review`, `send_back_ticket`, `merge_ticket` and `propose_release` without a permission prompt (they were missing from its allowed tools, so without bypass the review flow stopped at a prompt).
 ### Changed
 - Internal: the assembly of a project is now a typed container with one file per area (state, tests, agents, tickets, budget, http), instead of one 900-line function; behavior is unchanged.
 - Fixes from the review of the hardening work: the guard no longer counts `-Path` of a reading command as a write nor `node server.js -p 3000` as `node -p`; `git stage` and the other missing built-ins are not taken for aliases; a discarded session releases its questions, restrictions and inbox; a damaged `projects.json` is set aside; the unhandled-rejection logger is removed on close; the budget tick no longer waits on one busy ticket.
