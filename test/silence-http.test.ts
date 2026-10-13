@@ -49,9 +49,9 @@ it('the silence chip is pushed by the timer without any other change, and cleare
   await modEvent(r.s, 'fix-login', 'turn.start');
   r.states.length = 0;
   vi.setSystemTime(Date.now() + 3 * MIN);
-  await until(() => r.states.some((m) => r.agentOf(m)?.silentMinutes === 3));
+  await until(() => r.states.some((m) => r.agentOf(m)?.silentMinutes === 3), 8000, () => `no state with 3 silent minutes; received ${r.states.length}: ${JSON.stringify(r.states.slice(-3).map((m) => r.agentOf(m)))}`);
   r.states.length = 0;
   await mod(r.s, 'fix-login', '/v1/guard', 'POST', { tool: 'Read', input: { file_path: 'a.txt' } }); // a guard question is a sign of life
-  await until(() => r.states.some((m) => r.agentOf(m) && r.agentOf(m).silentMinutes === undefined));
+  await until(() => r.states.some((m) => r.agentOf(m) && r.agentOf(m).silentMinutes === undefined), 8000, () => `silence not cleared; received ${r.states.length}: ${JSON.stringify(r.states.slice(-3).map((m) => r.agentOf(m)))}`);
   r.close();
 });

@@ -96,10 +96,10 @@ export const mod = (s: Running, slug: string, path: string, method = 'GET', body
   req(s, path, { method, token: s.sessionTokenFor(slug), body });
 export const state = async (s: Running) => (await ui(s, '/api/state')).body;
 
-export async function until(f: () => Promise<boolean> | boolean, ms = 8000): Promise<void> {
-  const t = Date.now();
+export async function until(f: () => Promise<boolean> | boolean, ms = 8000, what?: () => string): Promise<void> {
+  const t = performance.now(); // not Date.now(): a test that fakes Date would never time out (the 20 s test timeout would hit first and say nothing)
   while (!(await f())) {
-    if (Date.now() - t > ms) throw new Error('timeout');
+    if (performance.now() - t > ms) throw new Error(`timeout${what ? `: ${what()}` : ''}`);
     await new Promise((r) => setTimeout(r, 30));
   }
 }

@@ -8,6 +8,8 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-10-13
+
 ### Changed
 - Internal: the assembly of a project is now a typed container with one file per area (state, tests, agents, tickets, budget, http), instead of one 900-line function; behavior is unchanged.
 - Fixes from the review of the hardening work: the guard no longer counts `-Path` of a reading command as a write nor `node server.js -p 3000` as `node -p`; `git stage` and the other missing built-ins are not taken for aliases; a discarded session releases its questions, restrictions and inbox; a damaged `projects.json` is set aside; the unhandled-rejection logger is removed on close; the budget tick no longer waits on one busy ticket.
@@ -438,7 +440,8 @@ Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` wi
 of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.
 
-[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.7...HEAD
+[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.8...HEAD
+[0.0.8]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.4...v0.0.5
