@@ -1,8 +1,9 @@
 import { expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { autoClose, bootServer, modEvent, state, ui, until } from './helpers';
+import { autoClose, usePipePty, bootServer, modEvent, state, ui, until } from './helpers';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 function openUi(s: Awaited<ReturnType<typeof bootServer>>): Promise<{ ws: WebSocket; texts: string[] }> {
   const texts: string[] = [];

@@ -21,7 +21,7 @@ import type { ProjectContainer } from './services';
 
 /** The services that own the agent sessions: the terminals, their tokens, the registry, the guard mode each session started under, and the repositories. */
 export function registerAgents(c: ProjectContainer): void {
-  c.provide('ptys', () => new PtyManager());
+  c.provide('ptys', (k) => new PtyManager(k.get('env').o.ptySpawn));
   c.provide('tokens', () => new SessionTokens());
   // The main's last session (state/main.json): the first launch resumes it, so the main keeps its context across a restart.
   // Claude Code keeps no transcript for a session that never got a prompt: resuming that id fails with "No conversation found", so such an id starts fresh.

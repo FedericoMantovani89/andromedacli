@@ -1,9 +1,10 @@
 import { it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { autoClose, bootServer, configFileOf, mod, req, ui, state, until } from './helpers';
+import { autoClose, usePipePty, bootServer, configFileOf, mod, req, ui, state, until } from './helpers';
 import type { Notifier, NotifierMessage } from '../src/server/notify/notifier';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 function recorder(o: { available?: boolean } = {}) {
   const sent: NotifierMessage[] = [];

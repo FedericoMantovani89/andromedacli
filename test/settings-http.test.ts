@@ -1,6 +1,6 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
-import { autoClose, bootServer, configFileOf, mod, req, state, ui, until, type Running } from './helpers';
+import { autoClose, usePipePty, bootServer, configFileOf, mod, req, state, ui, until, type Running } from './helpers';
 import { makeRepo, type TestRepo, removeDir } from './git-helpers';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -8,6 +8,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const repos: TestRepo[] = [];
 afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const put = (s: Running, body: unknown) => ui(s, '/api/config', 'PUT', body);
 const file = (s: Running): any => JSON.parse(readFileSync(configFileOf(s), 'utf8'));

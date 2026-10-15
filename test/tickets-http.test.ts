@@ -1,7 +1,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { autoClose, bootServer, modEvent, mod, req, state, ui, type Running } from './helpers';
+import { autoClose, usePipePty, bootServer, modEvent, mod, req, state, ui, type Running } from './helpers';
 import { branchesOf, gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 import { AGENT_TOOLS } from '../src/server/agents/spawn';
 
@@ -11,6 +11,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const repos: TestRepo[] = [];
 afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
 

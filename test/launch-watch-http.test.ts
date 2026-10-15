@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
-import { autoClose, bootServer, modEvent, mod, state, until } from './helpers';
+import { autoClose, usePipePty, bootServer, modEvent, mod, state, until } from './helpers';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const spawn = (s: Awaited<ReturnType<typeof bootServer>>, name: string) =>
   mod(s, 'shop-api', '/v1/tools/spawn_agent', 'POST', { name, profile: 'developer', goal: 'make it work' });

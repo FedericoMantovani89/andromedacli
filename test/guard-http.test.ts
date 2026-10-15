@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { autoClose, bootServer, mod, req, ui, type Running } from './helpers';
+import { autoClose, usePipePty, bootServer, mod, req, ui, type Running } from './helpers';
 import { gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 
 // Real git and real processes: slow on a busy machine, so these tests get a longer budget.
@@ -10,6 +10,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const repos: TestRepo[] = [];
 afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 async function boot(config: Record<string, unknown> = {}): Promise<{ s: Running; t: TestRepo }> {
   const t = makeRepo({ remote: true });

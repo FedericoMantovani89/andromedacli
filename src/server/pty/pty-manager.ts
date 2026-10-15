@@ -6,8 +6,18 @@ export interface SpawnOptions {
   id: string; file: string; args: string[]; cwd: string; env: Record<string, string>; cols: number; rows: number;
 }
 type Status = 'running' | 'exited' | 'unknown';
+/** What the manager uses of a terminal process (`node-pty`'s `IPty` has all of it): a test may give it plain pipes instead. */
+export interface PtyProcess {
+  pid: number;
+  onData(cb: (data: string) => void): unknown;
+  onExit(cb: (e: { exitCode: number; signal?: number }) => void): unknown;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+export type PtySpawn = (file: string, args: string[], o: PtyOptions) => PtyProcess;
 interface Entry {
-  pty: nodePty.IPty; ring: ByteRing; subs: Set<(chunk: Buffer) => void>; exited: boolean; cols: number; rows: number;
+  pty: PtyProcess; ring: ByteRing; subs: Set<(chunk: Buffer) => void>; exited: boolean; cols: number; rows: number;
 }
 
 const TASKKILL_TIMEOUT_MS = 10_000;
@@ -16,7 +26,7 @@ const SCROLLBACK_BYTES = 4 * 1024 * 1024;
 /** What a session that has ended keeps: reviewers get a new name every round, so the ended ones add up over a day. */
 const EXITED_SCROLLBACK_BYTES = 256 * 1024;
 
-type PtyOptions = { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> };
+export type PtyOptions = { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> };
 
 /**
  * On Windows the ConPTY that comes with node-pty (OpenConsole) instead of the one in the system: the old one (Windows 10) drops the
@@ -36,6 +46,9 @@ export class PtyManager {
   private readonly exitCallbacks: ((id: string, code: number) => void)[] = [];
   private readonly discardCallbacks: ((id: string) => void)[] = [];
 
+  /** `spawnProcess` is the real terminal unless a test gives another (`StartOptions.ptySpawn`). */
+  constructor(private readonly spawnProcess: PtySpawn = (file, args, o) => spawnPty(file, args, o)) {}
+
   /**
    * Starts a session. An id whose process has exited may be started again (a resumed session): its scrollback and the terminals
    * already watching it are kept, so an open panel shows the new process without reconnecting. A running id is refused.
@@ -43,7 +56,7 @@ export class PtyManager {
   spawn(o: SpawnOptions): void {
     const old = this.entries.get(o.id);
     if (old && !old.exited) throw new Error(`pty ${o.id} already exists`);
-    const pty = spawnPty(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
+    const pty = this.spawnProcess(o.file, o.args, { name: 'xterm-256color', cols: o.cols, rows: o.rows, cwd: o.cwd, env: o.env });
     old?.ring.resize(SCROLLBACK_BYTES); // a resumed session has the full room again
     const entry: Entry = { pty, ring: old?.ring ?? new ByteRing(SCROLLBACK_BYTES), subs: old?.subs ?? new Set(), exited: false, cols: o.cols, rows: o.rows };
     this.entries.set(o.id, entry);

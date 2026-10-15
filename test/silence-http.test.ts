@@ -1,8 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
-import { autoClose, bootServer, mod, modEvent, ui, until } from './helpers';
+import { autoClose, usePipePty, bootServer, mod, modEvent, ui, until } from './helpers';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 afterEach(() => { vi.useRealTimers(); });
 
 const MIN = 60_000;

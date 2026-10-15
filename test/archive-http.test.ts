@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
-import { autoClose, bootServer, modEvent, req, ui } from './helpers';
+import { autoClose, usePipePty, bootServer, modEvent, req, ui } from './helpers';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 it('the archive routes need the token, name a known agent, and refuse an agent that is not finished-like', async () => {
   const s = await bootServer();

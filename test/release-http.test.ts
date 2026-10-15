@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { autoClose, bootServer, mod, ui, until, type Running } from './helpers';
+import { autoClose, usePipePty, bootServer, mod, ui, until, type Running } from './helpers';
 import { gitSync, makeRepo, type TestRepo, removeDir, worktreePathFor } from './git-helpers';
 import { git } from '../src/server/git/git';
 
@@ -11,6 +11,7 @@ process.env.CONSOLE_TEST = '1';
 const repos: TestRepo[] = [];
 afterEach(() => { while (repos.length) removeDir(repos.pop()!.base); });
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const ITEMS = ['Study the code', 'Tests first: ordering', 'Implement a', 'Implement b', 'Validation: run the suite', 'Update documentation'];
 

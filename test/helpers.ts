@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach } from 'vitest';
 import { startServer } from '../src/server/index';
+import { pipePty } from './pipe-pty';
 import type { Runner } from '../src/server/prereq/checks';
 import type { SleepClock } from '../src/server/budget/sleep';
 import type { Notifier } from '../src/server/notify/notifier';
@@ -54,18 +55,25 @@ export function autoClose(): void {
   afterEach(async () => { while (running.length) await running.pop()!.close(); });
 }
 
+let pipeByDefault = false;
+/**
+ * A test file that never reads the terminal (its output or size) calls this once at the top: every server it boots runs its sessions on plain
+ * pipes (`test/pipe-pty.ts`), so the file does not depend on the ConPTY. Modules are not shared between test files, so it holds for that file only.
+ */
+export function usePipePty(): void { pipeByDefault = true; }
+
 /**
  * A real server with the fake agent. Agents share the project folder (`git.worktrees: false`, the Phase 2 behaviour) unless the
  * test passes a repository as `projectRoot` and `config: { git: { worktrees: true } }`.
  */
-export async function bootServer(o: { projectName?: string; language?: string; projectRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; requestNow?: () => number; sleepClock?: SleepClock; configDir?: string; /** Start with no project folder: only the remembered projects (projects.json in the config folder) are opened. */ noProject?: boolean; /** Replaces the native folder window. */ pickFolder?: () => Promise<unknown>; notifier?: Notifier; notifyClock?: NotifyClock; /** Replaces the command runner of the prerequisite checks and of the plugin list. */ runner?: Runner; /** The desktop app's update control (a fake in the tests). */ updates?: UpdateControl; /** Replaces fetch for the voice dictation's Groq call (a fake: no network). */ groqFetch?: typeof fetch } = {}): Promise<Running> {
+export async function bootServer(o: { projectName?: string; language?: string; projectRoot?: string; config?: Record<string, unknown>; afterWorktreeCreated?: (slug: string) => void | Promise<void>; launchCheckMs?: number; projectsDir?: string; tickMs?: number; requestNow?: () => number; sleepClock?: SleepClock; configDir?: string; /** Start with no project folder: only the remembered projects (projects.json in the config folder) are opened. */ noProject?: boolean; /** Replaces the native folder window. */ pickFolder?: () => Promise<unknown>; notifier?: Notifier; notifyClock?: NotifyClock; /** Replaces the command runner of the prerequisite checks and of the plugin list. */ runner?: Runner; /** The desktop app's update control (a fake in the tests). */ updates?: UpdateControl; /** Replaces fetch for the voice dictation's Groq call (a fake: no network). */ groqFetch?: typeof fetch; /** Sessions run on plain pipes instead of a pseudo terminal: for tests that never read the terminal (its output or size). */ pipePty?: boolean } = {}): Promise<Running> {
   const configDir = o.configDir ?? mkdtempSync(join(tmpdir(), 'h-cfg-'));
   writeFileSync(join(configDir, 'config.json'), JSON.stringify({ schema: 1, language: o.language ?? 'en', git: { worktrees: false }, ...o.config }));
   const s = await startServer({
     port: 0, ...(o.noProject ? {} : { projectRoot: o.projectRoot ?? mkdtempSync(join(tmpdir(), 'h-project-')), projectName: o.projectName ?? 'shop-api' }), configDir,
     claudeCommand: [process.execPath, fixture], prereqRunner: o.runner ?? goodRunner, modDir: null, afterWorktreeCreated: o.afterWorktreeCreated, launchCheckMs: o.launchCheckMs,
     // Transcripts: a folder of the test's own (or one nobody writes to), never the user's ~/.claude/projects.
-    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, ...(o.requestNow ? { requestNow: o.requestNow } : {}), sleepClock: o.sleepClock, ...(o.pickFolder ? { pickFolder: o.pickFolder as () => Promise<PickFolderResult> } : {}), notifier: o.notifier, notifyClock: o.notifyClock, ...(o.updates ? { updates: o.updates } : {}), ...(o.groqFetch ? { groqFetch: o.groqFetch } : {}),
+    projectsDir: o.projectsDir ?? mkdtempSync(join(tmpdir(), 'h-proj-')), tickMs: o.tickMs, ...((o.pipePty ?? pipeByDefault) ? { ptySpawn: pipePty } : {}), ...(o.requestNow ? { requestNow: o.requestNow } : {}), sleepClock: o.sleepClock, ...(o.pickFolder ? { pickFolder: o.pickFolder as () => Promise<PickFolderResult> } : {}), notifier: o.notifier, notifyClock: o.notifyClock, ...(o.updates ? { updates: o.updates } : {}), ...(o.groqFetch ? { groqFetch: o.groqFetch } : {}),
   });
   running.push(s);
   configFiles.set(s, join(configDir, 'config.json'));

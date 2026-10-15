@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, write
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { autoClose, bootServer, mod, modEvent, state, ui, until, type Running } from './helpers';
+import { autoClose, usePipePty, bootServer, mod, modEvent, state, ui, until, type Running } from './helpers';
 import { gitSync, makeRepo, removeDir, type TestRepo, worktreePathFor } from './git-helpers';
 import { transcriptPath } from '../src/server/claude-code/transcript';
 import { ALERT_TEXT } from '../src/server/budget/service';
@@ -19,6 +19,7 @@ afterEach(() => {
   while (repos.length) removeDir(repos.pop()!.base);
 });
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const SLUG = 'fix-login';
 

@@ -10,7 +10,7 @@ import { loadConfig } from './config';
 import { PROJECT_NAME_RE, ProjectError, type AddProjectOptions, type ProjectsApi } from './projects-api';
 import { projectNameFromDir } from './cli-args';
 import { ProjectStore } from './project-store';
-import { PtyManager } from './pty/pty-manager';
+import { PtyManager, type PtySpawn } from './pty/pty-manager';
 import { hardenExecutableSearch } from './exe-search';
 import { installProcessGuards } from './crash-log';
 import { detectProject } from './templates/detect';
@@ -93,6 +93,8 @@ export interface StartOptions {
   notifier?: Notifier;
   /** A test seam: the clock of the notification grouping and quiet hours. */
   notifyClock?: NotifyClock;
+  /** A test seam: starts the sessions' processes with this instead of a pseudo terminal (plain pipes: tests that never read the screen). */
+  ptySpawn?: PtySpawn;
   /** A test seam: hears each service of a project as the container creates it (the creation order). */
   containerOnCreate?: (key: string) => void;
 }

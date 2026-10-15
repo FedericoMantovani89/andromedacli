@@ -2,9 +2,10 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { autoClose, bootServer, configFileOf, modEvent, req, ui, until } from './helpers';
+import { autoClose, usePipePty, bootServer, configFileOf, modEvent, req, ui, until } from './helpers';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const newDir = (): string => mkdtempSync(join(tmpdir(), 'project-b-'));
 const projectsFileOf = (s: Awaited<ReturnType<typeof bootServer>>): string => join(configFileOf(s), '..', 'projects.json');

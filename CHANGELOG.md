@@ -9,6 +9,7 @@ change that introduces the behaviour.
 ## [Unreleased]
 
 ### Changed
+- Tests: `PtyManager` takes the function that starts a session's process (`StartOptions.ptySpawn`, the pseudo terminal by default), and the 14 test files that never read the terminal run their agents on plain pipes (`test/pipe-pty.ts`, `usePipePty()`), so they no longer depend on the ConPTY, where the native worker crashes on the CI runner happen.
 - Claude Code 2.1.300 is now the last tested version (`test/e2e/claude-contract.ts` holds, and `real-claude-smoke.ts` passes: the main answers a prompt, a second agent starts, a reopened tab restores both).
 
 ### Fixed

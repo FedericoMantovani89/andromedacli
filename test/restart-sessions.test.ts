@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { autoClose, bootServer, mod, ui, until } from './helpers';
+import { autoClose, usePipePty, bootServer, mod, ui, until } from './helpers';
 
 autoClose();
+usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
 const SID = '3f2c6a52-8b5e-4a49-9d57-0f4f3c1d2a10';
 
