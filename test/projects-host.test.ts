@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,7 +7,7 @@ import { autoClose, usePipePty, bootServer, configFileOf, modEvent, req, ui, unt
 autoClose();
 usePipePty(); // this file never reads the terminal: its sessions run on plain pipes
 
-const newDir = (): string => mkdtempSync(join(tmpdir(), 'project-b-'));
+const newDir = (): string => realpathSync.native(mkdtempSync(join(tmpdir(), 'project-b-'))); // the long form: the console reports the folder canonically (a TEMP in 8.3 form)
 const projectsFileOf = (s: Awaited<ReturnType<typeof bootServer>>): string => join(configFileOf(s), '..', 'projects.json');
 
 describe('projects host', () => {

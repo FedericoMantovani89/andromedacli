@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -27,7 +27,7 @@ describe('POST /api/projects/git-init', () => {
 
 describe('git init in a folder that only holds repositories', () => {
   it('is allowed (the folder itself is no repository) and the folder becomes the project repository, nested ones left alone', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'git-init-mixed-'));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-init-mixed-'))); // long form: git reports the folder that way
     mkdirSync(join(root, 'abc-fe'));
     gitSync(join(root, 'abc-fe'), 'init', '-q', '-b', 'main'); // a repository inside, and a plain folder next to it
     mkdirSync(join(root, 'docs'));

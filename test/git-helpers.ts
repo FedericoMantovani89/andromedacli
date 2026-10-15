@@ -1,8 +1,14 @@
 // Real temporary git repositories for the Phase 3 tests (the repository path contains a space on purpose).
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+/**
+ * A new folder under the system temp, in its long canonical form. With a `TEMP` in 8.3 form (`C:\Users\FEDERI~1\...`) the console, git and the
+ * processes it starts all work with the long path, so a test that compares against the short one would fail for no reason.
+ */
+const tempFolder = (prefix: string): string => realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 
 /**
  * Runs git and returns its trimmed output; throws on failure. A failure is tried again twice after a short pause: on a loaded
@@ -65,7 +71,7 @@ function templateFor(o: RepoOptions): string {
  * (about 0.2 s instead of 1 s of git calls, much more under load); only `origin` has to point at the copy's own bare repo.
  */
 export function makeRepo(o: RepoOptions = {}): TestRepo {
-  const base = mkdtempSync(join(tmpdir(), 'gitt-'));
+  const base = tempFolder('gitt-');
   cpSync(templateFor(o), base, { recursive: true });
   const repo = join(base, 'my repo');
   const remote = join(base, 'remote.git');
@@ -90,7 +96,7 @@ export interface MultiRepo { base: string; root: string; repos: Record<string, {
 
 /** A project folder that is NOT a repository, holding one repo (one commit on `main`, optionally a bare origin) per name. */
 export function makeMultiRepo(names: string[], o: { remote?: boolean } = {}): MultiRepo {
-  const base = mkdtempSync(join(tmpdir(), 'multi-'));
+  const base = tempFolder('multi-');
   const root = join(base, 'abc website');
   mkdirSync(root);
   const repos: MultiRepo['repos'] = {};

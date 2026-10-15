@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { transcriptPath } from '../src/server/claude-code/transcript';
@@ -7,7 +7,7 @@ import { bootServer, until } from './helpers';
 
 const SID = '7487d159-b5c4-4f4f-8624-992be7e584c7';
 function projectWithSavedMain(): string {
-  const root = mkdtempSync(join(tmpdir(), 'mr-project-'));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'mr-project-'))); // long form: the console launches Claude in the canonical folder, and its transcripts are named after that
   mkdirSync(join(root, '.andromedaconsole', 'state'), { recursive: true });
   writeFileSync(join(root, '.andromedaconsole', 'state', 'main.json'), JSON.stringify({ sessionId: SID }));
   return root;
