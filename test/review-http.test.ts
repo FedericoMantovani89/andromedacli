@@ -60,6 +60,10 @@ it('the review tools belong to their roles', async () => {
   expect((await tool(s, 'fix-login', 'review_verdict', { pass: true })).status).toBe(403);
   expect((await tool(s, 'shop-api', 'review_verdict', { pass: true })).status).toBe(403);
   expect((await tool(s, 'shop-api', 'merge_ticket', { name: 'fix-login' })).status).not.toBe(403);
+  // send_back_ticket: only the main, and it needs a note (what it does with a note is in review.test.ts and the state test below)
+  expect((await tool(s, 'fix-login', 'send_back_ticket', { name: 'fix-login', note: 'x' })).status).toBe(403);
+  expect((await tool(s, 'shop-api', 'send_back_ticket', { name: 'fix-login' })).body).toEqual({ status: 'error', code: 'bad_request' });
+  expect((await tool(s, 'shop-api', 'send_back_ticket', { name: 'fix-login', note: '  ' })).body).toMatchObject({ status: 'refused', code: 'notes_required' });
 });
 it('ticket_report gives the main the console\'s facts and the report text', async () => {
   const { s, t } = await boot();
@@ -141,22 +145,21 @@ it('a failed review goes back to the author as a message from the main; the auth
   expect(ticketFile(t, 'fix-login').status).toBe('approved');
   expect((await inbox(s, 'shop-api')).join('\n')).toMatch(/PASSED[\s\S]*merge_ticket/);
 });
-it('after two rework rounds the third failure puts a decision in the user\'s queue, and the user\'s answer acts on the ticket', async () => {
+// The rounds rule (two rework rounds, then the user) is tested in review.test.ts; here only the way from the verdict to the user's queue and back.
+// An author that is gone gets there without three review rounds.
+it('a failed review of a ticket whose author is gone puts a decision in the user\'s queue, and the user\'s answer acts on the ticket', async () => {
   const { s, t } = await boot();
   await deliverTicket(s, t);
-  let from = 7;
-  for (let round = 1; round <= 3; round++) {
-    const reviewer = round === 1 ? 'review-fix-login' : `review-fix-login-r${round}`;
-    expect((await tool(s, 'shop-api', 'request_review', { name: 'fix-login' })).body.reviewer).toBe(reviewer);
-    const v = await tool(s, reviewer, 'review_verdict', { pass: false, notes: NOTES });
-    expect(v.body, JSON.stringify(v.body)).toMatchObject({ outcome: round < 3 ? 'sent_back' : 'needs_user' });
-    if (round < 3) { await finishRework(s, t, 'fix-login', from); from += 3; }
-  }
+  await tool(s, 'shop-api', 'request_review', { name: 'fix-login' });
+  s.writeToSession('fix-login', 'quit\r'); // the author's process ends: the ticket cannot go back to it
+  await until(async () => (await agentsOf(s)).find((a) => a.slug === 'fix-login')?.status === 'exited', 20_000);
+  const v = await tool(s, 'review-fix-login', 'review_verdict', { pass: false, notes: NOTES });
+  expect(v.body, JSON.stringify(v.body)).toMatchObject({ outcome: 'needs_user' });
   expect(ticketFile(t, 'fix-login').status).toBe('needs_user');
   const queue = (await ui(s, '/api/state')).body.queue;
   expect(queue).toHaveLength(1);
   expect(queue[0]).toMatchObject({ kind: 'decision', from: '@console', options: ['send_back', 'approve', 'leave'] });
-  expect(queue[0].payload).toMatchObject({ ticket: 'fix-login', reason: 'rounds_exhausted' });
+  expect(queue[0].payload).toMatchObject({ ticket: 'fix-login', reason: 'author_gone' });
   expect(JSON.stringify(queue[0].payload)).toContain('negative input is not handled');
   expect((await ui(s, `/api/queue/${queue[0].id}/answer`, 'POST', { answer: 'not an option' })).status).toBe(400);
   expect((await ui(s, `/api/queue/${queue[0].id}/answer`, 'POST', { answer: 'approve' })).status).toBe(200);
@@ -164,17 +167,6 @@ it('after two rework rounds the third failure puts a decision in the user\'s que
   expect((await ui(s, '/api/state')).body.queue).toEqual([]);
   expect((await inbox(s, 'shop-api')).join('\n')).toMatch(/approved by the user/);
 });
-it('red tests on the delivered commit never reach a reviewer: the console sends the ticket back', async () => {
-  const { s, t } = await boot();
-  await deliverTicket(s, t);
-  const file = join(t.repo, '.andromedaconsole', 'project.json');
-  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testCommand: 'node -e "console.log(\'1 failing\'); process.exit(1)"' }));
-  const r = await tool(s, 'shop-api', 'request_review', { name: 'fix-login' });
-  expect(r.body).toEqual({ status: 'ok', result: 'sent_back', round: 1 });
-  expect(existsSync(worktreePathFor(t.repo, 'review-fix-login'))).toBe(false);
-  expect((await inbox(s, 'fix-login')).find((m) => m.startsWith('Message from the main'))).toContain('1 failing');
-});
-
 it('the whole pipeline: delivered, reviewed, approved, merged into the project branch, sessions ended and folders removed', async () => {
   const { s, t } = await boot();
   await deliverTicket(s, t);
@@ -223,20 +215,6 @@ it('the state tells the UI where each ticket is in the pipeline (nothing for a t
   await tool(s, 'shop-api', 'request_review', { name: 'fix-login' });
   await tool(s, 'review-fix-login-r2', 'review_verdict', { pass: true });
   expect(await ticketOf()).toMatchObject({ status: 'approved' });
-});
-
-it('send_back_ticket: the main returns a delivered ticket to its author with its own note', async () => {
-  const { s, t } = await boot();
-  await deliverTicket(s, t);
-  expect((await tool(s, 'fix-login', 'send_back_ticket', { name: 'fix-login', note: 'x' })).status).toBe(403);
-  expect((await tool(s, 'shop-api', 'send_back_ticket', { name: 'fix-login' })).body).toEqual({ status: 'error', code: 'bad_request' });
-  expect((await tool(s, 'shop-api', 'send_back_ticket', { name: 'fix-login', note: '  ' })).body).toMatchObject({ status: 'refused', code: 'notes_required' });
-  const r = await tool(s, 'shop-api', 'send_back_ticket', { name: 'fix-login', note: 'The diff has a login page change nobody asked for.' });
-  expect(r.body).toEqual({ status: 'ok', result: 'sent_back', round: 1 });
-  expect((await inbox(s, 'fix-login')).find((m) => m.startsWith('Message from the main'))).toContain('nobody asked for');
-  expect(ticketFile(t, 'fix-login')).toMatchObject({ status: 'in_progress', round: 1 });
-  expect(existsSync(worktreePathFor(t.repo, 'review-fix-login'))).toBe(false); // no reviewer was started
-  expect((await tool(s, 'shop-api', 'send_back_ticket', { name: 'fix-login', note: 'again' })).body).toMatchObject({ status: 'refused', code: 'not_delivered' });
 });
 
 it('every review, merge and release tool call pushes the new state to the UI (a status change has no other event)', async () => {

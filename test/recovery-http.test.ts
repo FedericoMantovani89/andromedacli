@@ -133,8 +133,9 @@ it('the budget answer "recover" starts the recovery; a recovery that ends withou
   expect((await tool(s, 'shop-api', 'start_recovery', { name: SLUG })).body).toEqual({ status: 'ok', recovery: 'recover-fix-login-r2', attempt: 2 });
 });
 
-it('the budget answer "raise" restarts the ticket with a new agent on the same branch and a budget half again as large', async () => {
-  const { s, t, wip } = await stopped();
+it('the budget answer "raise" restarts the ticket with a new agent on the same branch and a budget half again as large; the handover note written in the worktree reaches it', async () => {
+  const { s, t, wip } = await stopped({ handover: 'HANDOVER FROM THE FILE: step 2 half done, half.js holds the start' });
+  expect(ticketOf(t).handover).toBe('HANDOVER FROM THE FILE: step 2 half done, half.js holds the start'); // kept at the stop
   const q = (await state(s)).queue[0];
   expect((await ui(s, `/api/queue/${q.id}/answer`, 'POST', { answer: 'raise' })).status).toBe(200);
   const next = worktreePathFor(t.repo, 'fix-login-r2');
@@ -144,6 +145,7 @@ it('the budget answer "raise" restarts the ticket with a new agent on the same b
   await until(() => ticketOf(t, 'fix-login-r2').budget?.limit === 1575, 20_000);
   expect(ticketOf(t, 'fix-login-r2')).toMatchObject({ status: 'in_progress', recoveries: 0, budget: { limit: 1575, step: 'ok' } });
   await until(async () => (await inbox(s, 'shop-api')).some((m) => m.includes('fix-login-r2') && m.includes('1575')), 20_000);
+  await until(async () => (await inbox(s, 'fix-login-r2').catch(() => [])).some((m) => m.includes('HANDOVER FROM THE FILE')), 20_000);
 });
 
 it('spawn_agent and the UI cannot start a recovery by hand: start_recovery is the way', async () => {
@@ -153,14 +155,6 @@ it('spawn_agent and the UI cannot start a recovery by hand: start_recovery is th
   expect((await tool(s, 'shop-api', 'spawn_agent', { name: 'recover-by-hand', profile: 'recovery', goal: 'recover something' })).body).toMatchObject({ status: 'error', code: 'recovery.useRecoveryTool' });
   expect((await ui(s, '/api/agents', 'POST', { slug: 'recover-by-hand', profile: 'recovery' })).body.code).toBe('recovery.useRecoveryTool');
   expect((await tool(s, 'shop-api', 'start_recovery', { name: 'nobody' })).body).toEqual({ status: 'refused', code: 'not_stopped' });
-});
-
-it('the handover note the agent wrote in its worktree is kept at the stop and reaches the new agent', async () => {
-  const { s, t } = await stopped({ handover: 'HANDOVER FROM THE FILE: step 2 half done, half.js holds the start' });
-  expect(ticketOf(t).handover).toBe('HANDOVER FROM THE FILE: step 2 half done, half.js holds the start');
-  const q = (await state(s)).queue[0];
-  expect((await ui(s, `/api/queue/${q.id}/answer`, 'POST', { answer: 'raise' })).status).toBe(200);
-  await until(async () => (await inbox(s, 'fix-login-r2').catch(() => [])).some((m) => m.includes('HANDOVER FROM THE FILE')), 20_000);
 });
 
 it('a recovery running when the usage limit stops everything gives the ticket back in its stop status', async () => {
