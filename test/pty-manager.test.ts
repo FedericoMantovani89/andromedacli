@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest';
 import { join } from 'node:path';
-import { PtyManager } from '../src/server/pty/pty-manager';
+import { PtyManager, type PtySpawn } from '../src/server/pty/pty-manager';
 
 const fixture = join(__dirname, 'fixtures', 'fake-agent.cjs').replace(/\\/g, '/');
 const spawnFake = (m: PtyManager, id: string) =>
@@ -75,17 +75,25 @@ it('killAll terminates the whole process tree, not just the direct child', async
 });
 
 it('a late exit of a discarded process does not report the new session started under the same id', async () => {
-  const m = new PtyManager();
+  // Fake processes whose exit the test fires itself: the old one ends AFTER the new session started, which a real process cannot be made to do on time.
+  // pid 0 on purpose: the manager runs `taskkill /PID <pid>` on a discard, and that must never name a real process.
+  const exitOf: Array<(code: number) => void> = [];
+  const fake: PtySpawn = () => {
+    let onExit: (e: { exitCode: number }) => void = () => {};
+    exitOf.push((exitCode) => onExit({ exitCode }));
+    return { pid: 0, onData: () => {}, onExit: (cb) => { onExit = cb; }, write: () => {}, resize: () => {}, kill: () => {} };
+  };
+  const m = new PtyManager(fake);
   const exits: string[] = [];
   m.onExit((id) => exits.push(id));
-  spawnFake(m, 'gamma-job');
-  await until(() => m.snapshot('gamma-job').toString().includes('READY gamma-job'));
-  await m.discard('gamma-job'); // the old process is being killed; its exit arrives later
-  spawnFake(m, 'gamma-job');
-  await new Promise((r) => setTimeout(r, 1500));
+  const start = (): void => m.spawn({ id: 'gamma-job', file: 'x', args: [], cwd: process.cwd(), env: {}, cols: 100, rows: 30 });
+  start();
+  const discarding = m.discard('gamma-job'); // forgets the old session at once, then waits for its process to end
+  start(); // the same id is started again while the old process is still ending
+  exitOf[0]!(1); // now the old one ends
+  await discarding;
   expect(exits).toEqual([]);
   expect(m.status('gamma-job')).toBe('running');
-  await m.killTree('gamma-job');
-  await until(() => exits.length === 1);
+  exitOf[1]!(0); // the new session's own exit is reported
   expect(exits).toEqual(['gamma-job']);
 });

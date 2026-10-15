@@ -90,12 +90,5 @@ it('PUT /api/config saves the notification settings, applies them at once and re
   expect((await state(s)).notifications.config.groupSeconds).toBe(9); // nothing changed
 });
 
-it('a disabled type raises no toast', async () => {
-  const r = recorder();
-  const s = await bootServer({ notifier: r.notifier, config: { notifications: { groupSeconds: 1, enabled: { question: false } } } });
-  s.setLimits({ global: 9, perProject: 9 });
-  await ui(s, '/api/agents', 'POST', { slug: 'fix-login', profile: 'developer' });
-  await mod(s, 'fix-login', '/v1/tools/ask_user', 'POST', { question: 'Which color?' });
-  await new Promise((done) => setTimeout(done, 1500));
-  expect(r.sent).toHaveLength(0);
-});
+// 'a disabled type raises no toast' is in notify-service.test.ts ('a disabled type does not notify, the others still do'); the config reaches the
+// service through the test above. The HTTP version waited a fixed 1.5 s to see nothing happen.

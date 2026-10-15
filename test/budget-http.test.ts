@@ -127,21 +127,7 @@ it('6. after the grace the agent is stopped: final WIP, ticket suspended_budget,
   await until(() => ticketOf(t).status === 'needs_user');
 });
 
-it('7. the same step never fires twice: a repeated turn.complete makes no second WIP commit', async () => {
-  const { s, wt, addTokens, turn } = await boot();
-  writeFileSync(join(wt, 'a.txt'), 'x');
-  addTokens(850);
-  await turn();
-  await until(async () => (await agentOf(s))?.budget?.step === 'alert');
-  await until(() => wipCommits(wt).length === 1);
-  writeFileSync(join(wt, 'b.txt'), 'y');
-  await modEvent(s, SLUG, 'turn.complete', {});
-  await modEvent(s, SLUG, 'turn.complete', {});
-  await new Promise((r) => setTimeout(r, 1500));
-  expect(wipCommits(wt)).toHaveLength(1);
-  expect((await inboxTexts(s, SLUG)).filter((m) => m === ALERT_TEXT)).toHaveLength(1);
-});
-
+// 7. (the same step never fires twice) is in budget-service.test.ts: 'alerts once at 80%'. It waited a fixed 1.5 s to see nothing happen.
 it('8. no worktree means no budget in the state; a missing transcript leaves the step untouched', async () => {
   const off = await boot({ worktrees: false });
   await until(async () => (await agentOf(off.s))?.status === 'running');
