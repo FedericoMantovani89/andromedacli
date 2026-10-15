@@ -53,7 +53,7 @@ There is also a **desktop app** for Windows x64 (an installer on the GitHub rele
 
 ## Safety
 
-The server listens on `127.0.0.1` only. A guard denies force pushes, writes outside the agent's worktree, secrets, tampering with the push hook and remotes, and wide `rm`, among others; reviewers and recovery agents are read-only. `agents.bypassPermissions` is **off by default**, and with it on the guard is the only brake (a red chip in the status bar says so). The guard reads command text: it does not stop obfuscated commands, and there is no operating-system sandbox. Telemetry is off; nothing leaves your machine except what Claude Code itself sends and, only if you use voice dictation, the audio you record, which goes to Groq for transcription. Read [SECURITY.md](SECURITY.md) for what is and is not guaranteed.
+The server listens on `127.0.0.1` only. A guard denies force pushes, writes outside the agent's worktree (redirects, copies, downloads and clones included), secrets (also by a name with wildcards, such as `.env*`), tampering with the push hook and remotes, and wide `rm`, among others; reviewers and recovery agents are read-only. `agents.bypassPermissions` is **off by default**, and with it on the guard is the only brake (a red chip in the status bar says so). The guard reads command text: it does not stop obfuscated commands, and there is no operating-system sandbox. Telemetry is off; nothing leaves your machine except what Claude Code itself sends and, only if you use voice dictation, the audio you record, which goes to Groq for transcription. Read [SECURITY.md](SECURITY.md) for what is and is not guaranteed.
 
 ![Options, Guard: the bypass switch and its warning, and the red chip in the status bar](assets/screenshots/guard.png)
 

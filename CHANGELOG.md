@@ -8,6 +8,9 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+### Changed
+- Claude Code 2.1.300 is now the last tested version (`test/e2e/claude-contract.ts` holds, and `real-claude-smoke.ts` passes: the main answers a prompt, a second agent starts, a reopened tab restores both).
+
 ### Fixed
 - The guard refuses an agent's download saved outside its worktree (`curl -o`, `-OutFile`, `--output=`), `cp -t`/`mv -t` into a folder outside it, and `git clone` into one.
 - The guard refuses a word with wildcards that can expand to a secret's name (`cat .env*`, `type .e*`); `*`, `.*`, `*.*` and globs that open with a wildcard (`*.json`) stay allowed.
