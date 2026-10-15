@@ -2,6 +2,8 @@
 
 AndromedaConsole runs several Claude Code sessions on your machine, each one a normal `claude` process with your Windows user's rights. This page says what the console does to limit the damage, what it does not do, and what changes when you turn bypass on. Read it before you run agents on a project you cannot afford to damage.
 
+**The console is meant to be used with someone watching.** The guard and the other layers catch mistakes; they are not a security boundary (see "What the guard does not guarantee"), and nothing here replaces your own supervision. Do not leave agents running unattended with bypass on a project you cannot afford to damage.
+
 ## The layers
 
 1. **Separate worktree and branch per agent.** Each agent works in `<project>/.andromedaconsole/worktrees/<name>` on `agent/<project>/<name>`.
