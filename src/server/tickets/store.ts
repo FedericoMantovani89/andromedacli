@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeJsonAtomic } from '../fs-atomic';
+import { removeStaleTmp, writeJsonAtomic } from '../fs-atomic';
 import { readJsonState, setAside, type StateReport } from '../json-file';
 import type { Step } from './checklist';
 import { canMove, type TicketStatus } from './flow';
@@ -49,6 +49,7 @@ const REOPEN_FROM: TicketStatus[] = ['changes_requested', 'conflict', 'needs_use
 /** One JSON file per agent under <repo>/.andromedaconsole/state/tickets/ (SPEC 23). */
 export class TicketStore {
   private readonly dir: string;
+  private swept = false;
 
   constructor(root: string, private readonly report?: StateReport) {
     this.dir = join(root, '.andromedaconsole', 'state', 'tickets');
@@ -77,6 +78,7 @@ export class TicketStore {
   /** Every ticket on disk (damaged files and files that are not tickets are skipped). */
   list(): Ticket[] {
     if (!existsSync(this.dir)) return [];
+    if (!this.swept) { this.swept = true; removeStaleTmp(this.dir); } // a crash in the middle of a write leaves its temp file behind
     return readdirSync(this.dir)
       .map((f) => /^([a-z0-9]+(?:-[a-z0-9]+)*)\.json$/.exec(f)?.[1])
       .filter((slug): slug is string => slug !== undefined)
@@ -91,7 +93,11 @@ export class TicketStore {
   }
 
   private ensure(slug: string): Ticket {
-    return this.get(slug) ?? { slug, steps: [], status: 'in_progress', blocked: false, updatedAt: '', round: 0, recoveries: 0, verdicts: [] };
+    const t = this.get(slug);
+    if (t) return t;
+    // `get` sets a damaged file aside, which frees its name. If the file is still there the move failed: writing a new ticket would destroy it.
+    if (existsSync(this.file(slug))) throw new Error('ticket.unreadable');
+    return { slug, steps: [], status: 'in_progress', blocked: false, updatedAt: '', round: 0, recoveries: 0, verdicts: [] };
   }
 
   private existing(slug: string): Ticket {
@@ -201,6 +207,17 @@ export class TicketStore {
     if (!['suspended_budget', 'blocked', 'recovering', 'suspended_limit'].includes(t.status) || !canMove(t.status, 'in_progress')) throw new Error('ticket.badTransition');
     const { stopCause: _gone, blockedReason: _stale, ...rest } = t;
     return this.save({ ...rest, status: 'in_progress', blocked: false });
+  }
+
+  /** Puts back the fields `restart` drops, for a replacement that never started (the ticket returns to the user as it was stopped). */
+  restoreStop(slug: string, was: { blocked: boolean; blockedReason?: string; stopCause?: Ticket['stopCause'] }): Ticket {
+    const { stopCause: _cause, blockedReason: _reason, ...rest } = this.existing(slug);
+    return this.save({
+      ...rest,
+      blocked: was.blocked,
+      ...(was.blockedReason !== undefined ? { blockedReason: was.blockedReason } : {}),
+      ...(was.stopCause !== undefined ? { stopCause: was.stopCause } : {}),
+    });
   }
 
   /**

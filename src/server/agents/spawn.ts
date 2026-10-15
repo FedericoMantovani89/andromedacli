@@ -96,10 +96,10 @@ export async function spawnAgent(ctx: Context, r: SpawnRequest): Promise<SpawnOu
   ctx.registry.register({ slug: v.slug, role: roleOf(r), profile: r.profile, goal: r.goal, queued: true, readOnly: profile.readOnly });
   // The review and the report check the work against it. A replacement keeps the objective of the ticket it takes over (its goal
   // here is the handover), and a reviewer or a recovery has no ticket of its own.
-  if (r.goal && roleOf(r) === 'agent' && !r.resumeBranch) ctx.tickets.setGoal(v.slug, r.goal);
-  // The review, the merge and the release find the repository again from the ticket.
-  if (ctx.git.worktrees && request.repo !== undefined && roleOf(r) === 'agent' && !r.resumeBranch) ctx.tickets.setRepo(v.slug, request.repo);
   try {
+    if (r.goal && roleOf(r) === 'agent' && !r.resumeBranch) ctx.tickets.setGoal(v.slug, r.goal);
+    // The review, the merge and the release find the repository again from the ticket.
+    if (ctx.git.worktrees && request.repo !== undefined && roleOf(r) === 'agent' && !r.resumeBranch) ctx.tickets.setRepo(v.slug, request.repo);
     const result = ctx.scheduler.request(request);
     ctx.broadcastState();
     if (result.status === 'started' && result.ready) await result.ready;

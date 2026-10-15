@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs';
 import { win32 } from 'node:path';
-import { findSecrets } from '../git/secrets';
+import { findSecrets, globMayMatchSecret } from '../git/secrets';
 import { baseName, hasComponent, isInside, realResolve } from './paths';
 import { GIT_BUILTINS, headBranch, isTag } from './gitrefs';
 import { commandName, splitCommand, type Segment, type ShellKind } from './shell';
 import { READONLY_RULE, readOnlyViolation } from './readonly';
-import { firstOutside, isNullDevice, redirectTargets, writeTargets } from './writes';
+import { DOWNLOADERS, downloadOutputs, firstOutside, isNullDevice, redirectTargets, writeTargets } from './writes';
 
 export interface GuardContext {
   role?: 'main' | 'agent';
@@ -39,7 +39,6 @@ const WRITERS = new Set([
   'new-item', 'ni', 'remove-item', 'ri', 'copy-item', 'cpi', 'move-item', 'mi', 'touch', 'mkdir', 'rd', 'rmdir', 'ln', 'xcopy', 'echo',
 ]);
 const RM_COMMANDS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri', 'unlink']);
-const DOWNLOADERS = new Set(['curl', 'wget', 'iwr', 'irm', 'invoke-webrequest', 'invoke-restmethod', 'certutil', 'bitsadmin', 'start-bitstransfer']);
 const EXEC_SINKS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'iex', 'invoke-expression', 'powershell', 'pwsh', 'cmd', 'python', 'python3', 'node', 'perl', 'ruby']);
 const EXEC_EXT = /\.(exe|bat|cmd|ps1|sh|msi|dll|com|scr|vbs|jar)$/i;
 const DOWNLOAD_RAW = /\b(curl|wget|iwr|irm|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile|certutil|bitsadmin|start-bitstransfer)\b/i;
@@ -238,6 +237,7 @@ const isSecret = (path: string, patterns: string[]): boolean => {
   const p = normalizeSecretPath(path);
   const base = baseName(p);
   if (TEMPLATE_SUFFIX.test(base)) return false;
+  if (globMayMatchSecret(p, patterns)) return true;
   return findSecrets([p], patterns).length > 0;
 };
 
@@ -262,19 +262,6 @@ function hooksTarget(argv: string[]): string | undefined {
 
 function dotGitTarget(argv: string[]): string | undefined {
   return writtenPaths(argv).find((t) => hasComponent(t, '.git') || hasComponent(t, 'console-hooks'));
-}
-
-/** The file names a downloader command saves to: `-o f`, `-ofile`, `--output=f`, `-OutFile f`, `-Destination f`, `certutil -urlcache ... f`, `bitsadmin ... f`. */
-function downloadOutputs(name: string, argv: string[]): string[] {
-  const out: string[] = [];
-  argv.forEach((t, j) => {
-    const next = argv[j + 1];
-    if (/^(-o|-O|--output|-outfile|-out|-destination)$/i.test(t) && next !== undefined) out.push(next);
-    const joined = /^(?:--output=|-outfile[:=]|-destination[:=])(.+)$/i.exec(t) ?? /^-o(.+)$/.exec(t);
-    if (joined) out.push(joined[1]!);
-  });
-  if ((name === 'certutil' && argv.some((t) => /^-urlcache$/i.test(t))) || name === 'bitsadmin') out.push(argv[argv.length - 1]!);
-  return out;
 }
 
 function downloadRule(segments: Segment[]): GuardDecision | undefined {

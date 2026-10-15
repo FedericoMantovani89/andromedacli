@@ -1,5 +1,5 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, statSync, writeSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 /** Errors that a busy file (antivirus, the search indexer) gives for a moment on Windows. */
 const RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
@@ -35,4 +35,22 @@ export function writeJsonAtomic(path: string, value: unknown): void {
   }
   try { rmSync(tmp, { force: true }); } catch { /* nothing to clean */ }
   throw lastError;
+}
+
+const TMP_NAME = /^.+\.tmp-\d+-\d+$/;
+
+/** Deletes the temp files of a `writeJsonAtomic` that a crash left behind: only names it makes, only when older than `olderThanMs`. */
+export function removeStaleTmp(dir: string, olderThanMs = 3_600_000, now = Date.now()): number {
+  let removed = 0;
+  let names: string[];
+  try { names = readdirSync(dir); } catch { return 0; }
+  for (const n of names) {
+    if (!TMP_NAME.test(n)) continue;
+    try {
+      if (now - statSync(join(dir, n)).mtimeMs < olderThanMs) continue;
+      rmSync(join(dir, n), { force: true });
+      removed++;
+    } catch { /* busy or gone: next time */ }
+  }
+  return removed;
 }

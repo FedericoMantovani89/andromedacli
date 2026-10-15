@@ -264,6 +264,13 @@ describe('report', () => {
     expect(tickets.get('a-job')).toMatchObject({ status: 'needs_user', recoveries: 1 });
     expect(main.join('\n')).toMatch(/boom/);
   });
+  it('a replacement that cannot start gives the ticket back its stop cause (R6)', async () => {
+    const rec = await started();
+    replacementResult = { ok: false, code: 'agent.spawnFailed', detail: 'boom' };
+    await svc.report(rec, REPORT);
+    expect(tickets.get('a-job')).toMatchObject({ status: 'needs_user', stopCause: 'budget', blocked: false });
+    expect(tickets.get('a-job-r2')).toBeUndefined();
+  });
   it('a replacement that cannot start puts the ticket\'s budget back as it was (B5)', async () => {
     deps.budget.restart = (slug, limit) => { restarted.push({ slug, limit }); tickets.setBudget(slug, { limit, step: 'ok' }); }; // what the real one does
     const rec = await started();

@@ -8,6 +8,15 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+### Fixed
+- The guard refuses an agent's download saved outside its worktree (`curl -o`, `-OutFile`, `--output=`), `cp -t`/`mv -t` into a folder outside it, and `git clone` into one.
+- The guard refuses a word with wildcards that can expand to a secret's name (`cat .env*`, `type .e*`); `*`, `.*`, `*.*` and globs that open with a wildcard (`*.json`) stay allowed.
+- The guard reads `-t` as a target folder only for `cp`, `mv`, `ln` and `install`, and `bitsadmin` only with `/transfer`, so `ls -t`, `docker build -t` and `bitsadmin /list` are not taken for writes.
+- A failing `setGoal`/`setRepo` while an agent is being created now undoes the spawn (name, token, registry entry) instead of leaving a registered agent behind.
+- A ticket file that is damaged and could not be set aside is no longer overwritten by a new empty ticket: writing to it fails with `ticket.unreadable`.
+- A replacement agent that fails to start gives the ticket back its stop cause, blocked reason and blocked flag along with its name and budget.
+- Temp files of an interrupted state write (`*.tmp-<pid>-<n>`, older than an hour) are removed from the tickets folder.
+
 ## [0.0.9] - 2026-10-13
 
 ### Fixed
