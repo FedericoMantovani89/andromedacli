@@ -8,6 +8,8 @@ change that introduces the behaviour.
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-10-15
+
 ### Changed
 - `SECURITY.md` says the console is meant to be used with someone watching: the guard catches mistakes and is not a security boundary.
 - Tests: `PtyManager` takes the function that starts a session's process (`StartOptions.ptySpawn`, the pseudo terminal by default), and the 14 test files that never read the terminal run their agents on plain pipes (`test/pipe-pty.ts`, `usePipePty()`), so they no longer depend on the ConPTY, where the native worker crashes on the CI runner happen.
@@ -459,7 +461,8 @@ Documentation only, kept under `docs/` (not versioned): `REPORT-VERIFICHE.md` wi
 of context compaction (S0), notes on the reference projects, and a probe mod. No project B was needed for V1-V8. See
 `docs/SPEC.md` section 3.5 for the places where reality differed from the specification.
 
-[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.9...HEAD
+[Unreleased]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.10...HEAD
+[0.0.10]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.8...v0.0.9
 [0.0.8]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/FedericoMantovani89/andromedaconsole/compare/v0.0.6...v0.0.7
